@@ -19,19 +19,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     
       --> Vérifie si le token est bien présent dans le header de la requête
       -->S'il est bien présent, il utilise le SECRET pour convertir le mdp avec le payload 
-
     */
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
       secretOrKey: process.env.JWT_SECRET!,
     });
-
-    console.log('🧪 JwtStrategy loaded with secret:', process.env.JWT_SECRET);
   }
 
   async validate({ userId }: UserPayload) {
-    console.log('✅ JWT VALIDATED - User ID :', userId);
     return { userId };
   }
 }

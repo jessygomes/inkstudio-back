@@ -34,7 +34,6 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @Get()
   async getAuthenticatedUser(@Request() request: RequestWithUser) {
-    console.log("🔥 Requête reçue pour /auth - User:", request.user);
     return await this.userService.getUserById({userId: request.user.userId});
   }
 

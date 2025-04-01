@@ -13,11 +13,14 @@ datasource db {
   url  	    = env("DATABASE_URL")
 }
 
+//! USER
 enum Role {
   admin
   user
 }
 
+// Le user est le SALON
+// Le tatoueur est un employé du salon
 model User {
   id                String   @id @default(cuid())
   email             String   @unique
@@ -27,22 +30,81 @@ model User {
   role              Role     @default(user)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+  
+
+  Tatoueur          Tatoueur[]
 }
 
 model VerificationToken {
-  id      String   @id @default(cuid())
-  email   String
-  token   String   @unique
-  expires DateTime
+  id              String   @id @default(cuid())
+  email           String
+  token           String   @unique
+  expires         DateTime
 
   @@unique([email, token], name: "email_token")
 }
 
 model PasswordResetToken {
-  id      String   @id @default(cuid())
-  email   String
-  token   String   @unique
-  expires DateTime
+  id              String   @id @default(cuid())
+  email           String
+  token           String   @unique
+  expires         DateTime
 
   @@unique([email, token], name: "email_token")
 }
+
+//! SALON
+model Tatoueur {
+  id              String       @id @default(cuid())
+  name            String
+  user            User         @relation(fields: [userId], references: [id])
+  userId          String       // salon qui possède ce tatoueur
+  img             String?
+  description     String?
+  phone           String?
+  instagram       String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  appointments Appointment[]
+}
+
+//! AGENDA ET RDV
+enum PrestationType {
+  TATTOO
+  PIERCING
+  RETOUCHE
+  PROJET
+}
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  DECLINED
+  CANCELED
+}
+
+model Appointment {
+  id              String             @id @default(cuid())
+  title           String
+  prestation      PrestationType
+  start           DateTime
+  end             DateTime
+  allDay          Boolean            @default(false)
+  status          AppointmentStatus  @default(PENDING)
+  clientName      String
+  clientEmail     String
+
+  tatoueur        Tatoueur           @relation(fields: [tatoueurId], references: [id])
+  tatoueurId      String
+
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+}
+
+// //! SALON SETTINGS
+// model SalonSettings {
+//   id                      String   @id @default(cuid())
+//   salonName               String
+//   autoConfirmationEnabled Boolean  @default(false)
+//   createdAt               DateTime @default(now())
+// }
