@@ -19,6 +19,12 @@ export class TatoueursController {
     return this.tatoueursService.getAllTatoueurs();
   }
 
+  //! VOIR TOUS LES TATOUEURS PAR USER ID ✅
+  @Get('user/:id')
+  getTatoueurByUserId(@Param('id') id: string) {
+    return this.tatoueursService.getTatoueurByUserId(id);
+  }
+
   //! VOIR UN SEUL TATOUEUR ✅
   @Get(':id')
   getOneTatoueur(@Param('id') id: string) {

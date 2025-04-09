@@ -1,7 +1,7 @@
 /* eslint-disable prettier/prettier */
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
-import { CreateAppointmentDto } from './dto/create-appointment.dto';
+import { CreateAppointmentDto, PrestationType } from './dto/create-appointment.dto';
 
 
 @Injectable()
@@ -45,6 +45,40 @@ export class AppointmentsService {
         };
       }
 
+      if (prestation === PrestationType.PROJET) {
+        const newAppointment = await this.prisma.appointment.create({
+          data: {
+            title,
+            prestation,
+            start: new Date(start),
+            end: new Date(end),
+            clientName,
+            clientEmail,
+            tatoueurId,
+          },
+        });
+      
+        const tattooDetail = await this.prisma.tattooDetail.create({
+          data: {
+            appointmentId: newAppointment.id,
+            type: rdvBody.type || '',
+            zone: rdvBody.zone || '',
+            size: rdvBody.size || '',
+            colorStyle: rdvBody.colorStyle || '',
+            reference: rdvBody.reference,
+            sketch: rdvBody.sketch,
+            estimatedPrice: rdvBody.estimatedPrice,
+          },
+        });
+      
+        return {
+          error: false,
+          message: 'Rendez-vous projet créé avec détail tatouage.',
+          appointment: newAppointment,
+          tattooDetail,
+        };
+      }
+
       // Créer le rendez-vous
       const newAppointment = await this.prisma.appointment.create({
         data: {
@@ -77,7 +111,8 @@ export class AppointmentsService {
     try {
       const appointments = await this.prisma.appointment.findMany({
         include: {
-          tatoueur: true,
+          // tatoueur: true,
+          tattooDetail: true,
         },
       });
       return appointments;
@@ -99,6 +134,7 @@ export class AppointmentsService {
         },
         include: {
           tatoueur: true,
+          tattooDetail: true,
         },
       });
       return appointment;

@@ -52,6 +52,24 @@ export class TatoueursService {
     }
   }
 
+  //! VOIR TOUS LES TATOUEURS PAR USER ID
+  async getTatoueurByUserId(userId: string) {
+    try {
+      const tatoueurs = await this.prisma.tatoueur.findMany({
+        where: {
+          userId,
+        },
+      });
+      return tatoueurs;
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
+
   //! VOIR UN SEUL TATOUEUR
   async getOneTatoueur(id: string) {
     try {

@@ -10,6 +10,13 @@ import { AppointmentsService } from './appointments/appointments.service';
 import { AppointmentsController } from './appointments/appointments.controller';
 import { AppointmentsModule } from './appointments/appointments.module';
 import { TatoueursModule } from './tatoueurs/tatoueurs.module';
+import { ClientsService } from './clients/clients.service';
+import { ClientsController } from './clients/clients.controller';
+import { ClientsModule } from './clients/clients.module';
+import { TattooHistoryService } from './tattoo-history/tattoo-history.service';
+import { TattooHistoryController } from './tattoo-history/tattoo-history.controller';
+import { TattooHistoryModule } from './tattoo-history/tattoo-history.module';
+import { AftercareModule } from './aftercare/aftercare.module';
 
 @Module({
   imports: [
@@ -18,8 +25,22 @@ import { TatoueursModule } from './tatoueurs/tatoueurs.module';
     ConfigModule.forRoot({ isGlobal: true }),
     AppointmentsModule,
     TatoueursModule,
+    ClientsModule,
+    TattooHistoryModule,
+    AftercareModule,
   ],
-  controllers: [UserController, AppointmentsController],
-  providers: [UserService, PrismaService, AppointmentsService],
+  controllers: [
+    UserController,
+    AppointmentsController,
+    ClientsController,
+    TattooHistoryController,
+  ],
+  providers: [
+    UserService,
+    PrismaService,
+    AppointmentsService,
+    ClientsService,
+    TattooHistoryService,
+  ],
 })
 export class AppModule {}

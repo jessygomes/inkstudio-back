@@ -33,6 +33,7 @@ model User {
   
 
   Tatoueur          Tatoueur[]
+  Client            Client[]
 }
 
 model VerificationToken {
@@ -93,13 +94,109 @@ model Appointment {
   status          AppointmentStatus  @default(PENDING)
   clientName      String
   clientEmail     String
+  clientPhone     String?
+  clientBirthDate DateTime?
 
   tatoueur        Tatoueur           @relation(fields: [tatoueurId], references: [id])
   tatoueurId      String
 
+  client          Client?            @relation(fields: [clientId], references: [id])
+  clientId        String?
+
+  //  Lien direct vers un TattooDetail pour les projets
+  tattooDetail    TattooDetail?
+  tattooDetailId  String?
+
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
 }
+
+//! CLIENT & FICHE CLIENT
+model Client {
+  id                  String   @id @default(cuid())
+  userId              String   // Salon propriétaire de la fiche client
+  user                User     @relation(fields: [userId], references: [id])
+  
+  firstName           String
+  lastName            String
+  email               String   @unique
+  phone               String
+  birthDate           DateTime
+  address             String?
+
+  // Lien vers les RDV (facultatif)
+  appointments      Appointment[]   // 👈 Un client peut avoir plusieurs RDV
+
+  // Relations
+  tattooDetail        TattooDetail?
+  medicalHistory      MedicalHistory?
+  tattooHistory       TattooHistory[]
+  aftercareRecords    Aftercare[]
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model TattooDetail {
+  id          String   @id @default(cuid())
+
+  // Soit lié à un client
+  clientId       String?  @unique
+  client         Client?  @relation(fields: [clientId], references: [id])
+
+  // Soit lié à un rendez-vous
+  appointmentId  String?  @unique
+  appointment    Appointment? @relation(fields: [appointmentId], references: [id])
+
+  type        String
+  zone        String
+  size        String
+  colorStyle  String       // Noir & gris ou Couleur
+  reference   String?      // URL image du client
+  sketch      String?      // URL du croquis
+  estimatedPrice Float?
+
+  @@unique([clientId, appointmentId])
+}
+
+model MedicalHistory {
+  id          String   @id @default(cuid())
+  clientId    String   @unique
+  client      Client   @relation(fields: [clientId], references: [id])
+
+  allergies       String?
+  healthIssues    String?
+  medications     String?
+  pregnancy       Boolean
+  tattooHistory   String?  // Commentaire sur anciens tatouages
+}
+
+model TattooHistory {
+  id          String   @id @default(cuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id])
+
+  date        DateTime
+  description String
+  beforeImage String?   // URL
+  afterImage  String?   // URL
+  inkUsed     String?
+  healingTime String?
+  careProducts String?
+}
+
+model Aftercare {
+  id          String   @id @default(cuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id])
+
+  submittedAt DateTime @default(now())
+  photoUrl    String?
+  comment     String?
+  approved    Boolean  @default(false)
+  visibleInPortfolio Boolean @default(false)
+}
+
 
 // //! SALON SETTINGS
 // model SalonSettings {
