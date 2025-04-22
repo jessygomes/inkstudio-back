@@ -1,6 +1,5 @@
 /* eslint-disable prettier/prettier */
 import {
-  IsDateString,
   IsEmail,
   IsEnum,
   IsNotEmpty,
@@ -17,17 +16,21 @@ export enum PrestationType {
 
 export class CreateAppointmentDto {
   @IsString()
+  @IsNotEmpty()
+  userId: string;
+  
+  @IsString()
   title: string;
 
   @IsEnum(PrestationType)
   @IsNotEmpty()
   prestation: PrestationType;
 
-  @IsDateString()
+  @IsString()
   @IsNotEmpty()
   start: string;
 
-  @IsDateString()
+  @IsString()
   @IsNotEmpty()
   end: string;
 
@@ -40,15 +43,20 @@ export class CreateAppointmentDto {
   clientEmail: string;
 
   @IsString()
+  @IsOptional()
+  clientPhone: string;
+
+  @IsString()
   @IsNotEmpty()
   tatoueurId: string;
 
   // Infos projet (facultatif)
-  @IsOptional() @IsString() type?: string;
+  @IsOptional() @IsString() description?: string;
   @IsOptional() @IsString() zone?: string;
   @IsOptional() @IsString() size?: string;
   @IsOptional() @IsString() colorStyle?: string;
   @IsOptional() @IsString() reference?: string;
   @IsOptional() @IsString() sketch?: string;
   @IsOptional() estimatedPrice?: number;
+  @IsOptional() price?: number;
 }

@@ -9,9 +9,10 @@ export class AppointmentsService {
   constructor(private readonly prisma: PrismaService) {}
 
   //! CREER UN RDV
-  async create({ rdvBody }: {rdvBody: CreateAppointmentDto}) {
+ async create({ rdvBody }: {rdvBody: CreateAppointmentDto}) {
+  console.log("🧾 Payload reçu :", rdvBody);
    try {
-      const { title, prestation, start, end, clientName, clientEmail, tatoueurId } = rdvBody;
+      const { userId, title, prestation, start, end, clientName, clientEmail, clientPhone, tatoueurId } = rdvBody;
 
         // Vérifier si le tatoueur existe
         const artist = await this.prisma.tatoueur.findUnique({
@@ -31,10 +32,12 @@ export class AppointmentsService {
       const existingAppointment = await this.prisma.appointment.findFirst({
         where: {
           tatoueurId: tatoueurId,
-          start: {
-            gte: new Date(start),
-            lte: new Date(end),
-          },
+          OR: [
+            {
+              start: { lt: new Date(end) },
+              end: { gt: new Date(start) },
+            },
+          ],
         },
       });
 
@@ -45,15 +48,17 @@ export class AppointmentsService {
         };
       }
 
-      if (prestation === PrestationType.PROJET) {
+      if (prestation === PrestationType.PROJET || prestation === PrestationType.TATTOO || prestation === PrestationType.PIERCING || prestation === PrestationType.RETOUCHE) {
         const newAppointment = await this.prisma.appointment.create({
           data: {
+            userId,
             title,
             prestation,
             start: new Date(start),
             end: new Date(end),
             clientName,
             clientEmail,
+            clientPhone,
             tatoueurId,
           },
         });
@@ -61,13 +66,14 @@ export class AppointmentsService {
         const tattooDetail = await this.prisma.tattooDetail.create({
           data: {
             appointmentId: newAppointment.id,
-            type: rdvBody.type || '',
+            description: rdvBody.description || '',
             zone: rdvBody.zone || '',
             size: rdvBody.size || '',
             colorStyle: rdvBody.colorStyle || '',
             reference: rdvBody.reference,
             sketch: rdvBody.sketch,
-            estimatedPrice: rdvBody.estimatedPrice,
+            estimatedPrice: rdvBody.estimatedPrice || 0, // Prix par défaut à 0 pour un projet
+            price: rdvBody.price || 0, // Prix par défaut à 0 pour un projet
           },
         });
       
@@ -82,6 +88,7 @@ export class AppointmentsService {
       // Créer le rendez-vous
       const newAppointment = await this.prisma.appointment.create({
         data: {
+          userId,
           title,
           prestation,
           start: new Date(start),
@@ -104,18 +111,51 @@ export class AppointmentsService {
         message: errorMessage,
       };
     }
-  }
+  } 
 
     //! VOIR TOUS LES RDV
-  async getAllAppointments() {
+  async getAllAppointments(id: string) {
     try {
       const appointments = await this.prisma.appointment.findMany({
+        where: {
+          userId: id,
+        },
         include: {
           // tatoueur: true,
           tattooDetail: true,
         },
       });
       return appointments;
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
+
+  //! VOIR TOUS LES RDV PAR DATE
+  async getAppointmentsByDateRange(userId: string, startDate: string, endDate: string) {
+    try {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+  
+      const appointments = await this.prisma.appointment.findMany({
+        where: {
+          userId,
+          start: {
+            gte: start,
+            lt: end,
+          },
+        },
+        include: {
+          tattooDetail: true,
+          tatoueur: true,
+        },
+      });
+
+      return appointments ?? []; 
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       return {

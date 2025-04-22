@@ -8,7 +8,7 @@ export class CreateUserDto {
   email: string;
 
   @IsString({ message: 'Vous devez fournir un nom' })
-  name: string;
+  salonName: string;
 
   @IsNotEmpty()
   @MinLength(6, {

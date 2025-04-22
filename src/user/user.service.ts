@@ -8,18 +8,27 @@ export class UserService {
   // Injecter le service Prisma dans le service User
   constructor(private prisma: PrismaService) {}
 
+  //! GET ALL USERS
   async getUsers() {
     const users = await this.prisma.user.findMany({
       select: {
         id: true,
         email: true,
-        name: true,
+        salonName: true,
+        firstName: true,
+        lastName: true,
+        phone: true,
+        address: true,
+        city: true,
+        postalCode: true,
+        salonHours: true,
         role: true,
       },
-    }) as { id: string; email: string; name: string; role: string }[];
+    }) as { id: string; email: string; salonName: string; role: string }[];
     return users;
   }
 
+  //! GET USER BY ID
   async getUserById({userId} : {userId: string}) {
     const user = await this.prisma.user.findUnique({
       where: {
@@ -28,10 +37,38 @@ export class UserService {
       select: {
         id: true,
         email: true,
-        name: true,
+        salonName: true,
+        firstName: true,
+        lastName: true,
+        phone: true,
+        address: true,
+        city: true,
+        postalCode: true,
+        salonHours: true,
         role: true,
       },
-    }) as { id: string; email: string; name: string; role: string };
+    })
+
+    return user;
+  }
+
+  //! UPDATE USER
+  async updateUser({userId, userBody} : {userId: string; userBody: { salonName: string; firstName: string; lastName: string; phone: string; address: string; city: string; postalCode: string; salonHours: string; }}) {
+    const user = await this.prisma.user.update({
+      where: {
+        id: userId,
+      },
+      data: {
+        salonName: userBody.salonName,
+        firstName: userBody.firstName,
+        lastName: userBody.lastName,
+        phone: userBody.phone,
+        address: userBody.address,
+        city: userBody.city,
+        postalCode: userBody.postalCode,
+        salonHours: userBody.salonHours,
+      },
+    }) 
 
     return user;
   }

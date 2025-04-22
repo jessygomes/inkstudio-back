@@ -16,6 +16,9 @@ export enum PrestationType {
 
 export class UpdateAppointmentDto {
   @IsString()
+  userId: string;
+
+  @IsString()
   @IsOptional()
   title: string;
 
@@ -38,6 +41,10 @@ export class UpdateAppointmentDto {
   @IsEmail()
   @IsOptional()
   clientEmail: string;
+
+  @IsEmail()
+  @IsOptional()
+  clientPhone: string;
 
   @IsString()
   @IsOptional()

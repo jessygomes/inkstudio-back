@@ -19,7 +19,7 @@ export class ClientsService {
         birthDate,
         address,
         userId,
-        type,
+        description,
         zone,
         size,
         colorStyle,
@@ -54,13 +54,13 @@ export class ClientsService {
 
       // Créer tattooDetail si au moins un champ existe
       const hasTattooData =
-      type || zone || size || colorStyle || reference || sketch || estimatedPrice !== undefined;
+      description || zone || size || colorStyle || reference || sketch || estimatedPrice !== undefined;
 
       if (hasTattooData) {
         const tattooDetail = await this.prisma.tattooDetail.create({
           data: {
             clientId: newClient.id,
-            type,
+            description,
             zone,
             size,
             colorStyle,
@@ -146,7 +146,7 @@ export class ClientsService {
 
       tattooDetailData = {
         create: {
-          type: detail.type,
+          description: detail.description,
           zone: detail.zone,
           size: detail.size,
           colorStyle: detail.colorStyle,

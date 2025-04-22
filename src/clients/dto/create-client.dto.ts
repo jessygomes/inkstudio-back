@@ -25,7 +25,7 @@ export class CreateClientDto {
   userId: string; // ID du salon qui crée la fiche
 
   // Infos Tatouage
-  @IsOptional() @IsString() type: string;
+  @IsOptional() @IsString() description: string;
   @IsOptional() @IsString() zone: string;
   @IsOptional() @IsString() size: string;
   @IsOptional() @IsString() colorStyle: string;

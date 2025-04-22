@@ -20,20 +20,34 @@ enum Role {
 }
 
 // Le user est le SALON
-// Le tatoueur est un employé du salon
 model User {
   id                String   @id @default(cuid())
   email             String   @unique
   emailVerified     DateTime?
   password          String
-  name              String
+  firstName         String?
+  lastName          String?
+  salonName         String?
+  image             String?
+  phone             String?
+  address           String?
+  city              String?
+  postalCode        String?
+  instagram         String?
+  website           String?
+  facebook          String?
+  tiktok            String?
+  description       String?
+  salonHours        String? 
   role              Role     @default(user)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
   
-
+  appointments      Appointment[] 
   Tatoueur          Tatoueur[]
   Client            Client[]
+
+  TimeSlot TimeSlot[]
 }
 
 model VerificationToken {
@@ -58,6 +72,7 @@ model PasswordResetToken {
 model Tatoueur {
   id              String       @id @default(cuid())
   name            String
+  hours           String?
   user            User         @relation(fields: [userId], references: [id])
   userId          String       // salon qui possède ce tatoueur
   img             String?
@@ -97,8 +112,12 @@ model Appointment {
   clientPhone     String?
   clientBirthDate DateTime?
 
-  tatoueur        Tatoueur           @relation(fields: [tatoueurId], references: [id])
-  tatoueurId      String
+  // Relation avec User (nouvelle relation)
+  user            User               @relation(fields: [userId], references: [id])
+  userId          String             // ID du salon propriétaire du rendez-vous
+
+  tatoueur        Tatoueur?           @relation(fields: [tatoueurId], references: [id])
+  tatoueurId      String?
 
   client          Client?            @relation(fields: [clientId], references: [id])
   clientId        String?
@@ -109,6 +128,25 @@ model Appointment {
 
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
+
+  TimeSlot TimeSlot[]
+}
+
+model TimeSlot {
+  id            String       @id @default(cuid())
+  date          DateTime     // Date du créneau
+  startTime     DateTime     // Heure de début du créneau
+  endTime       DateTime     // Heure de fin du créneau
+  isAvailable   Boolean      @default(true)
+  
+  userId        String
+  user          User         @relation(fields: [userId], references: [id])
+
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
+  appointmentId String?      // Lié si ce créneau a été réservé
+
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
 }
 
 //! CLIENT & FICHE CLIENT
@@ -148,13 +186,15 @@ model TattooDetail {
   appointmentId  String?  @unique
   appointment    Appointment? @relation(fields: [appointmentId], references: [id])
 
-  type        String
-  zone        String
-  size        String
-  colorStyle  String       // Noir & gris ou Couleur
-  reference   String?      // URL image du client
-  sketch      String?      // URL du croquis
-  estimatedPrice Float?
+
+  description         String
+  zone                String?
+  size                String?
+  colorStyle          String?       // Noir & gris ou Couleur
+  reference           String?      // URL image du client
+  sketch              String?      // URL du croquis
+  estimatedPrice      Float?
+  price               Float?
 
   @@unique([clientId, appointmentId])
 }

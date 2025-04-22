@@ -1,5 +1,5 @@
 /* eslint-disable prettier/prettier */
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { AppointmentsService } from './appointments.service';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
@@ -11,13 +11,23 @@ export class AppointmentsController {
   //! CREER UN RDV ✅
   @Post()
   async create(@Body() rdvBody: CreateAppointmentDto) {
+
     return await this.appointmentsService.create({ rdvBody });
   }
 
   //! VOIR TOUS LES RDV ✅
   @Get()
-  async getAllAppointments() {
-    return await this.appointmentsService.getAllAppointments();
+  async getAllAppointments(@Param('id') userId: string) {
+    return await this.appointmentsService.getAllAppointments(userId);
+  }
+
+  @Get('range')
+  async getByDateRange(
+    @Query('userId') userId: string,
+    @Query('start') start: string,
+    @Query('end') end: string,
+  ) {
+    return this.appointmentsService.getAppointmentsByDateRange(userId, start, end);
   }
 
   //! VOIR UN SEUL RDV ✅

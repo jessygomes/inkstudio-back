@@ -63,7 +63,7 @@ export class AuthService {
           to: email,
           subject: "Confirmez votre adresse email",
           html: `
-            <h2>Bonjour ${existingUser.name} !</h2>
+            <h2>Bonjour ${existingUser.salonName} !</h2>
             <p>Vous avez essayé de vous connecter, mais votre adresse email n'est pas encore vérifiée.</p>
             <p>Veuillez confirmer votre adresse email en cliquant sur le lien ci-dessous :</p>
             <a href="${confirmationUrl}">Confirmer mon email</a>
@@ -89,7 +89,7 @@ export class AuthService {
   //! INSCRIPTION
   async register({ registerBody }: { registerBody: CreateUserDto }) {
     try {
-      const { email, name, password } = registerBody;
+      const { email, salonName, password } = registerBody;
 
       const existingUser = await this.prisma.user.findUnique({
         where: {
@@ -108,7 +108,7 @@ export class AuthService {
       await this.prisma.user.create({
         data: {
           email,
-          name,
+          salonName,
           password: hashedPassword,
         },
       });
@@ -133,7 +133,7 @@ export class AuthService {
         to: email,
         subject: "Confirmez votre adresse email",
         html: `
-          <h2>Bienvenue ${name} !</h2>
+          <h2>Bienvenue ${salonName} !</h2>
           <p>Merci de vous être inscrit sur InkStudio.</p>
           <p>Veuillez confirmer votre adresse email en cliquant sur le lien ci-dessous :</p>
           <a href="${confirmationUrl}">Confirmer mon email</a>
@@ -248,7 +248,7 @@ export class AuthService {
     
     const access_token = this.jwtService.sign(payload);
     console.log("🔑 Token généré avec userId :", userId);
-  console.log("📦 Payload utilisé :", payload);
+    console.log("📦 Payload utilisé :", payload);
     console.log('🔑 Token généré :', access_token);
     
     return {
