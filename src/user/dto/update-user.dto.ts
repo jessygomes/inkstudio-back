@@ -32,6 +32,7 @@ export class UpdateUserDto {
   description: string;
 
   @IsString()
+  @IsOptional()
   salonHours: string;
 
   @IsOptional()

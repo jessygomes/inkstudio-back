@@ -20,4 +20,9 @@ export class UserController {
   updateUser(@Param('userId') userId: string, @Body() userBody: UpdateUserDto) { // On récupère le paramètre dynamique userId
     return this.userService.updateUser({userId, userBody}); // On appelle la méthode getUserById du service UserService
   }
+
+  @Patch(":userId/hours")
+  updateHoursSalon(@Param('userId') userId: string,  @Body() salonHours: Record<string, { start: string; end: string } | null>) { // On récupère le paramètre dynamique userId
+    return this.userService.updateHoursSalon({userId, salonHours: JSON.stringify(salonHours),}); // On appelle la méthode getUserById du service UserService
+  }
 }

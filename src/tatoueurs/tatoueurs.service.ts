@@ -10,7 +10,7 @@ export class TatoueursService {
   //! CREER UN TATOUEUR
   async create({ tatoueurBody }: {tatoueurBody: CreateTatoueurDto}) {
     try {
-      const { name, img, description, phone, instagram, userId } = tatoueurBody;
+      const { name, img, description, phone, instagram, hours, userId } = tatoueurBody;
 
       // Créer le tatoueur
       const newTatoueur = await this.prisma.tatoueur.create({
@@ -20,6 +20,7 @@ export class TatoueursService {
           description,
           phone,
           instagram,
+          hours,
           userId,
         },
       });
@@ -91,7 +92,7 @@ export class TatoueursService {
   //! MODIFIER UN TATOUEUR
   async updateTatoueur(id: string, tatoueurBody: CreateTatoueurDto) {
     try {
-      const { name, img, description, phone, instagram } = tatoueurBody;
+      const { name, img, description, phone, instagram, hours } = tatoueurBody;
 
       const updatedTatoueur = await this.prisma.tatoueur.update({
         where: {
@@ -103,6 +104,7 @@ export class TatoueursService {
           description,
           phone,
           instagram,
+          hours,
         },
       });
 

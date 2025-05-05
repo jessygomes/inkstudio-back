@@ -45,7 +45,23 @@ export class UserService {
         city: true,
         postalCode: true,
         salonHours: true,
+        instagram: true,
+        facebook: true,
+        tiktok: true,
+        website: true,
+        description: true,
+        image: true,
         role: true,
+        Tatoueur: {
+          select: {
+            id: true,
+            name: true,
+            img: true,
+            description: true,
+            phone: true,
+            hours: true,
+          }
+        }
       },
     })
 
@@ -53,7 +69,7 @@ export class UserService {
   }
 
   //! UPDATE USER
-  async updateUser({userId, userBody} : {userId: string; userBody: { salonName: string; firstName: string; lastName: string; phone: string; address: string; city: string; postalCode: string; salonHours: string; }}) {
+  async updateUser({userId, userBody} : {userId: string; userBody: { salonName: string; firstName: string; lastName: string; phone: string; address: string; city: string; postalCode: string; instagram: string; facebook: string; tiktok: string; website: string; description: string; }}) {
     const user = await this.prisma.user.update({
       where: {
         id: userId,
@@ -66,7 +82,25 @@ export class UserService {
         address: userBody.address,
         city: userBody.city,
         postalCode: userBody.postalCode,
-        salonHours: userBody.salonHours,
+        instagram: userBody.instagram,
+        facebook: userBody.facebook,
+        tiktok: userBody.tiktok,
+        website: userBody.website,
+        description: userBody.description,
+      },
+    }) 
+
+    return user;
+  }
+
+  //! UPDATE HOURS SALON
+  async updateHoursSalon({userId, salonHours} : {userId: string; salonHours: string}) {
+    const user = await this.prisma.user.update({
+      where: {
+        id: userId,
+      },
+      data: {
+        salonHours: salonHours,
       },
     }) 
 
