@@ -1,11 +1,15 @@
 /* eslint-disable prettier/prettier */
+import { Type } from 'class-transformer';
 import {
   IsDateString,
   IsEmail,
   IsEnum,
+  IsNotEmpty,
   IsOptional,
   IsString,
+  ValidateNested,
 } from 'class-validator';
+import { TattooDetailDto } from './tattoo-detail.dto';
 
 export enum PrestationType {
   TATTOO = 'TATTOO',
@@ -14,8 +18,16 @@ export enum PrestationType {
   PROJET = 'PROJET',
 }
 
+export enum AppointmentStatus {
+  PENDING = 'PENDING',
+  CONFIRMED = 'CONFIRMED',
+  DECLINED = 'DECLINED',
+  CANCELED = 'CANCELED',
+}
+
 export class UpdateAppointmentDto {
   @IsString()
+  @IsNotEmpty()
   userId: string;
 
   @IsString()
@@ -42,11 +54,20 @@ export class UpdateAppointmentDto {
   @IsOptional()
   clientEmail: string;
 
-  @IsEmail()
+  @IsString()
   @IsOptional()
   clientPhone: string;
 
   @IsString()
   @IsOptional()
   tatoueurId: string;
+
+  @IsString()
+  @IsOptional()
+  status: AppointmentStatus;
+
+  @ValidateNested()
+  @Type(() => TattooDetailDto) // C'EST CA QUI MANQUE
+  @IsOptional()
+  tattooDetail?: TattooDetailDto;
 }

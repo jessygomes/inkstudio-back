@@ -2,6 +2,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CreateAppointmentDto, PrestationType } from './dto/create-appointment.dto';
+import { UpdateAppointmentDto } from './dto/update-appointment.dto';
 
 
 @Injectable()
@@ -206,9 +207,12 @@ export class AppointmentsService {
   }
 
   // ! MODIFIER UN RDV
-  async updateAppointment(id: string, rdvBody: CreateAppointmentDto) {
+  async updateAppointment(id: string, rdvBody: UpdateAppointmentDto) {
     try {
-      const { title, prestation, start, end, clientName, clientEmail, tatoueurId } = rdvBody;
+      const { title, prestation, start, end, clientName, clientEmail, clientPhone, tatoueurId, status } = rdvBody;
+      const tattooDetail: Partial<UpdateAppointmentDto['tattooDetail']> = rdvBody.tattooDetail || {};
+      const { description = '', zone = '', size = '', colorStyle = '', reference = '', sketch = '', estimatedPrice = 0, price = 0 } = tattooDetail;
+      console.log("🧾 Payload reçu :", rdvBody);
 
       // Vérifier si le tatoueur existe
       const artist = await this.prisma.tatoueur.findUnique({
@@ -236,9 +240,39 @@ export class AppointmentsService {
           end: new Date(end),
           clientName,
           clientEmail,
+          clientPhone,
           tatoueurId,
+          status
         },
       });
+
+      // Mettre à jour les détails du tatouage s'ils existent
+      if (tattooDetail) {
+        await this.prisma.tattooDetail.upsert({
+          where: { appointmentId: id },
+          update: {
+            description,
+            zone,
+            size,
+            colorStyle,
+            reference,
+            sketch,
+            estimatedPrice,
+            price,
+          },
+          create: {
+            appointmentId: id,
+            description,
+            zone,
+            size,
+            colorStyle,
+            reference,
+            sketch,
+            estimatedPrice,
+            price,
+          },
+        });
+      }
 
       return {
         error: false,
@@ -253,6 +287,56 @@ export class AppointmentsService {
       };
     }
   }
+
+  //! CONFIRMER UN RDV
+  async confirmAppointment(id: string) {
+    try {
+      const appointment = await this.prisma.appointment.update({
+        where: {
+          id,
+        },
+        data: {
+          status: 'CONFIRMED',
+        },
+      });
+      return {
+        error: false,
+        message: 'Rendez-vous confirmé.',
+        appointment: appointment,
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
+
+    //! ANNULER UN RDV
+    async cancelAppointment(id: string) {
+      try {
+        const appointment = await this.prisma.appointment.update({
+          where: {
+            id,
+          },
+          data: {
+            status: 'CANCELED',
+          },
+        });
+        return {
+          error: false,
+          message: 'Rendez-vous annulé.',
+          appointment: appointment,
+        };
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+        return {
+          error: true,
+          message: errorMessage,
+        };
+      }
+    }
 
   //! VOIR LES RDV PAR TATOUEUR
   async getTatoueurAppointments(tatoueurId: string) {

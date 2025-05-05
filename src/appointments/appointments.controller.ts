@@ -48,6 +48,18 @@ export class AppointmentsController {
     return await this.appointmentsService.updateAppointment(appointmentId, rdvBody);
   }
 
+  //! CONFIRMER UN RDV ✅
+  @Patch('confirm/:id')
+  async confirmAppointment(@Param('id') appointmentId: string) {
+    return await this.appointmentsService.confirmAppointment(appointmentId);
+  }
+
+  //! ANNULER UN RDV ✅
+  @Patch('cancel/:id')
+  async cancelAppointment(@Param('id') appointmentId: string) {
+    return await this.appointmentsService.cancelAppointment(appointmentId);
+  }
+
   //! VOIR TOUS LES RDV D'UN TATOUEUR ✅
   @Get('tatoueur/:id')
   async getAppointmentsByTatoueurId(@Param('id') tatoueurId: string) {
