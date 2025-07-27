@@ -2,7 +2,6 @@
 import { Type } from 'class-transformer';
 import {
   IsDateString,
-  IsEmail,
   IsEnum,
   IsNotEmpty,
   IsOptional,
@@ -46,25 +45,29 @@ export class UpdateAppointmentDto {
   @IsOptional()
   end: string;
 
-  @IsString()
-  @IsOptional()
-  clientName: string;
+  // @IsString()
+  // @IsNotEmpty()
+  // clientFirstname: string;
 
-  @IsEmail()
-  @IsOptional()
-  clientEmail: string;
+  // @IsString()
+  // @IsNotEmpty()
+  // clientLastname: string;
 
-  @IsString()
-  @IsOptional()
-  clientPhone: string;
+  // @IsEmail()
+  // @IsOptional()
+  // clientEmail: string;
+
+  // @IsString()
+  // @IsOptional()
+  // clientPhone: string;
 
   @IsString()
   @IsOptional()
   tatoueurId: string;
 
-  @IsString()
-  @IsOptional()
-  status: AppointmentStatus;
+  // @IsString()
+  // @IsOptional()
+  // status: AppointmentStatus;
 
   @ValidateNested()
   @Type(() => TattooDetailDto) // C'EST CA QUI MANQUE

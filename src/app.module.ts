@@ -18,6 +18,7 @@ import { TattooHistoryController } from './tattoo-history/tattoo-history.control
 import { TattooHistoryModule } from './tattoo-history/tattoo-history.module';
 import { AftercareModule } from './aftercare/aftercare.module';
 import { TimeSlotModule } from './time-slot/time-slot.module';
+import { MailService } from './mailer.service';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { TimeSlotModule } from './time-slot/time-slot.module';
     AppointmentsService,
     ClientsService,
     TattooHistoryService,
+    MailService,
   ],
 })
 export class AppModule {}

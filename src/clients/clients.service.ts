@@ -2,7 +2,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CreateClientDto } from './dto/create-client.dto';
-import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class ClientsService {
@@ -102,89 +101,85 @@ export class ClientsService {
     }
   }
 
-  //! CREER UN CLIENT VIA RDV
-  async createClientFromAppointment(appointmentId: string, userId: string) {
-    // Récupérer le rendez-vous
-    const appointment = await this.prisma.appointment.findUnique({
-      where: { id: appointmentId },
-      include: {
-        tattooDetail: true,
-      }
-    })
+  // //! CREER UN CLIENT VIA RDV
+  // async createClientFromAppointment(appointmentId: string, userId: string) {
+  //   // Récupérer le rendez-vous
+  //   const appointment = await this.prisma.appointment.findUnique({
+  //     where: { id: appointmentId },
+  //     include: {
+  //       tattooDetail: true,
+  //     }
+  //   })
 
-    if (!appointment) {
-      return {
-        error: true,
-        message: 'Rendez-vous introuvable.',
-      };
-    }
+  //   if (!appointment) {
+  //     return {
+  //       error: true,
+  //       message: 'Rendez-vous introuvable.',
+  //     };
+  //   }
 
-    // Vérifier si le client existe déjà
-    const existingClient = await this.prisma.client.findUnique({
-      where: {
-        email: appointment.clientEmail,
-      },
-    });
+  //   // Vérifier si le client existe déjà
+  //   const existingClient = await this.prisma.client.findUnique({
+  //     where: {
+  //       email: appointment.clientEmail,
+  //     },
+  //   });
 
-    if (existingClient) {
-      return {
-        error: false,
-        message: 'Client déjà existant.',
-        client: existingClient,
-      };
-    }
+  //   if (existingClient) {
+  //     return {
+  //       error: false,
+  //       message: 'Client déjà existant.',
+  //       client: existingClient,
+  //     };
+  //   }
 
-    // Split du nom
-    const [firstName, ...rest] = appointment.clientName.split(" ");
-    const lastName = rest.join(" ") || "";
+  //   // Préparer proprement les infos du TattooDetail s’il existe
+  //   let tattooDetailData: Prisma.TattooDetailCreateNestedOneWithoutClientInput | undefined;
 
-    // Préparer proprement les infos du TattooDetail s’il existe
-    let tattooDetailData: Prisma.TattooDetailCreateNestedOneWithoutClientInput | undefined;
+  //   if (appointment.tattooDetail) {
+  //     const detail = appointment.tattooDetail;
 
-    if (appointment.tattooDetail) {
-      const detail = appointment.tattooDetail;
+  //     tattooDetailData = {
+  //       create: {
+  //         description: detail.description,
+  //         zone: detail.zone,
+  //         size: detail.size,
+  //         colorStyle: detail.colorStyle,
+  //         reference: detail.reference ?? undefined,
+  //         sketch: detail.sketch ?? undefined,
+  //         estimatedPrice: detail.estimatedPrice ?? undefined,
+  //       },
+  //     };
+  //   }
 
-      tattooDetailData = {
-        create: {
-          description: detail.description,
-          zone: detail.zone,
-          size: detail.size,
-          colorStyle: detail.colorStyle,
-          reference: detail.reference ?? undefined,
-          sketch: detail.sketch ?? undefined,
-          estimatedPrice: detail.estimatedPrice ?? undefined,
-        },
-      };
-    }
+  //   // Créer le client
+  //   const client = await this.prisma.client.create({
+  //     data: {
+  //       userId,
+  //       firstName: appointment.clientFirstname,
+  //       lastName : appointment.clientLastname,
+  //       email: appointment.clientEmail,
+  //       phone: appointment.clientPhone || "", // Si vide, valeur par défaut
+  //       birthDate: appointment.clientBirthDate ?? new Date("2000-01-01"),
+  //       address: "",
+  //       tattooDetail: tattooDetailData,
+  //     },
+  //   });
 
-    // Créer le client
-    const client = await this.prisma.client.create({
-      data: {
-        userId,
-        firstName,
-        lastName,
-        email: appointment.clientEmail,
-        phone: appointment.clientPhone || "", // Si vide, valeur par défaut
-        birthDate: appointment.clientBirthDate ?? new Date("2000-01-01"),
-        address: "",
-        tattooDetail: tattooDetailData,
-      },
-    });
+  //   // Mettre à jour le RDV pour le lier au client
+  //   await this.prisma.appointment.update({
+  //     where: { id: appointmentId },
+  //     data: {
+  //       clientId: client.id,
+  //     },
+  //   });
 
-    // Mettre à jour le RDV pour le lier au client
-    await this.prisma.appointment.update({
-      where: { id: appointmentId },
-      data: {
-        clientId: client.id,
-      },
-    });
-
-    return {
-      error: false,
-      message: "Fiche client créée à partir du rendez-vous.",
-      client,
-    };
-  }
+  //   return {
+  //     error: false,
+  //     message: "Fiche client créée à partir du rendez-vous.",
+  //     client,
+  //   };
+  // }
 
   //! VOIR UN SEUL CLIENT
   async getClientById(clientId: string) {
@@ -242,6 +237,50 @@ export class ClientsService {
       return {
         error: true,
         message: errorMessage,
+      };
+    }
+  }
+
+    //! SEARCH CLIENTS BY NAME OR EMAIL (for reservation form)
+  async searchClients(query: string, userId: string) {
+    try {
+      console.log('Searching clients with query:', query, 'for userId:', userId);
+
+      const clients = await this.prisma.client.findMany({
+        where: {
+          AND: [
+            { userId },
+            {
+              OR: [
+                { firstName: { contains: query, mode: 'insensitive' } },
+                { lastName: { contains: query, mode: 'insensitive' } },
+                { email: { contains: query, mode: 'insensitive' } },
+              ],
+            },
+          ],
+        },
+        take: 10,
+      });
+
+      if (!clients || clients.length === 0) {
+        return {
+          error: false,
+          message: 'Aucun client trouvé.',
+          clients: [],
+        };
+      }
+
+      return {
+        error: false,
+        message: 'Clients trouvés avec succès.',
+        clients,
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+        clients: [],
       };
     }
   }

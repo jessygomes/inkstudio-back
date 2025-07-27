@@ -7,12 +7,13 @@ import {
   Param,
   Patch,
   Post,
-  Request,
-  UseGuards,
+  Query,
+  // Request,
+  // UseGuards,
 } from '@nestjs/common';
 import { ClientsService } from './clients.service';
 import { CreateClientDto } from './dto/create-client.dto';
-import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
+// import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 
 @Controller('clients')
 export class ClientsController {
@@ -25,12 +26,12 @@ export class ClientsController {
   }
 
   //! CREER UN CLIENT VIA RDV  (via le bearer token, à tester en front) ✅
-  @Post('from-appointment/:id')
-  @UseGuards(JwtAuthGuard)
-  async createFromAppointment(@Param("id") id: string, @Request() req: { user: { userId: string } }) {
-    const userId: string = req.user.userId;
-    return this.clientsService.createClientFromAppointment(id, userId);
-  }
+  // @Post('from-appointment/:id')
+  // @UseGuards(JwtAuthGuard)
+  // async createFromAppointment(@Param("id") id: string, @Request() req: { user: { userId: string } }) {
+  //   const userId: string = req.user.userId;
+  //   return this.clientsService.createClientFromAppointment(id, userId);
+  // }
 
   //! VOIR TOUS LES CLIENTS 
   // @Get()
@@ -42,6 +43,16 @@ export class ClientsController {
   @Get('salon/:id')
   getClientsBySalon(@Param('id') id: string) {
     return this.clientsService.getClientsBySalon(id);
+  }
+
+  //! RECHERCHER UN CLIENT PAR NOM OU EMAIL (pour le formulaire de réservation) ✅
+  @Get('search')
+  async getSearchClient(
+    @Query('query') query: string,
+    @Query('userId') userId: string
+  ) {
+    const clients = await this.clientsService.searchClients(query, userId);
+    return clients; // même si []
   }
 
   //! VOIR UN SEUL CLIENT ✅

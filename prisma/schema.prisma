@@ -107,10 +107,11 @@ model Appointment {
   end             DateTime
   allDay          Boolean            @default(false)
   status          AppointmentStatus  @default(PENDING)
-  clientName      String
-  clientEmail     String
-  clientPhone     String?
-  clientBirthDate DateTime?
+  // clientFirstname      String
+  // clientLastname       String
+  // clientEmail     String
+  // clientPhone     String?
+  // clientBirthDate DateTime?
 
   // Relation avec User (nouvelle relation)
   user            User               @relation(fields: [userId], references: [id])
@@ -159,7 +160,7 @@ model Client {
   lastName            String
   email               String   @unique
   phone               String
-  birthDate           DateTime
+  birthDate           DateTime?
   address             String?
 
   // Lien vers les RDV (facultatif)

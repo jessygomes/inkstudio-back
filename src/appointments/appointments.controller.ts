@@ -21,6 +21,7 @@ export class AppointmentsController {
     return await this.appointmentsService.getAllAppointments(userId);
   }
 
+    //! VOIR TOUS LES RDV PAR DATE ✅
   @Get('range')
   async getByDateRange(
     @Query('userId') userId: string,
@@ -29,6 +30,16 @@ export class AppointmentsController {
   ) {
     return this.appointmentsService.getAppointmentsByDateRange(userId, start, end);
   }
+
+  //! RECUPERER LES RDV D'UN TATOUEUR PAR DATE ✅
+  @Get('tatoueur-range')
+async getAppointmentsByTatoueurRange(
+  @Query('tatoueurId') tatoueurId: string,
+  @Query('start') start: string,
+  @Query('end') end: string,
+) {
+  return this.appointmentsService.getAppointmentsByTatoueurRange(tatoueurId, start, end);
+}
 
   //! VOIR UN SEUL RDV ✅
   @Get(':id')

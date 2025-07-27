@@ -3,17 +3,18 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CreateAppointmentDto, PrestationType } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
+import { MailService } from 'src/mailer.service';
 
 
 @Injectable()
 export class AppointmentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly mailService: MailService) {}
 
   //! CREER UN RDV
  async create({ rdvBody }: {rdvBody: CreateAppointmentDto}) {
   console.log("🧾 Payload reçu :", rdvBody);
    try {
-      const { userId, title, prestation, start, end, clientName, clientEmail, clientPhone, tatoueurId } = rdvBody;
+      const { userId, title, prestation, start, end, clientFirstname, clientLastname, clientEmail, clientPhone, tatoueurId } = rdvBody;
 
         // Vérifier si le tatoueur existe
         const artist = await this.prisma.tatoueur.findUnique({
@@ -49,6 +50,26 @@ export class AppointmentsService {
         };
       }
 
+      let client = await this.prisma.client.findFirst({
+        where: {
+          email: clientEmail,
+          userId: userId, // Pour que chaque salon ait ses propres clients
+        },
+      });
+
+      if (!client) {
+        // Étape 2 : Créer le client s’il n’existe pas
+        client = await this.prisma.client.create({
+          data: {
+            firstName: clientFirstname,
+            lastName: clientLastname,
+            email: clientEmail,
+            phone: clientPhone || "",
+            userId,
+          },
+        });
+      }
+
       if (prestation === PrestationType.PROJET || prestation === PrestationType.TATTOO || prestation === PrestationType.PIERCING || prestation === PrestationType.RETOUCHE) {
         const newAppointment = await this.prisma.appointment.create({
           data: {
@@ -57,16 +78,15 @@ export class AppointmentsService {
             prestation,
             start: new Date(start),
             end: new Date(end),
-            clientName,
-            clientEmail,
-            clientPhone,
             tatoueurId,
+            clientId: client.id,
           },
         });
       
         const tattooDetail = await this.prisma.tattooDetail.create({
           data: {
             appointmentId: newAppointment.id,
+            clientId: client.id,
             description: rdvBody.description || '',
             zone: rdvBody.zone || '',
             size: rdvBody.size || '',
@@ -94,11 +114,28 @@ export class AppointmentsService {
           prestation,
           start: new Date(start),
           end: new Date(end),
-          clientName,
-          clientEmail,
           tatoueurId,
+          clientId: client.id,
         },
       });
+
+      // Envoi du mail de confirmation
+      await this.mailService.sendMail({
+          to: client.email,
+          subject: "Confirmez votre adresse email",
+          html: `
+            <h2>Bonjour ${client.firstName} ${client.lastName} !</h2>
+            <p>Votre demande de rendez-vous a été reçue.</p>
+            <p>Vous allez recevoir une confirmation très bientôt.</p>
+            <p>Merci de votre confiance !</p>
+            <p>Date et heure du rendez-vous : ${newAppointment.start.toLocaleString()}</p>
+            <p>Nom du tatoueur : ${artist.name}</p>
+            <p>Prestation : ${newAppointment.prestation}</p>
+            <p>Si vous avez des questions, n'hésitez pas à nous contacter.</p>
+            <p>À bientôt !</p>
+            <p>Nom du salon</p>
+          `,
+        });
 
       return {
         error: false,
@@ -151,6 +188,14 @@ export class AppointmentsService {
           },
         },
         include: {
+          client: {
+            select: {
+              firstName: true,
+              lastName: true,
+              email: true,
+              phone: true,
+            },
+          },
           tattooDetail: true,
           tatoueur: true,
         },
@@ -165,6 +210,36 @@ export class AppointmentsService {
       };
     }
   }
+
+    //! RECUPERER LES RDV D'UN TATOUEUR PAR DATE 
+  async getAppointmentsByTatoueurRange(tatoueurId: string, startDate: string, endDate: string) {
+  try {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    const appointments = await this.prisma.appointment.findMany({
+      where: {
+        tatoueurId,
+        start: {
+          gte: start,
+          lt: end,
+        },
+      },
+      select: {
+        start: true,
+        end: true,
+      },
+    });
+
+    return appointments ?? [];
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+    return {
+      error: true,
+      message: errorMessage,
+    };
+  }
+}
 
     //! VOIR UN SEUL RDV
   async getOneAppointment(id: string) {
@@ -209,10 +284,26 @@ export class AppointmentsService {
   // ! MODIFIER UN RDV
   async updateAppointment(id: string, rdvBody: UpdateAppointmentDto) {
     try {
-      const { title, prestation, start, end, clientName, clientEmail, clientPhone, tatoueurId, status } = rdvBody;
+      const { title, prestation, start, end, tatoueurId } = rdvBody;
       const tattooDetail: Partial<UpdateAppointmentDto['tattooDetail']> = rdvBody.tattooDetail || {};
       const { description = '', zone = '', size = '', colorStyle = '', reference = '', sketch = '', estimatedPrice = 0, price = 0 } = tattooDetail;
       console.log("🧾 Payload reçu :", rdvBody);
+
+      // Récupérer le rendez-vous existant avec les informations du client
+      const existingAppointment = await this.prisma.appointment.findUnique({
+        where: { id },
+        include: {
+          client: true,
+          tatoueur: true,
+        },
+      });
+
+      if (!existingAppointment) {
+        return {
+          error: true,
+          message: 'Rendez-vous introuvable.',
+        };
+      }
 
       // Vérifier si le tatoueur existe
       const artist = await this.prisma.tatoueur.findUnique({
@@ -238,12 +329,12 @@ export class AppointmentsService {
           prestation,
           start: new Date(start),
           end: new Date(end),
-          clientName,
-          clientEmail,
-          clientPhone,
           tatoueurId,
-          status
         },
+        include: {
+        client: true,
+        tatoueur: true,
+      },
       });
 
       // Mettre à jour les détails du tatouage s'ils existent
@@ -274,6 +365,29 @@ export class AppointmentsService {
         });
       }
 
+      // Vérifier si les horaires ont changé
+      const originalStart = existingAppointment.start.toISOString();
+      const originalEnd = existingAppointment.end.toISOString();
+      const newStart = new Date(start).toISOString();
+      const newEnd = new Date(end).toISOString();
+
+      // Envoi d'un mail de confirmation si les horaires ont changé
+      if ((originalStart !== newStart || originalEnd !== newEnd) && updatedAppointment.client) {
+        await this.mailService.sendMail({
+          to: updatedAppointment.client.email,
+          subject: "Rendez-vous modifié",
+          html: `
+            <h2>Bonjour ${updatedAppointment.client.firstName} ${updatedAppointment.client.lastName} !</h2>
+            <p>Votre rendez-vous a été modifié.</p>
+            <p>Nouvelle date et heure : ${updatedAppointment.start.toLocaleString()} - ${updatedAppointment.end.toLocaleString()}</p>
+            <p>Nom du tatoueur : ${artist.name}</p>
+            <p>Prestation : ${updatedAppointment.prestation}</p>
+            <p>Si vous avez des questions, n'hésitez pas à nous contacter.</p>
+            <p>À bientôt !</p>
+          `,
+        });
+      }
+
       return {
         error: false,
         message: 'Rendez-vous mis à jour avec succès.',
@@ -291,6 +405,22 @@ export class AppointmentsService {
   //! CONFIRMER UN RDV
   async confirmAppointment(id: string) {
     try {
+    // Récupérer le rendez-vous avec les informations du client et du tatoueur
+    const existingAppointment = await this.prisma.appointment.findUnique({
+      where: { id },
+      include: {
+        client: true,
+        tatoueur: true,
+      },
+    });
+
+    if (!existingAppointment) {
+      return {
+        error: true,
+        message: 'Rendez-vous introuvable.',
+      };
+    }
+
       const appointment = await this.prisma.appointment.update({
         where: {
           id,
@@ -298,7 +428,33 @@ export class AppointmentsService {
         data: {
           status: 'CONFIRMED',
         },
+        include: {
+          client: true,
+          tatoueur: true,
+      },
       });
+
+      if (appointment.client) {
+        await this.mailService.sendMail({
+          to: appointment.client.email,
+          subject: "Rendez-vous confirmé",
+          html: `
+            <h2>Bonjour ${appointment.client.firstName} ${appointment.client.lastName} !</h2>
+            <p>Votre rendez-vous a été confirmé avec succès.</p>
+            <p><strong>Détails du rendez-vous :</strong></p>
+            <ul>
+              <li>Date et heure : ${appointment.start.toLocaleString()} - ${appointment.end.toLocaleString()}</li>
+              <li>Prestation : ${appointment.prestation}</li>
+              <li>Tatoueur : ${appointment.tatoueur?.name || 'Non assigné'}</li>
+              <li>Titre : ${appointment.title}</li>
+            </ul>
+            <p>Nous avons hâte de vous voir !</p>
+            <p>Si vous avez des questions, n'hésitez pas à nous contacter.</p>
+            <p>À bientôt !</p>
+          `,
+        });
+    }
+
       return {
         error: false,
         message: 'Rendez-vous confirmé.',
@@ -316,14 +472,57 @@ export class AppointmentsService {
     //! ANNULER UN RDV
     async cancelAppointment(id: string) {
       try {
-        const appointment = await this.prisma.appointment.update({
-          where: {
-            id,
-          },
-          data: {
-            status: 'CANCELED',
+        const existingAppointment = await this.prisma.appointment.findUnique({
+          where: { id },
+          include: {
+            client: true,
+            tatoueur: true,
           },
         });
+
+    if (!existingAppointment) {
+      return {
+        error: true,
+        message: 'Rendez-vous introuvable.',
+      };
+    }
+
+    const appointment = await this.prisma.appointment.update({
+      where: {
+        id,
+      },
+      data: {
+        status: 'CANCELED',
+      },
+      include: {
+        client: true,
+        tatoueur: true,
+      },
+    });
+
+            // Envoyer un email d'annulation au client (si le client existe)
+    if (appointment.client) {
+      await this.mailService.sendMail({
+        to: appointment.client.email,
+        subject: "Rendez-vous annulé",
+        html: `
+          <h2>Bonjour ${appointment.client.firstName} ${appointment.client.lastName} !</h2>
+          <p>Nous sommes désolés de vous informer que votre rendez-vous a été annulé.</p>
+          <p><strong>Détails du rendez-vous annulé :</strong></p>
+          <ul>
+            <li>Date et heure : ${appointment.start.toLocaleString()} - ${appointment.end.toLocaleString()}</li>
+            <li>Prestation : ${appointment.prestation}</li>
+            <li>Tatoueur : ${appointment.tatoueur?.name || 'Non assigné'}</li>
+            <li>Titre : ${appointment.title}</li>
+          </ul>
+          <p>N'hésitez pas à nous contacter pour reprogrammer votre rendez-vous ou pour toute question.</p>
+          <p>Nous nous excusons pour la gêne occasionnée.</p>
+          <p>Cordialement,</p>
+          <p>L'équipe du salon</p>
+        `,
+      });
+    }
+
         return {
           error: false,
           message: 'Rendez-vous annulé.',

@@ -1,6 +1,7 @@
 /* eslint-disable prettier/prettier */
 import { Injectable } from '@nestjs/common';
 import { addMinutes, isBefore } from 'date-fns';
+import { PrismaService } from 'src/database/prisma.service';
 
 type SalonHours = {
   [key: string]: {
@@ -11,6 +12,7 @@ type SalonHours = {
 
 @Injectable()
 export class TimeSlotService {
+  constructor(private readonly prisma: PrismaService) {}
   generateTimeSlotsForDate(
     date: Date,
     salonHoursJson: string,
@@ -66,5 +68,15 @@ export class TimeSlotService {
     }
 
     return slots;
+  }
+
+  async generateTatoueurTimeSlots(date: Date, tatoueurId: string) {
+    const tatoueur = await this.prisma.tatoueur.findUnique({
+      where: { id: tatoueurId },
+    });
+
+    if (!tatoueur || !tatoueur.hours) return [];
+
+    return this.generateTimeSlotsForDate(date, tatoueur.hours);
   }
 }

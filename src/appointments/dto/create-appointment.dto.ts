@@ -36,7 +36,11 @@ export class CreateAppointmentDto {
 
   @IsString()
   @IsNotEmpty()
-  clientName: string;
+  clientFirstname: string;
+
+    @IsString()
+  @IsNotEmpty()
+  clientLastname: string;
 
   @IsEmail()
   @IsNotEmpty()

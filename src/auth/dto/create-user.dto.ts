@@ -7,7 +7,8 @@ export class CreateUserDto {
   @IsEmail({}, { message: 'Vous devez fournir une adresse email valide' })
   email: string;
 
-  @IsString({ message: 'Vous devez fournir un nom' })
+  @IsString({ message: 'Vous devez fournir un nom de salon' })
+  @IsNotEmpty({ message: 'Le nom du salon est requis' })
   salonName: string;
 
   @IsNotEmpty()

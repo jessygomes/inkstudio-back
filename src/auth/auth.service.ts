@@ -88,6 +88,7 @@ export class AuthService {
 
   //! INSCRIPTION
   async register({ registerBody }: { registerBody: CreateUserDto }) {
+    console.log("📝 Payload reçu :", registerBody);
     try {
       const { email, salonName, password } = registerBody;
 
