@@ -14,6 +14,7 @@ export class CreateClientDto {
   @IsString()
   phone: string;
 
+  @IsOptional()
   @IsDateString()
   birthDate: string;
 
@@ -33,10 +34,10 @@ export class CreateClientDto {
   @IsOptional() @IsString() sketch?: string;
   @IsOptional() @IsNumber() estimatedPrice?: number;
 
-    // Historique médical
-    @IsOptional() @IsString() allergies?: string;
-    @IsOptional() @IsString() healthIssues?: string;
-    @IsOptional() @IsString() medications?: string;
-    @IsOptional() @IsBoolean() pregnancy?: boolean;
-    @IsOptional() @IsString() tattooHistory?: string;
+  // Historique médical
+  @IsOptional() @IsString() allergies?: string;
+  @IsOptional() @IsString() healthIssues?: string;
+  @IsOptional() @IsString() medications?: string;
+  @IsOptional() @IsBoolean() pregnancy?: boolean;
+  @IsOptional() @IsString() tattooHistory?: string;
 }

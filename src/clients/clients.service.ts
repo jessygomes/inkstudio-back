@@ -39,7 +39,7 @@ export class ClientsService {
           lastName,
           email,
           phone,
-          birthDate: new Date(birthDate),
+          birthDate: birthDate ? new Date(birthDate) : undefined,
           address,
           userId,
         },
@@ -214,7 +214,7 @@ export class ClientsService {
       const clients = await this.prisma.client.findMany({
         where: { userId },
         include: {
-          tattooDetail: true,
+          appointments: true,
           medicalHistory: true,
           tattooHistory: true,
           aftercareRecords: true,
@@ -288,29 +288,91 @@ export class ClientsService {
   //! MODIFIER UN CLIENT
   async updateClient(clientId: string, clientBody: CreateClientDto) {
     try {
-      const { firstName, lastName, email, phone, birthDate, address } = clientBody;
+      const { firstName, lastName, email, phone, birthDate, address, allergies,
+        healthIssues,
+        medications,
+        pregnancy,
+        tattooHistory, } = clientBody;
+
+      // Préparer les données à mettre à jour
+      const updateData: {
+        firstName: string;
+        lastName: string;
+        email: string;
+        phone: string;
+        address: string;
+        birthDate?: Date;
+      } = {
+        firstName,
+        lastName,
+        email,
+        phone,
+        address,
+      };
+
+      // Ajouter birthDate seulement si elle est fournie et valide
+      if (birthDate && birthDate.trim() !== '') {
+        updateData.birthDate = new Date(birthDate);
+      }
 
       const updatedClient = await this.prisma.client.update({
         where: { id: clientId },
-        data: {
-          firstName,
-          lastName,
-          email,
-          phone,
-          birthDate: new Date(birthDate),
-          address,
-        },
+        data: updateData,
       });
+
+      const result: any = {
+        error: false,
+        message: 'Client mis à jour avec succès.',
+        client: updatedClient,
+      };
+
+      // Gérer l'historique médical : créer ou mettre à jour
+      const hasMedicalData =
+        allergies || healthIssues || medications || pregnancy !== undefined || tattooHistory;
+
+      if (hasMedicalData) {
+        // Vérifier si un historique médical existe déjà
+        const existingMedicalHistory = await this.prisma.medicalHistory.findUnique({
+          where: { clientId: updatedClient.id },
+        });
+
+        if (existingMedicalHistory) {
+          // Mettre à jour l'historique médical existant
+          const updatedMedicalHistory = await this.prisma.medicalHistory.update({
+            where: { clientId: updatedClient.id },
+            data: {
+              allergies,
+              healthIssues,
+              medications,
+              pregnancy: pregnancy ?? false,
+              tattooHistory,
+            },
+          });
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+          result.medicalHistory = updatedMedicalHistory;
+        } else {
+          // Créer un nouvel historique médical
+          const newMedicalHistory = await this.prisma.medicalHistory.create({
+            data: {
+              clientId: updatedClient.id,
+              allergies,
+              healthIssues,
+              medications,
+              pregnancy: pregnancy ?? false,
+              tattooHistory,
+            },
+          });
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+          result.medicalHistory = newMedicalHistory;
+        }
+      }
 
       if (!updatedClient) {
         throw new Error('Client introuvable.');
       }
 
-      return {
-        error: false,
-        message: 'Client mis à jour avec succès.',
-        client: updatedClient,
-      };
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+      return result;
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       return {
