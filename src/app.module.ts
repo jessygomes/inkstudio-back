@@ -19,6 +19,11 @@ import { TattooHistoryModule } from './tattoo-history/tattoo-history.module';
 import { AftercareModule } from './aftercare/aftercare.module';
 import { TimeSlotModule } from './time-slot/time-slot.module';
 import { MailService } from './mailer.service';
+import { PortfolioService } from './portfolio/portfolio.service';
+import { PortfolioController } from './portfolio/portfolio.controller';
+import { PortfolioModule } from './portfolio/portfolio.module';
+import { ProductSalonController } from './product-salon/product-salon.controller';
+import { ProductSalonModule } from './product-salon/product-salon.module';
 
 @Module({
   imports: [
@@ -31,12 +36,16 @@ import { MailService } from './mailer.service';
     TattooHistoryModule,
     AftercareModule,
     TimeSlotModule,
+    PortfolioModule,
+    ProductSalonModule,
   ],
   controllers: [
     UserController,
     AppointmentsController,
     ClientsController,
     TattooHistoryController,
+    PortfolioController,
+    ProductSalonController,
   ],
   providers: [
     UserService,
@@ -45,6 +54,7 @@ import { MailService } from './mailer.service';
     ClientsService,
     TattooHistoryService,
     MailService,
+    PortfolioService,
   ],
 })
 export class AppModule {}

@@ -47,7 +47,11 @@ model User {
   Tatoueur          Tatoueur[]
   Client            Client[]
 
-  TimeSlot TimeSlot[]
+  TimeSlot          TimeSlot[]
+
+  Portfolio         Portfolio[]
+
+  ProductSalon      ProductSalon[]
 }
 
 model VerificationToken {
@@ -83,6 +87,8 @@ model Tatoueur {
   updatedAt       DateTime     @updatedAt
 
   appointments Appointment[]
+
+  Portfolio Portfolio[]
 }
 
 //! AGENDA ET RDV
@@ -236,6 +242,36 @@ model Aftercare {
   comment     String?
   approved    Boolean  @default(false)
   visibleInPortfolio Boolean @default(false)
+}
+
+//! PORTFOLIO & PRODUITS
+model Portfolio {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+
+  title       String
+  description String?
+  imageUrl    String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Lien vers les tatoueurs si nécessaire
+  tatoueurId  String?
+  tatoueur    Tatoueur? @relation(fields: [tatoueurId], references: [id])
+}
+
+model ProductSalon {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+
+  name        String
+  description String?
+  price       Float
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 

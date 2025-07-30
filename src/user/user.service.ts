@@ -69,7 +69,7 @@ export class UserService {
   }
 
   //! UPDATE USER
-  async updateUser({userId, userBody} : {userId: string; userBody: { salonName: string; firstName: string; lastName: string; phone: string; address: string; city: string; postalCode: string; instagram: string; facebook: string; tiktok: string; website: string; description: string; }}) {
+  async updateUser({userId, userBody} : {userId: string; userBody: { salonName: string; firstName: string; lastName: string; phone: string; address: string; city: string; postalCode: string; instagram: string; facebook: string; tiktok: string; website: string; description: string; image: string; }}) {
     const user = await this.prisma.user.update({
       where: {
         id: userId,
@@ -87,6 +87,7 @@ export class UserService {
         tiktok: userBody.tiktok,
         website: userBody.website,
         description: userBody.description,
+        image: userBody.image, // Assurez-vous que l'image est gérée correctement
       },
     }) 
 
