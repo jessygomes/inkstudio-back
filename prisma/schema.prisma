@@ -38,7 +38,8 @@ model User {
   facebook          String?
   tiktok            String?
   description       String?
-  salonHours        String? 
+  salonHours        String?
+  salonPhotos       String[]
   role              Role     @default(user)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt

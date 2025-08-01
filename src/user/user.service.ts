@@ -28,6 +28,8 @@ export class UserService {
     return users;
   }
 
+
+
   //! GET USER BY ID
   async getUserById({userId} : {userId: string}) {
     const user = await this.prisma.user.findUnique({
@@ -68,6 +70,26 @@ export class UserService {
     return user;
   }
 
+    //! GET PHOTOS SALON
+  async getPhotosSalon({userId} : {userId: string}) {
+    const user = await this.prisma.user.findUnique({
+      where: {
+        id: userId,
+      },
+      select: {
+        salonPhotos: true,
+      },
+    });
+
+    if (!user) {
+      throw new Error('Utilisateur introuvable');
+    }
+
+    return {
+      salonPhotos: (user.salonPhotos as string[] | undefined) ?? [],
+    };
+  }
+
   //! UPDATE USER
   async updateUser({userId, userBody} : {userId: string; userBody: { salonName: string; firstName: string; lastName: string; phone: string; address: string; city: string; postalCode: string; instagram: string; facebook: string; tiktok: string; website: string; description: string; image: string; }}) {
     const user = await this.prisma.user.update({
@@ -105,6 +127,46 @@ export class UserService {
       },
     }) 
 
+    return user;
+  }
+
+  //! ADD OR UPDATE PHOTO SALON
+  async addOrUpdatePhotoSalon({userId, salonPhotos} : {userId: string; salonPhotos: string[] | {photoUrls: string[]}}) {
+    // Gérer le cas où salonPhotos est un objet avec photoUrls ou directement un tableau
+    let photosArray: string[];
+    
+    if (Array.isArray(salonPhotos)) {
+      photosArray = salonPhotos;
+    } else if (salonPhotos && typeof salonPhotos === 'object' && 'photoUrls' in salonPhotos) {
+      photosArray = (salonPhotos as {photoUrls: string[]}).photoUrls;
+    } else {
+      throw new Error('Format de données invalide. Attendu: tableau de strings ou objet avec photoUrls.');
+    }
+
+    // Vérifier que photosArray est bien un tableau
+    if (!Array.isArray(photosArray)) {
+      throw new Error('Les photos doivent être fournies sous forme de tableau.');
+    }
+
+    // Limiter à maximum 6 photos
+    const maxPhotos = 6;
+    const limitedPhotos = photosArray.slice(0, maxPhotos);
+
+    if (photosArray.length > maxPhotos) {
+      throw new Error(`Vous ne pouvez ajouter que ${maxPhotos} photos maximum. ${photosArray.length} photos ont été fournies.`);
+    }
+
+    const user = await this.prisma.user.update({
+      where: {
+        id: userId,
+      },
+      data: {
+        salonPhotos: {
+          set: limitedPhotos,
+        },
+      },
+    });
+    console.log("Salon photos updated:", limitedPhotos);
     return user;
   }
 }

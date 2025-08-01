@@ -174,10 +174,22 @@ export class AppointmentsService {
   }
 
   //! VOIR TOUS LES RDV PAR DATE
-  async getAppointmentsByDateRange(userId: string, startDate: string, endDate: string) {
+  async getAppointmentsByDateRange(userId: string, startDate: string, endDate: string, page: number = 1, limit: number = 5) {
     try {
       const start = new Date(startDate);
       const end = new Date(endDate);
+      const skip = (page - 1) * limit;
+
+      // Compter le total des rendez-vous dans la plage de dates
+      const totalAppointments = await this.prisma.appointment.count({
+        where: {
+          userId,
+          start: {
+            gte: start,
+            lt: end,
+          },
+        },
+      });
   
       const appointments = await this.prisma.appointment.findMany({
         where: {
@@ -199,9 +211,86 @@ export class AppointmentsService {
           tattooDetail: true,
           tatoueur: true,
         },
+        orderBy: {
+          start: 'desc', // Trier par date décroissante
+        },
+        skip,
+        take: limit,
       });
 
-      return appointments ?? []; 
+      const totalPages = Math.ceil(totalAppointments / limit);
+
+      return {
+        error: false,
+        appointments,
+        pagination: {
+          currentPage: page,
+          totalPages,
+          totalAppointments,
+          limit,
+          hasNextPage: page < totalPages,
+          hasPreviousPage: page > 1,
+        },
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
+
+  //! VOIR TOUS LES RRDV D'UN SALON
+  async getAllAppointmentsBySalon(salonId: string, page: number = 1, limit: number = 5) {
+    try {
+      const skip = (page - 1) * limit;
+
+      // Compter le total des rendez-vous
+      const totalAppointments = await this.prisma.appointment.count({
+        where: {
+          userId: salonId,
+        },
+      });
+
+      // Récupérer les rendez-vous avec pagination
+      const appointments = await this.prisma.appointment.findMany({
+        where: {
+          userId: salonId,
+        },
+        include: {
+          tatoueur: true,
+          tattooDetail: true,
+          client: {
+            select: {
+              firstName: true,
+              lastName: true,
+              email: true,
+              phone: true,
+            },
+          },
+        },
+        orderBy: {
+          start: 'desc', // Trier par date décroissante
+        },
+        skip,
+        take: limit,
+      });
+
+      const totalPages = Math.ceil(totalAppointments / limit);
+
+      return {
+        error: false,
+        appointments,
+        pagination: {
+          currentPage: page,
+          totalPages,
+          totalAppointments,
+          limit,
+          hasNextPage: page < totalPages,
+          hasPreviousPage: page > 1,
+        },
+      };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       return {

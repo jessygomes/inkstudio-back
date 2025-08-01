@@ -14,21 +14,36 @@ export class AppointmentsController {
 
     return await this.appointmentsService.create({ rdvBody });
   }
-
   //! VOIR TOUS LES RDV ✅
   @Get()
   async getAllAppointments(@Param('id') userId: string) {
     return await this.appointmentsService.getAllAppointments(userId);
   }
 
-    //! VOIR TOUS LES RDV PAR DATE ✅
+      //! VOIR TOUS LES RDV PAR DATE ✅
   @Get('range')
   async getByDateRange(
     @Query('userId') userId: string,
     @Query('start') start: string,
     @Query('end') end: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string
   ) {
-    return this.appointmentsService.getAppointmentsByDateRange(userId, start, end);
+    const pageNumber = page ? parseInt(page, 10) : 1;
+    const limitNumber = limit ? parseInt(limit, 10) : 5;
+    return this.appointmentsService.getAppointmentsByDateRange(userId, start, end, pageNumber, limitNumber);
+  }
+
+  //! VOIR TOUS LES RDV D'UN SALON AVEC PAGINATION ✅
+  @Get('salon/:id')
+  async getAllAppointmentsBySalon(
+    @Param('id') salonId: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string
+  ) {
+    const pageNumber = page ? parseInt(page, 10) : 1;
+    const limitNumber = limit ? parseInt(limit, 10) : 5;
+    return await this.appointmentsService.getAllAppointmentsBySalon(salonId, pageNumber, limitNumber);
   }
 
   //! RECUPERER LES RDV D'UN TATOUEUR PAR DATE ✅
@@ -76,4 +91,6 @@ async getAppointmentsByTatoueurRange(
   async getAppointmentsByTatoueurId(@Param('id') tatoueurId: string) {
     return await this.appointmentsService.getTatoueurAppointments(tatoueurId);
   }
+
+
 }
