@@ -114,11 +114,7 @@ model Appointment {
   end             DateTime
   allDay          Boolean            @default(false)
   status          AppointmentStatus  @default(PENDING)
-  // clientFirstname      String
-  // clientLastname       String
-  // clientEmail     String
-  // clientPhone     String?
-  // clientBirthDate DateTime?
+  isPayed         Boolean            @default(false)
 
   // Relation avec User (nouvelle relation)
   user            User               @relation(fields: [userId], references: [id])
@@ -203,6 +199,7 @@ model TattooDetail {
   sketch              String?      // URL du croquis
   estimatedPrice      Float?
   price               Float?
+  isPayed             Boolean @default(false)
 
   @@unique([clientId, appointmentId])
 }

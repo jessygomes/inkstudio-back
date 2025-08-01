@@ -406,4 +406,40 @@ export class ClientsService {
       };
     }
   }
+
+    // ! -------------------------------------------------------------------------
+
+  //! DASHBOARD - STATISTIQUES
+
+  // ! --------------------------------------------------------------------------
+
+  //! NOMRE DE NVX CLIENTS PAR MOIS
+  async getNewClientsCountByMonth(userId: string, month: number, year: number) {
+    try {
+      const startDate = new Date(year, month - 1, 1);
+      const endDate = new Date(year, month, 0); // Dernier jour du mois
+      const newClientsCount = await this.prisma.client.count({
+        where: {
+          userId,
+          createdAt: {
+            gte: startDate,
+            lte: endDate,
+          },
+        },
+      });
+      return {
+        error: false,
+        month,
+        year,
+        newClientsCount,
+      };
+    }
+    catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
 }

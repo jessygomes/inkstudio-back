@@ -1,5 +1,6 @@
 /* eslint-disable prettier/prettier */
 import {
+  IsBoolean,
   IsEmail,
   IsEnum,
   IsNotEmpty,
@@ -53,6 +54,10 @@ export class CreateAppointmentDto {
   @IsString()
   @IsNotEmpty()
   tatoueurId: string;
+
+  @IsBoolean()
+  @IsOptional()
+  isPayed?: boolean = false;
 
   // Infos projet (facultatif)
   @IsOptional() @IsString() description?: string;

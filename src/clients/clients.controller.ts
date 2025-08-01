@@ -45,6 +45,16 @@ export class ClientsController {
     return this.clientsService.getClientsBySalon(id);
   }
 
+  //! NOMRE DE NVX CLIENTS PAR MOIS ✅
+  @Get('new-clients-count/:id')
+  async getNewClientsCountByMonth(
+    @Param('id') id: string,
+    @Query('month') month: number,
+    @Query('year') year: number
+  ) {
+    return this.clientsService.getNewClientsCountByMonth(id, month, year);
+  }
+
   //! RECHERCHER UN CLIENT PAR NOM OU EMAIL (pour le formulaire de réservation) ✅
   @Get('search')
   async getSearchClient(

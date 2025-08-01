@@ -46,6 +46,48 @@ export class AppointmentsController {
     return await this.appointmentsService.getAllAppointmentsBySalon(salonId, pageNumber, limitNumber);
   }
 
+  //! VOIR LES RDV DU JOUR POUR DASHBOARD ✅
+  @Get('today/:id')
+  async getTodaysAppointments(@Param('id') userId: string) {
+    return await this.appointmentsService.getTodaysAppointments(userId);
+  }
+
+  //! TAUX DE REMPLISSAGE DES CRENAUX PAR SEMAINE ✅
+  @Get('weekly-fill-rate/:id')
+  async getWeeklyFillRate(
+    @Param('id') userId: string,
+    @Query('start') start: string,
+    @Query('end') end: string
+  ) {
+    return await this.appointmentsService.getWeeklyFillRate(userId, start, end);
+  }
+
+  //! TAUX D'ANNULATION DES RDV ✅
+  @Get('cancellation-rate/:id')
+  async getGlobalCancellationRate(@Param('id') userId: string) {
+    return await this.appointmentsService.getGlobalCancellationRate(userId);
+  }
+
+  //! TOTAL DES RDV PAYES PAR MOIS ✅
+  @Get('monthly-paid-appointments/:id')
+  async getMonthlyPaidAppointments(
+    @Param('id') userId: string,
+    @Query('month') month: number,
+    @Query('year') year: number
+  ) {
+    return await this.appointmentsService.getTotalPaidAppointmentsByMonth(userId, month, year);
+  }
+
+  //! SOMME DES PRIX DES RDV PAYES PAR MOIS ✅
+  @Get('total-paid-appointments/:id')
+  async getTotalPaidAppointments(
+    @Param('id') userId: string,
+    @Query('month') month: number,
+    @Query('year') year: number
+  ) {
+    return await this.appointmentsService.getTotalPaidAppointmentsByMonth(userId, month, year);
+  }
+
   //! RECUPERER LES RDV D'UN TATOUEUR PAR DATE ✅
   @Get('tatoueur-range')
 async getAppointmentsByTatoueurRange(
@@ -86,11 +128,15 @@ async getAppointmentsByTatoueurRange(
     return await this.appointmentsService.cancelAppointment(appointmentId);
   }
 
+  //! RDV PAYE ✅
+  @Patch('payed/:id')
+  async markAppointmentAsPaid(@Param('id') appointmentId: string, @Body() body: { isPayed: boolean }) {
+    return await this.appointmentsService.markAppointmentAsPaid(appointmentId, body.isPayed);
+  }
+
   //! VOIR TOUS LES RDV D'UN TATOUEUR ✅
   @Get('tatoueur/:id')
   async getAppointmentsByTatoueurId(@Param('id') tatoueurId: string) {
     return await this.appointmentsService.getTatoueurAppointments(tatoueurId);
   }
-
-
 }
