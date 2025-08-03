@@ -9,8 +9,8 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url  	    = env("DATABASE_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 //! USER
@@ -21,71 +21,74 @@ enum Role {
 
 // Le user est le SALON
 model User {
-  id                String   @id @default(cuid())
-  email             String   @unique
-  emailVerified     DateTime?
-  password          String
-  firstName         String?
-  lastName          String?
-  salonName         String?
-  image             String?
-  phone             String?
-  address           String?
-  city              String?
-  postalCode        String?
-  instagram         String?
-  website           String?
-  facebook          String?
-  tiktok            String?
-  description       String?
-  salonHours        String?
-  salonPhotos       String[]
-  role              Role     @default(user)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  
-  appointments      Appointment[] 
-  Tatoueur          Tatoueur[]
-  Client            Client[]
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified DateTime?
+  password      String
+  firstName     String?
+  lastName      String?
+  salonName     String?
+  image         String?
+  phone         String?
+  address       String?
+  city          String?
+  postalCode    String?
+  instagram     String?
+  website       String?
+  facebook      String?
+  tiktok        String?
+  description   String?
+  salonHours    String?
+  salonPhotos   String[]
+  role          Role      @default(user)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  TimeSlot          TimeSlot[]
+  appointments Appointment[]
+  Tatoueur     Tatoueur[]
+  Client       Client[]
 
-  Portfolio         Portfolio[]
+  TimeSlot TimeSlot[]
 
-  ProductSalon      ProductSalon[]
+  Portfolio Portfolio[]
+
+  ProductSalon ProductSalon[]
+
+  FollowUpRequest    FollowUpRequest[]
+  FollowUpSubmission FollowUpSubmission[]
 }
 
 model VerificationToken {
-  id              String   @id @default(cuid())
-  email           String
-  token           String   @unique
-  expires         DateTime
+  id      String   @id @default(cuid())
+  email   String
+  token   String   @unique
+  expires DateTime
 
   @@unique([email, token], name: "email_token")
 }
 
 model PasswordResetToken {
-  id              String   @id @default(cuid())
-  email           String
-  token           String   @unique
-  expires         DateTime
+  id      String   @id @default(cuid())
+  email   String
+  token   String   @unique
+  expires DateTime
 
   @@unique([email, token], name: "email_token")
 }
 
 //! SALON
 model Tatoueur {
-  id              String       @id @default(cuid())
-  name            String
-  hours           String?
-  user            User         @relation(fields: [userId], references: [id])
-  userId          String       // salon qui possède ce tatoueur
-  img             String?
-  description     String?
-  phone           String?
-  instagram       String?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
+  id          String   @id @default(cuid())
+  name        String
+  hours       String?
+  user        User     @relation(fields: [userId], references: [id])
+  userId      String // salon qui possède ce tatoueur
+  img         String?
+  description String?
+  phone       String?
+  instagram   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   appointments Appointment[]
 
@@ -99,6 +102,7 @@ enum PrestationType {
   RETOUCHE
   PROJET
 }
+
 enum AppointmentStatus {
   PENDING
   CONFIRMED
@@ -107,146 +111,153 @@ enum AppointmentStatus {
 }
 
 model Appointment {
-  id              String             @id @default(cuid())
-  title           String
-  prestation      PrestationType
-  start           DateTime
-  end             DateTime
-  allDay          Boolean            @default(false)
-  status          AppointmentStatus  @default(PENDING)
-  isPayed         Boolean            @default(false)
+  id         String            @id @default(cuid())
+  title      String
+  prestation PrestationType
+  start      DateTime
+  end        DateTime
+  allDay     Boolean           @default(false)
+  status     AppointmentStatus @default(PENDING)
+  isPayed    Boolean           @default(false)
 
   // Relation avec User (nouvelle relation)
-  user            User               @relation(fields: [userId], references: [id])
-  userId          String             // ID du salon propriétaire du rendez-vous
+  user   User   @relation(fields: [userId], references: [id])
+  userId String // ID du salon propriétaire du rendez-vous
 
-  tatoueur        Tatoueur?           @relation(fields: [tatoueurId], references: [id])
-  tatoueurId      String?
+  tatoueur   Tatoueur? @relation(fields: [tatoueurId], references: [id])
+  tatoueurId String?
 
-  client          Client?            @relation(fields: [clientId], references: [id])
-  clientId        String?
+  client   Client? @relation(fields: [clientId], references: [id])
+  clientId String?
 
   //  Lien direct vers un TattooDetail pour les projets
-  tattooDetail    TattooDetail?
-  tattooDetailId  String?
+  tattooDetail   TattooDetail?
+  tattooDetailId String?
 
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   TimeSlot TimeSlot[]
+
+  FollowUpRequest FollowUpRequest[]
+
+  FollowUpSubmission FollowUpSubmission[]
 }
 
 model TimeSlot {
-  id            String       @id @default(cuid())
-  date          DateTime     // Date du créneau
-  startTime     DateTime     // Heure de début du créneau
-  endTime       DateTime     // Heure de fin du créneau
-  isAvailable   Boolean      @default(true)
-  
-  userId        String
-  user          User         @relation(fields: [userId], references: [id])
+  id          String   @id @default(cuid())
+  date        DateTime // Date du créneau
+  startTime   DateTime // Heure de début du créneau
+  endTime     DateTime // Heure de fin du créneau
+  isAvailable Boolean  @default(true)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
 
   appointment   Appointment? @relation(fields: [appointmentId], references: [id])
-  appointmentId String?      // Lié si ce créneau a été réservé
+  appointmentId String? // Lié si ce créneau a été réservé
 
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 //! CLIENT & FICHE CLIENT
 model Client {
-  id                  String   @id @default(cuid())
-  userId              String   // Salon propriétaire de la fiche client
-  user                User     @relation(fields: [userId], references: [id])
-  
-  firstName           String
-  lastName            String
-  email               String   @unique
-  phone               String
-  birthDate           DateTime?
-  address             String?
+  id     String @id @default(cuid())
+  userId String // Salon propriétaire de la fiche client
+  user   User   @relation(fields: [userId], references: [id])
+
+  firstName String
+  lastName  String
+  email     String
+  phone     String
+  birthDate DateTime?
+  address   String?
 
   // Lien vers les RDV (facultatif)
-  appointments      Appointment[]   // 👈 Un client peut avoir plusieurs RDV
+  appointments Appointment[] // 👈 Un client peut avoir plusieurs RDV
 
   // Relations
-  tattooDetail        TattooDetail?
-  medicalHistory      MedicalHistory?
-  tattooHistory       TattooHistory[]
-  aftercareRecords    Aftercare[]
+  tattooDetail     TattooDetail?
+  medicalHistory   MedicalHistory?
+  tattooHistory    TattooHistory[]
+  aftercareRecords Aftercare[]
 
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  FollowUpSubmission FollowUpSubmission[]
+
+  @@unique([userId, email])
 }
 
 model TattooDetail {
-  id          String   @id @default(cuid())
+  id String @id @default(cuid())
 
   // Soit lié à un client
-  clientId       String?  @unique
-  client         Client?  @relation(fields: [clientId], references: [id])
+  clientId String? @unique
+  client   Client? @relation(fields: [clientId], references: [id])
 
   // Soit lié à un rendez-vous
-  appointmentId  String?  @unique
-  appointment    Appointment? @relation(fields: [appointmentId], references: [id])
+  appointmentId String?      @unique
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
 
-
-  description         String
-  zone                String?
-  size                String?
-  colorStyle          String?       // Noir & gris ou Couleur
-  reference           String?      // URL image du client
-  sketch              String?      // URL du croquis
-  estimatedPrice      Float?
-  price               Float?
-  isPayed             Boolean @default(false)
+  description    String
+  zone           String?
+  size           String?
+  colorStyle     String? // Noir & gris ou Couleur
+  reference      String? // URL image du client
+  sketch         String? // URL du croquis
+  estimatedPrice Float?
+  price          Float?
+  isPayed        Boolean @default(false)
 
   @@unique([clientId, appointmentId])
 }
 
 model MedicalHistory {
-  id          String   @id @default(cuid())
-  clientId    String   @unique
-  client      Client   @relation(fields: [clientId], references: [id])
+  id       String @id @default(cuid())
+  clientId String @unique
+  client   Client @relation(fields: [clientId], references: [id])
 
-  allergies       String?
-  healthIssues    String?
-  medications     String?
-  pregnancy       Boolean
-  tattooHistory   String?  // Commentaire sur anciens tatouages
+  allergies     String?
+  healthIssues  String?
+  medications   String?
+  pregnancy     Boolean
+  tattooHistory String? // Commentaire sur anciens tatouages
 }
 
 model TattooHistory {
-  id          String   @id @default(cuid())
-  clientId    String
-  client      Client   @relation(fields: [clientId], references: [id])
+  id       String @id @default(cuid())
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id])
 
-  date        DateTime
-  description String
-  beforeImage String?   // URL
-  afterImage  String?   // URL
-  inkUsed     String?
-  healingTime String?
+  date         DateTime
+  description  String
+  beforeImage  String? // URL
+  afterImage   String? // URL
+  inkUsed      String?
+  healingTime  String?
   careProducts String?
 }
 
 model Aftercare {
-  id          String   @id @default(cuid())
-  clientId    String
-  client      Client   @relation(fields: [clientId], references: [id])
+  id       String @id @default(cuid())
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id])
 
-  submittedAt DateTime @default(now())
-  photoUrl    String?
-  comment     String?
-  approved    Boolean  @default(false)
-  visibleInPortfolio Boolean @default(false)
+  submittedAt        DateTime @default(now())
+  photoUrl           String?
+  comment            String?
+  approved           Boolean  @default(false)
+  visibleInPortfolio Boolean  @default(false)
 }
 
 //! PORTFOLIO & PRODUITS
 model Portfolio {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id])
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
 
   title       String
   description String?
@@ -255,14 +266,14 @@ model Portfolio {
   updatedAt   DateTime @updatedAt
 
   // Lien vers les tatoueurs si nécessaire
-  tatoueurId  String?
-  tatoueur    Tatoueur? @relation(fields: [tatoueurId], references: [id])
+  tatoueurId String?
+  tatoueur   Tatoueur? @relation(fields: [tatoueurId], references: [id])
 }
 
 model ProductSalon {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id])
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
 
   name        String
   description String?
@@ -272,7 +283,6 @@ model ProductSalon {
   updatedAt   DateTime @updatedAt
 }
 
-
 // //! SALON SETTINGS
 // model SalonSettings {
 //   id                      String   @id @default(cuid())
@@ -280,3 +290,55 @@ model ProductSalon {
 //   autoConfirmationEnabled Boolean  @default(false)
 //   createdAt               DateTime @default(now())
 // }
+
+// ----------------------
+// SUIVI POST-RDV
+// ----------------------
+enum FollowUpStatus {
+  PENDING
+  SUBMITTED
+  EXPIRED
+}
+
+model FollowUpRequest {
+  id            String         @id @default(cuid())
+  appointmentId String         @unique
+  token         String         @unique
+  status        FollowUpStatus @default(PENDING)
+  sentAt        DateTime?
+  expiresAt     DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  submissionId  String?        @unique
+  userId        String         // Salon propriétaire
+
+  appointment  Appointment         @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  submission   FollowUpSubmission? @relation(fields: [submissionId], references: [id])
+  user         User                @relation(fields: [userId], references: [id])
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([userId])
+}
+
+model FollowUpSubmission {
+  id            String   @id @default(cuid())
+  appointmentId String   @unique
+  clientId      String?
+  rating        Int
+  review        String?
+  photoUrl      String
+  isAnswered    Boolean @default(false)
+  response      String?
+  isPhotoPublic Boolean @default(false)
+  createdAt     DateTime @default(now())
+  userId        String   // Salon propriétaire
+
+  appointment     Appointment      @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  client          Client?          @relation(fields: [clientId], references: [id])
+  followUpRequest FollowUpRequest?
+  user            User             @relation(fields: [userId], references: [id])
+
+  @@index([createdAt])
+  @@index([userId])
+}

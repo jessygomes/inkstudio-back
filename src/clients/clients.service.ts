@@ -209,18 +209,47 @@ export class ClientsService {
   }
 
   //! VOIR TOUS LES CLIENTS D'UN SALON
-  async getClientsBySalon(userId: string) {
+  async getClientsBySalon(userId: string, page: number, limit: number, search: string) {
     try {
+      const skip = (page - 1) * limit;
+
+          // Construire les conditions de recherche
+      const searchConditions = search
+        ? {
+            OR: [
+              { firstName: { contains: search, mode: 'insensitive' as const } },
+              { lastName: { contains: search, mode: 'insensitive' as const } },
+              { email: { contains: search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {};
+
+      const whereClause = {
+        userId,
+        ...searchConditions,
+      };
+
+      const totalClients = await this.prisma.client.count({
+        where: whereClause,
+      });
+
       const clients = await this.prisma.client.findMany({
-        where: { userId },
+        where: whereClause,
         include: {
           appointments: true,
           medicalHistory: true,
           tattooHistory: true,
           aftercareRecords: true,
+          FollowUpSubmission: {
+            orderBy: { createdAt: 'desc' },
+          },
         },
         orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
       });
+
+      const totalPages = Math.ceil(totalClients / limit);
 
       if (!clients || clients.length === 0) {
         throw new Error('Aucun client trouvé.');
@@ -228,10 +257,21 @@ export class ClientsService {
 
       // Vérifier si le salon a des clients
       if (clients.length === 0) {
-        throw new Error('Aucun client trouvé pour ce salon.');
+        throw new Error('Aucun client trouvé pour votre salon.');
       }
 
-      return clients;
+      return {
+        error : false,
+        clients,
+        pagination: {
+          currentPage: page,
+          totalPages,
+          totalClients,
+          limit,
+          hasNextPage: page < totalPages,
+          hasPreviousPage: page > 1,
+        }
+      };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       return {

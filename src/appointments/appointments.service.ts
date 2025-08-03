@@ -4,11 +4,11 @@ import { PrismaService } from 'src/database/prisma.service';
 import { CreateAppointmentDto, PrestationType } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
 import { MailService } from 'src/mailer.service';
-
+import { FollowupSchedulerService } from 'src/follow-up/followup-scheduler.service';
 
 @Injectable()
 export class AppointmentsService {
-  constructor(private readonly prisma: PrismaService, private readonly mailService: MailService) {}
+  constructor(private readonly prisma: PrismaService, private readonly mailService: MailService, private readonly followupSchedulerService: FollowupSchedulerService) {}
 
   //! CREER UN RDV
  async create({ rdvBody }: {rdvBody: CreateAppointmentDto}) {
@@ -532,10 +532,25 @@ export class AppointmentsService {
         },
         include: {
           client: true,
-          tatoueur: true,
+          tatoueur: {
+            select: {
+              name: true,
+            },
+          },
       },
       });
 
+      //! Si la prestation est TATTOO, RETOUCHE ou PIERCING, planifier un suivi
+      if (
+          ['TATTOO', 'RETOUCHE', 'PIERCING'].includes(appointment.prestation)
+        ) {
+          console.log(`📅 Planification du suivi pour le RDV ${appointment.id}`);
+          await this.followupSchedulerService.scheduleFollowup(appointment.id, appointment.end);
+        }
+
+        console.log(`✅ Rendez-vous ${appointment.id} confirmé avec succès`);
+
+      // Envoi d'un mail de confirmation au client (si le client existe)
       if (appointment.client) {
         await this.mailService.sendMail({
           to: appointment.client.email,

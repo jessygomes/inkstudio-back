@@ -41,8 +41,10 @@ export class ClientsController {
   
   //! VOIR TOUS LES CLIENTS D'UN SALON ✅
   @Get('salon/:id')
-  getClientsBySalon(@Param('id') id: string) {
-    return this.clientsService.getClientsBySalon(id);
+  async getClientsBySalon(@Param('id') id: string,  @Query('page') page?: string, @Query('limit') limit?: string,  @Query('search') search: string = '') {
+    const pageNumber = page ? parseInt(page, 10) : 1;
+    const limitNumber = limit ? parseInt(limit, 10) : 5;
+    return this.clientsService.getClientsBySalon(id, pageNumber, limitNumber, search);
   }
 
   //! NOMRE DE NVX CLIENTS PAR MOIS ✅

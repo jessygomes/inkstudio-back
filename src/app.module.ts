@@ -24,6 +24,8 @@ import { PortfolioController } from './portfolio/portfolio.controller';
 import { PortfolioModule } from './portfolio/portfolio.module';
 import { ProductSalonController } from './product-salon/product-salon.controller';
 import { ProductSalonModule } from './product-salon/product-salon.module';
+import { BullModule } from '@nestjs/bull';
+import { FollowUpModule } from './follow-up/follow-up.module';
 
 @Module({
   imports: [
@@ -38,6 +40,19 @@ import { ProductSalonModule } from './product-salon/product-salon.module';
     TimeSlotModule,
     PortfolioModule,
     ProductSalonModule,
+    // 🔴 Configuration Redis globale pour Bull
+    BullModule.forRoot({
+      redis: {
+        host: process.env.REDIS_HOST || 'localhost',
+        port: Number(process.env.REDIS_PORT) || 6379,
+        password: process.env.REDIS_PASSWORD || undefined,
+        // Configuration pour la stabilité
+        connectTimeout: 10000,
+        lazyConnect: true,
+      },
+    }),
+    // Note: Les queues individuelles sont gérées dans leurs modules respectifs
+    FollowUpModule,
   ],
   controllers: [
     UserController,
