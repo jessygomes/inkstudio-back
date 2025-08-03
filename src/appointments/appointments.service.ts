@@ -505,7 +505,7 @@ export class AppointmentsService {
   }
 
   //! CONFIRMER UN RDV
-  async confirmAppointment(id: string) {
+  async confirmAppointment(id: string, message: string) {
     try {
     // Récupérer le rendez-vous avec les informations du client et du tatoueur
     const existingAppointment = await this.prisma.appointment.findUnique({
@@ -558,6 +558,7 @@ export class AppointmentsService {
           html: `
             <h2>Bonjour ${appointment.client.firstName} ${appointment.client.lastName} !</h2>
             <p>Votre rendez-vous a été confirmé avec succès.</p>
+            <p>${message}</p>
             <p><strong>Détails du rendez-vous :</strong></p>
             <ul>
               <li>Date et heure : ${appointment.start.toLocaleString()} - ${appointment.end.toLocaleString()}</li>
@@ -587,7 +588,7 @@ export class AppointmentsService {
   }
 
     //! ANNULER UN RDV
-    async cancelAppointment(id: string) {
+    async cancelAppointment(id: string, message: string) {
       try {
         const existingAppointment = await this.prisma.appointment.findUnique({
           where: { id },
@@ -625,6 +626,7 @@ export class AppointmentsService {
         html: `
           <h2>Bonjour ${appointment.client.firstName} ${appointment.client.lastName} !</h2>
           <p>Nous sommes désolés de vous informer que votre rendez-vous a été annulé.</p>
+          <p>${message}</p>
           <p><strong>Détails du rendez-vous annulé :</strong></p>
           <ul>
             <li>Date et heure : ${appointment.start.toLocaleString()} - ${appointment.end.toLocaleString()}</li>
@@ -1070,6 +1072,55 @@ export class AppointmentsService {
       // ==================== GESTION D'ERREURS ====================
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       console.error('❌ Erreur dans getTotalPaidAppointmentsByMonth:', errorMessage);
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
+
+  //! RDV EN ATTENTE DE CONFIRMATION
+  async getPendingAppointments(userId: string) {
+    try {
+      const pendingAppointments = await this.prisma.appointment.findMany({
+        where: {
+          userId,
+          status: 'PENDING', // Filtrer uniquement les RDV en attente
+        },
+        include: {
+          tatoueur: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          tattooDetail: {
+            select: {
+              description: true,
+              estimatedPrice: true,
+              price: true,
+            },
+          },
+          client: {
+            select: {
+              firstName: true,
+              lastName: true,
+              email: true,
+              phone: true,
+            },
+          },
+        },
+        orderBy: {
+          start: 'asc', // Trier par date croissante
+        },
+      });
+      return {
+        error: false,
+        appointments: pendingAppointments,
+        totalAppointments: pendingAppointments.length,
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       return {
         error: true,
         message: errorMessage,
