@@ -133,6 +133,15 @@ export class FollowupsController {
     return { followUps };
   }
 
+    //! RECUPERER LE NOMBRE DE SUIVIS PAS ENCORE REPONDU PAR LE SALON
+  @Get('unanswered/:userId/number')
+  async getUnansweredNumberFollowUps(@Param('userId') userId: string) {
+    const count = await this.prisma.followUpSubmission.count({
+      where: { isAnswered: false, userId },
+    });
+    return { count };
+  }
+
   //! RECUPERER TOUS LES SUIVI D'UN SALON
   @Get('all/:userId')
   async getAllFollowUps(@Param('userId') userId: string) {

@@ -1,5 +1,11 @@
-/* eslint-disable prettier/prettier */
-import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
+import { SaasPlan } from '@prisma/client';
+import {
+  IsEmail,
+  IsEnum,
+  IsNotEmpty,
+  IsString,
+  MinLength,
+} from 'class-validator';
 
 //! Schema de validation des données pour la création d'un utilisateur
 
@@ -10,6 +16,9 @@ export class CreateUserDto {
   @IsString({ message: 'Vous devez fournir un nom de salon' })
   @IsNotEmpty({ message: 'Le nom du salon est requis' })
   salonName: string;
+
+  @IsEnum(SaasPlan, { message: 'Vous devez fournir un plan SaaS valide' })
+  saasPlan: SaasPlan;
 
   @IsNotEmpty()
   @MinLength(6, {

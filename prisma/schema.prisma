@@ -19,6 +19,19 @@ enum Role {
   user
 }
 
+enum SaasPlan {
+  FREE
+  PRO
+  BUSINESS
+}
+
+enum SaasPlanStatus {
+  ACTIVE
+  EXPIRED
+  CANCELED
+  TRIAL
+}
+
 // Le user est le SALON
 model User {
   id            String    @id @default(cuid())
@@ -40,6 +53,8 @@ model User {
   description   String?
   salonHours    String?
   salonPhotos   String[]
+  saasPlan      SaasPlan  @default(FREE)
+  saasPlanUntil DateTime? // Date jusqu'à laquelle le plan est actif
   role          Role      @default(user)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -56,6 +71,9 @@ model User {
 
   FollowUpRequest    FollowUpRequest[]
   FollowUpSubmission FollowUpSubmission[]
+  
+  // Relation avec les détails du plan SaaS
+  saasPlanDetails SaasPlanDetails?
 }
 
 model VerificationToken {
@@ -341,4 +359,50 @@ model FollowUpSubmission {
 
   @@index([createdAt])
   @@index([userId])
+}
+
+// ----------------------
+// DÉTAILS PLAN SAAS
+// ----------------------
+model SaasPlanDetails {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  // Plan actuel
+  currentPlan   SaasPlan       @default(FREE)
+  planStatus    SaasPlanStatus @default(ACTIVE)
+  startDate     DateTime       @default(now())
+  endDate       DateTime? // Null = illimité
+  trialEndDate  DateTime? // Date fin d'essai
+  
+  // Limites du plan (FREE par défaut)
+  maxAppointments    Int  @default(30)   // FREE: 30, PRO: 150, BUSINESS: -1 (illimité)
+  maxClients         Int  @default(50)   // FREE: 50, PRO: 300, BUSINESS: -1 (illimité)
+  maxTattooeurs      Int  @default(1)    // FREE: 1, PRO: 5, BUSINESS: -1 (illimité)
+  maxPortfolioImages Int  @default(5)    // FREE: 5, PRO: 50, BUSINESS: -1 (illimité)
+
+  // Fonctionnalités
+  hasAdvancedStats   Boolean @default(false) // Statistiques avancées
+  hasEmailReminders  Boolean @default(false) // Rappels email
+  hasCustomBranding  Boolean @default(false) // Marque personnalisée
+  hasApiAccess       Boolean @default(false) // Accès API
+  
+  // Facturation
+  monthlyPrice       Float?   // Prix mensuel
+  yearlyPrice        Float?   // Prix annuel
+  lastPaymentDate    DateTime?
+  nextPaymentDate    DateTime?
+  paymentMethod      String?  // 'stripe', 'paypal', etc.
+  stripeCustomerId   String?  // ID client Stripe
+  
+  // Métadonnées
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([currentPlan])
+  @@index([planStatus])
+  @@index([endDate])
 }

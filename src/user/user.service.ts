@@ -38,6 +38,7 @@ export class UserService {
       },
       select: {
         id: true,
+        saasPlan: true,
         email: true,
         salonName: true,
         firstName: true,

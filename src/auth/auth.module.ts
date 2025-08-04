@@ -6,6 +6,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { JwtStrategy } from './jwt.strategy';
 import { UserService } from 'src/user/user.service';
 import { MailService } from 'src/mailer.service';
+import { SaasModule } from 'src/saas/saas.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { MailService } from 'src/mailer.service';
       secret: process.env.JWT_SECRET,
       signOptions: { expiresIn: '1d' },
     }),
+    SaasModule,
   ],
   controllers: [AuthController],
   providers: [

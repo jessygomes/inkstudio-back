@@ -166,7 +166,7 @@ export class FollowupSchedulerService {
             
             <div style="text-align: center; margin: 30px 0;">
               <a href="${followupUrl}" 
-                 style="background-color: #007bff; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; display: inline-block;">
+                style="background-color: #007bff; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; display: inline-block;">
                 💬 Laisser mon avis
               </a>
             </div>

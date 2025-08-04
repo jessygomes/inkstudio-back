@@ -1,4 +1,3 @@
-/* eslint-disable prettier/prettier */
 import { Module } from '@nestjs/common';
 import { UserModule } from './user/user.module';
 import { UserController } from './user/user.controller';
@@ -26,6 +25,7 @@ import { ProductSalonController } from './product-salon/product-salon.controller
 import { ProductSalonModule } from './product-salon/product-salon.module';
 import { BullModule } from '@nestjs/bull';
 import { FollowUpModule } from './follow-up/follow-up.module';
+import { SaasModule } from './saas/saas.module';
 
 @Module({
   imports: [
@@ -53,6 +53,7 @@ import { FollowUpModule } from './follow-up/follow-up.module';
     }),
     // Note: Les queues individuelles sont gérées dans leurs modules respectifs
     FollowUpModule,
+    SaasModule,
   ],
   controllers: [
     UserController,

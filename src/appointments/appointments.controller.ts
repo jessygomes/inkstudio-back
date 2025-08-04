@@ -1,9 +1,11 @@
 /* eslint-disable prettier/prettier */
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { AppointmentsService } from './appointments.service';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
 // import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
+import { SaasLimitGuard } from 'src/saas/saas-limit.guard';
+import { SaasLimit } from 'src/saas/saas-limit.decorator';
 
 @Controller('appointments')
 export class AppointmentsController {
@@ -11,10 +13,12 @@ export class AppointmentsController {
 
   //! CREER UN RDV ✅
   @Post()
+  @UseGuards(SaasLimitGuard)
+  @SaasLimit('appointment')
   async create(@Body() rdvBody: CreateAppointmentDto) {
-
     return await this.appointmentsService.create({ rdvBody });
   }
+
   //! VOIR TOUS LES RDV ✅
   @Get()
   async getAllAppointments(@Param('id') userId: string) {
