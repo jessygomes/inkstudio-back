@@ -1,19 +1,36 @@
-/* eslint-disable prettier/prettier */
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CreateAppointmentDto, PrestationType } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
 import { MailService } from 'src/mailer.service';
 import { FollowupSchedulerService } from 'src/follow-up/followup-scheduler.service';
+import { SaasService } from 'src/saas/saas.service';
 
 @Injectable()
 export class AppointmentsService {
-  constructor(private readonly prisma: PrismaService, private readonly mailService: MailService, private readonly followupSchedulerService: FollowupSchedulerService) {}
+  constructor(
+    private readonly prisma: PrismaService, 
+    private readonly mailService: MailService, 
+    private readonly followupSchedulerService: FollowupSchedulerService,
+    private readonly saasService: SaasService
+  ) {}
 
   //! CREER UN RDV
- async create({ rdvBody }: {rdvBody: CreateAppointmentDto}) {
-   try {
+  async create({ rdvBody }: {rdvBody: CreateAppointmentDto}) {
+    console.log(`🔄 Création d'un nouveau rendez-vous pour l'utilisateur ${rdvBody.userId}`);
+    try {
       const { userId, title, prestation, start, end, clientFirstname, clientLastname, clientEmail, clientPhone, tatoueurId } = rdvBody;
+
+      // 🔒 VÉRIFIER LES LIMITES SAAS - RENDEZ-VOUS PAR MOIS
+      const canCreateAppointment = await this.saasService.canPerformAction(userId, 'appointment');
+      
+      if (!canCreateAppointment) {
+        const limits = await this.saasService.checkLimits(userId);
+        return {
+          error: true,
+          message: `Limite de rendez-vous par mois atteinte (${limits.limits.appointments}). Passez au plan PRO ou BUSINESS pour continuer.`,
+        };
+      }
 
         // Vérifier si le tatoueur existe
         const artist = await this.prisma.tatoueur.findUnique({
@@ -57,7 +74,18 @@ export class AppointmentsService {
       });
 
       if (!client) {
-        // Étape 2 : Créer le client s’il n’existe pas
+                // 🔒 VÉRIFIER LES LIMITES SAAS - CLIENTS (seulement si on crée un nouveau client)
+        const canCreateClient = await this.saasService.canPerformAction(userId, 'client');
+        
+        if (!canCreateClient) {
+          const limits = await this.saasService.checkLimits(userId);
+          return {
+            error: true,
+            message: `Limite de fiches clients atteinte (${limits.limits.clients}). Passez au plan PRO ou BUSINESS pour continuer.`,
+          };
+        }
+
+        // Étape 2 : Créer le client s'il n'existe pas
         client = await this.prisma.client.create({
           data: {
             firstName: clientFirstname,
@@ -92,8 +120,8 @@ export class AppointmentsService {
             colorStyle: rdvBody.colorStyle || '',
             reference: rdvBody.reference,
             sketch: rdvBody.sketch,
-            estimatedPrice: rdvBody.estimatedPrice || 0, // Prix par défaut à 0 pour un projet
-            price: rdvBody.price || 0, // Prix par défaut à 0 pour un projet
+            estimatedPrice: rdvBody.estimatedPrice || 0,
+            price: rdvBody.price || 0,
           },
         });
       

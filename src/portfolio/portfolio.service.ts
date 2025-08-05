@@ -1,16 +1,30 @@
-/* eslint-disable prettier/prettier */
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { AddPhotoDto } from './dto/add-photo.dto';
+import { SaasService } from 'src/saas/saas.service';
 
 @Injectable()
 export class PortfolioService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly saasService: SaasService
+  ) {}
 
    //! AJOUTER UNE PHOTO AU PORTFOLIO
   async addPhotoToPortfolio({portfolioBody}: {portfolioBody: AddPhotoDto}) {
     try {
       const { userId, title, imageUrl, description, tatoueurId } = portfolioBody;
+
+      // 🔒 VÉRIFIER LES LIMITES SAAS - IMAGES PORTFOLIO
+      const canAddPortfolioImage = await this.saasService.canPerformAction(userId, 'portfolio');
+      
+      if (!canAddPortfolioImage) {
+        const limits = await this.saasService.checkLimits(userId);
+        return {
+          error: true,
+          message: `Limite d'images portfolio atteinte (${limits.limits.portfolioImages}). Passez au plan PRO ou BUSINESS pour continuer.`,
+        };
+      }
 
       // Vérifier si l'utilisateur existe
       const user = await this.prisma.user.findUnique({

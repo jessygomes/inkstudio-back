@@ -1,16 +1,30 @@
-/* eslint-disable prettier/prettier */
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CreateTatoueurDto } from './dto/create-tatoueur.dto';
+import { SaasService } from 'src/saas/saas.service';
 
 @Injectable()
 export class TatoueursService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly saasService: SaasService
+  ) {}
 
   //! CREER UN TATOUEUR
   async create({ tatoueurBody }: {tatoueurBody: CreateTatoueurDto}) {
     try {
       const { name, img, description, phone, instagram, hours, userId } = tatoueurBody;
+
+      // 🔒 VÉRIFIER LES LIMITES SAAS - TATOUEURS
+      const canCreateTatoueur = await this.saasService.canPerformAction(userId, 'tatoueur');
+      
+      if (!canCreateTatoueur) {
+        const limits = await this.saasService.checkLimits(userId);
+        return {
+          error: true,
+          message: `Limite de tatoueurs atteinte (${limits.limits.tattooeurs}). Passez au plan PRO ou BUSINESS pour continuer.`,
+        };
+      }
 
       // Créer le tatoueur
       const newTatoueur = await this.prisma.tatoueur.create({

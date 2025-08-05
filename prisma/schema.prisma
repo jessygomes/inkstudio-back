@@ -196,7 +196,7 @@ model Client {
   appointments Appointment[] // 👈 Un client peut avoir plusieurs RDV
 
   // Relations
-  tattooDetail     TattooDetail?
+  tattooDetails    TattooDetail[] // 👈 Un client peut avoir plusieurs détails de tatouage
   medicalHistory   MedicalHistory?
   tattooHistory    TattooHistory[]
   aftercareRecords Aftercare[]
@@ -213,7 +213,7 @@ model TattooDetail {
   id String @id @default(cuid())
 
   // Soit lié à un client
-  clientId String? @unique
+  clientId String?
   client   Client? @relation(fields: [clientId], references: [id])
 
   // Soit lié à un rendez-vous
@@ -229,8 +229,6 @@ model TattooDetail {
   estimatedPrice Float?
   price          Float?
   isPayed        Boolean @default(false)
-
-  @@unique([clientId, appointmentId])
 }
 
 model MedicalHistory {

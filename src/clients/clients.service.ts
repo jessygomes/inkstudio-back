@@ -1,11 +1,14 @@
-/* eslint-disable prettier/prettier */
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CreateClientDto } from './dto/create-client.dto';
+import { SaasService } from 'src/saas/saas.service';
 
 @Injectable()
 export class ClientsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly saasService: SaasService
+  ) {}
 
   //! CREER UN CLIENT
   async createClient({ clientBody }: { clientBody: CreateClientDto }) {
@@ -31,6 +34,18 @@ export class ClientsService {
         pregnancy,
         tattooHistory,
       } = clientBody;
+
+      // 🔒 VÉRIFIER LES LIMITES SAAS AVANT DE CRÉER LE CLIENT
+      const canCreateClient = await this.saasService.canPerformAction(userId, 'client');
+      
+      if (!canCreateClient) {
+        const limits = await this.saasService.checkLimits(userId);
+        console.log(`Limites actuelles pour l'utilisateur ${userId}:`, limits);
+        return {
+          error: true,
+          message: `Limite de fiches clients atteinte (${limits.limits.clients}). Passez au plan PRO ou BUSINESS pour continuer.`,
+        };
+      }
   
       // Créer le client
       const newClient = await this.prisma.client.create({
@@ -187,7 +202,7 @@ export class ClientsService {
       const client = await this.prisma.client.findUnique({
         where: { id: clientId },
         include: {
-          tattooDetail: true,
+          tattooDetails: true,
           medicalHistory: true,
           tattooHistory: true,
           aftercareRecords: true,
@@ -425,24 +440,57 @@ export class ClientsService {
   //! SUPPRIMER UN CLIENT
   async deleteClient(clientId: string) {
     try {
-      const deletedClient = await this.prisma.client.delete({
-        where: { id: clientId },
+      // Utiliser une transaction pour supprimer toutes les relations liées
+      await this.prisma.$transaction(async (prisma) => {
+        // 1. Supprimer l'historique médical s'il existe
+        await prisma.medicalHistory.deleteMany({
+          where: { clientId },
+        });
+
+        // 2. Supprimer l'historique des tatouages
+        await prisma.tattooHistory.deleteMany({
+          where: { clientId },
+        });
+
+        // 3. Supprimer les enregistrements de suivi (aftercare)
+        await prisma.aftercare.deleteMany({
+          where: { clientId },
+        });
+
+        // 4. Supprimer les soumissions de suivi
+        await prisma.followUpSubmission.deleteMany({
+          where: { clientId },
+        });
+
+        // 5. Détacher le client des rendez-vous (mettre clientId à null au lieu de supprimer les RDV)
+        await prisma.appointment.updateMany({
+          where: { clientId },
+          data: { clientId: null },
+        });
+
+        // 6. Supprimer les détails de tatouage liés au client
+        await prisma.tattooDetail.deleteMany({
+          where: { clientId },
+        });
+
+        // 7. Enfin, supprimer le client
+        await prisma.client.delete({
+          where: { id: clientId },
+        });
       });
 
-      if (!deletedClient) {
-        throw new Error('Client introuvable.');
-      }
+      console.log(`Client supprimé avec succès : ${clientId}`);
 
       return {
         error: false,
         message: 'Client supprimé avec succès.',
-        client: deletedClient,
       };
     } catch (error: unknown) {
+      console.error('Erreur lors de la suppression du client:', error);
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       return {
         error: true,
-        message: errorMessage,
+        message: `Erreur lors de la suppression : ${errorMessage}`,
       };
     }
   }

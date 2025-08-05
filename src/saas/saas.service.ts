@@ -72,7 +72,12 @@ export class SaasService {
    */
   async canPerformAction(userId: string, action: 'appointment' | 'client' | 'tatoueur' | 'portfolio'): Promise<boolean> {
     const limits = await this.checkLimits(userId);
-    const limitKey = action === 'appointment' ? 'appointments' : action === 'tatoueur' ? 'tattooeurs' : action === 'portfolio' ? 'portfolioImages' : action;
+    
+    // Mapper les actions vers les clés correctes
+    const limitKey = action === 'appointment' ? 'appointments' : 
+                    action === 'client' ? 'clients' :
+                    action === 'tatoueur' ? 'tattooeurs' : 
+                    action === 'portfolio' ? 'portfolioImages' : action;
 
     const currentLimit = limits.limits[limitKey];
     
@@ -274,8 +279,8 @@ export class SaasService {
     switch (plan) {
       case SaasPlan.FREE:
         return {
-          maxAppointments: 30,
-          maxClients: 50,
+          maxAppointments: 5,   // 5 RDV par mois
+          maxClients: 5,        // 5 clients max
           maxTattooeurs: 1,
           maxPortfolioImages: 5,
           hasAdvancedStats: false,
@@ -288,9 +293,9 @@ export class SaasService {
       case SaasPlan.PRO:
         return {
           maxAppointments: 150,
-          maxClients: 300,
-          maxTattooeurs: 5,
-          maxPortfolioImages: 50,
+          maxClients: 200,
+          maxTattooeurs: 3,
+          maxPortfolioImages: 30,
           hasAdvancedStats: true,
           hasEmailReminders: true,
           hasCustomBranding: false,
