@@ -471,7 +471,7 @@ export class AuthService {
     return { message: "Si un compte existe avec cette adresse, un email a été envoyé." };
   }
 
-  // RÉINITIALISE LE MOT DE PASSE
+  //! RÉINITIALISE LE MOT DE PASSE
   async resetPassword({
     email,
     token,
@@ -506,6 +506,67 @@ export class AuthService {
       message: "Mot de passe mis à jour avec succès.",
     };
   }
+
+  //! CHANGEMENT DE MOT DE PASSE
+  async changePassword({
+    userId,
+    currentPassword,
+    newPassword,
+  }: {
+    userId: string;
+    currentPassword: string;
+    newPassword: string;
+  }) {
+    try {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+    if (!user) {
+      throw new Error("Utilisateur non trouvé.");
+    }
+
+    const isPasswordValid = await this.isPasswordValid({password: currentPassword, hashedPassword: user.password});
+    if (!isPasswordValid) {
+      throw new Error("Mot de passe actuel incorrect.");
+    }
+
+    // Vérifier que le nouveau mot de passe est différent de l'ancien
+    if (currentPassword === newPassword) {
+      throw new Error("Le nouveau mot de passe doit être différent de l'ancien.");
+    }
+
+    // Vérifier que le nouveau mot de passe respecte les critères de sécurité
+    if (newPassword.length < 6) {
+      throw new Error("Le mot de passe doit contenir au moins 6 caractères.");
+    }
+
+    // Hashage du nouveau mot de passe
+    const hashedNewPassword = await this.hashPassword({password: newPassword});
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { password: hashedNewPassword },
+    });
+
+    // Envoi d'un email de confirmation
+    await this.mailService.sendMail({
+      to: user.email,
+      subject: "Votre mot de passe a été changé",
+      html: `
+        <h2>Changement de mot de passe</h2>
+        <p>Bonjour ${user.salonName},</p>
+        <p>Votre mot de passe a été changé avec succès.</p>
+        <p>Si vous n'êtes pas à l'origine de ce changement, veuillez contacter notre support immédiatement.</p>
+      `,
+    });
+
+    return { message: "Mot de passe changé avec succès." };
+    }
+    catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      throw new Error(errorMessage);
+    }
+  }
+
   
 
   //! Méthode d'authentification :

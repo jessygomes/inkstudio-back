@@ -1,4 +1,3 @@
-/* eslint-disable prettier/prettier */
 import { BadRequestException, Controller, Get, NotFoundException, Query } from '@nestjs/common';
 import { TimeSlotService } from './time-slot.service';
 import { PrismaService } from 'src/database/prisma.service';

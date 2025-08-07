@@ -26,6 +26,7 @@ import { ProductSalonModule } from './product-salon/product-salon.module';
 import { BullModule } from '@nestjs/bull';
 import { FollowUpModule } from './follow-up/follow-up.module';
 import { SaasModule } from './saas/saas.module';
+import { BlockedTimeSlotsModule } from './blocked-time-slots/blocked-time-slots.module';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { SaasModule } from './saas/saas.module';
     // Note: Les queues individuelles sont gérées dans leurs modules respectifs
     FollowUpModule,
     SaasModule,
+    BlockedTimeSlotsModule,
   ],
   controllers: [
     UserController,

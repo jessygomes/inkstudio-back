@@ -1,4 +1,3 @@
-/* eslint-disable prettier/prettier */
 import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
 import { TatoueursService } from './tatoueurs.service';
 import { CreateTatoueurDto } from './dto/create-tatoueur.dto';

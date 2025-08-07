@@ -5,6 +5,7 @@ import { JwtAuthGuard } from './jwt-auth.guard';
 import { UserService } from 'src/user/user.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { LoginUserDto } from './dto/login-user.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { PrismaService } from 'src/database/prisma.service';
 
 
@@ -70,5 +71,30 @@ export class AuthController {
     @Body('password') password: string
   ) {
     return this.authService.resetPassword({ email, token, password });
+  }
+
+  // @UseGuards(JwtAuthGuard)
+  @Post('change-password')
+  async changePassword(
+    @Request() request: RequestWithUser,
+    @Body() changePasswordDto: ChangePasswordDto
+  ) {
+    try {
+      const { currentPassword, newPassword, confirmPassword, userId } = changePasswordDto;
+
+      // Vérifier que les mots de passe de confirmation correspondent
+      if (newPassword !== confirmPassword) {
+        throw new BadRequestException('Les mots de passe de confirmation ne correspondent pas.');
+      }
+
+      return await this.authService.changePassword({
+        userId,
+        currentPassword,
+        newPassword,
+      });
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      throw new BadRequestException(errorMessage);
+    }
   }
 }

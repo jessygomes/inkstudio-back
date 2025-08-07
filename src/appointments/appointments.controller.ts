@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestj
 import { AppointmentsService } from './appointments.service';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
+import { ProposeRescheduleDto, ClientRescheduleRequestDto } from './dto/reschedule-appointment.dto';
 // import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 // import { SaasLimitGuard } from 'src/saas/saas-limit.guard';
 import { SaasLimit } from 'src/saas/saas-limit.decorator';
@@ -55,8 +56,11 @@ export class AppointmentsController {
   //! VOIR LES RDV DU JOUR POUR DASHBOARD ✅
   // @UseGuards(JwtAuthGuard) // Temporairement commenté pour debug
   @Get('today/:id')
-  async getTodaysAppointments(@Param('id') userId: string) {
-    return await this.appointmentsService.getTodaysAppointments(userId);
+  async getTodaysAppointments(
+    @Param('id') userId: string,
+    @Query('date') targetDate?: string
+  ) {
+    return await this.appointmentsService.getTodaysAppointments(userId, targetDate);
   }
 
   //! TAUX DE REMPLISSAGE DES CRENAUX PAR SEMAINE ✅
@@ -152,5 +156,27 @@ export class AppointmentsController {
   @Get('tatoueur/:id')
   async getAppointmentsByTatoueurId(@Param('id') tatoueurId: string) {
     return await this.appointmentsService.getTatoueurAppointments(tatoueurId);
+  }
+
+  //! PROPOSER UNE REPROGRAMMATION DE RDV ✅
+  // @UseGuards(JwtAuthGuard) // À décommenter quand l'auth sera activée
+  @Post('propose-reschedule/:userId')
+  async proposeReschedule(
+    @Param('userId') userId: string,
+    @Body() proposeData: ProposeRescheduleDto
+  ) {
+    return await this.appointmentsService.proposeReschedule(proposeData, userId);
+  }
+
+  //! VALIDER TOKEN DE REPROGRAMMATION ✅
+  @Get('validate-reschedule-token/:token')
+  async validateRescheduleToken(@Param('token') token: string) {
+    return await this.appointmentsService.validateRescheduleToken(token);
+  }
+
+  //! RÉPONSE CLIENT POUR REPROGRAMMATION ✅
+  @Post('client-reschedule-response')
+  async handleClientRescheduleRequest(@Body() rescheduleData: ClientRescheduleRequestDto) {
+    return await this.appointmentsService.handleClientRescheduleRequest(rescheduleData);
   }
 }
