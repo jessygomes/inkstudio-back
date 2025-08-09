@@ -9,11 +9,13 @@ export class UserService {
 
   //! GET ALL USERS
   async getUsers() {
+    try {
     const users = await this.prisma.user.findMany({
       select: {
         id: true,
         email: true,
         salonName: true,
+        image: true,
         firstName: true,
         lastName: true,
         phone: true,
@@ -22,9 +24,29 @@ export class UserService {
         postalCode: true,
         salonHours: true,
         role: true,
+        Tatoueur: {
+          select: {
+            id: true,
+            name: true,
+            img: true,
+            description: true,
+            phone: true,
+            hours: true,
+          }
+        },
+        salonPhotos: true, // Assurez-vous d'inclure salonPhotos si nécessaire
+        instagram: true,
+        facebook: true,
+        tiktok: true,
+        website: true,
       },
     }) as { id: string; email: string; salonName: string; role: string }[];
+
     return users;
+    } catch (error) {
+      console.error('Error fetching users:', error);
+      throw new Error('Unable to fetch users');
+    }
   }
 
 

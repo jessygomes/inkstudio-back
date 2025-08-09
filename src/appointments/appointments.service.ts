@@ -1172,13 +1172,7 @@ export class AppointmentsService {
               name: true,
             },
           },
-          tattooDetail: {
-            select: {
-              description: true,
-              estimatedPrice: true,
-              price: true,
-            },
-          },
+          tattooDetail : true,
           client: {
             select: {
               firstName: true,
