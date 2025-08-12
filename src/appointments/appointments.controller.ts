@@ -6,6 +6,7 @@ import { ProposeRescheduleDto, ClientRescheduleRequestDto } from './dto/reschedu
 // import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 // import { SaasLimitGuard } from 'src/saas/saas-limit.guard';
 import { SaasLimit } from 'src/saas/saas-limit.decorator';
+import { CreateAppointmentRequestDto } from './dto/create-appointment-request.dto';
 
 @Controller('appointments')
 export class AppointmentsController {
@@ -18,6 +19,12 @@ export class AppointmentsController {
   async create(@Body() rdvBody: CreateAppointmentDto) {
     return await this.appointmentsService.create({ rdvBody });
   }
+
+  //! DEMANDE DE RDV CLIENT
+  @Post('appointment-request')
+async createAppointmentRequest(@Body() dto: CreateAppointmentRequestDto) {
+  return await this.appointmentsService.createAppointmentRequest(dto);
+}
 
   //! VOIR TOUS LES RDV ✅
   @Get()
@@ -61,6 +68,33 @@ export class AppointmentsController {
     @Query('date') targetDate?: string
   ) {
     return await this.appointmentsService.getTodaysAppointments(userId, targetDate);
+  }
+
+  //! VOIR LES DEMANDES DE RDV D'UN SALON ✅
+  @Get('appointment-requests/:userId')
+  async getAppointmentRequests(@Param('userId') userId: string) {
+    return await this.appointmentsService.getAppointmentRequestsBySalon(userId);
+  }
+
+  //! PROPOSER UN CRENEAU POUR UNE DEMANDE DE RDV CLIENT
+  @Post('appointment-request/propose-slot/:requestId')
+  async proposeSlotForAppointmentRequest(
+    @Param('requestId') requestId: string,
+    @Body() body: { proposedDate: string; proposedFrom: string; proposedTo: string, tatoueurId?: string, message?: string }
+  ) {
+    // Les dates sont envoyées en string, à convertir en Date
+    const { proposedDate, proposedFrom, proposedTo, tatoueurId, message } = body;
+    if (!proposedDate || !proposedFrom || !proposedTo) {
+      throw new Error('All date fields (proposedDate, proposedFrom, proposedTo) are required.');
+    }
+    return await this.appointmentsService.proposeSlotForAppointmentRequest(
+      requestId,
+      new Date(proposedDate),
+      new Date(proposedFrom),
+      new Date(proposedTo),
+      tatoueurId,
+      message
+    );
   }
 
   //! TAUX DE REMPLISSAGE DES CRENAUX PAR SEMAINE ✅
@@ -178,5 +212,18 @@ export class AppointmentsController {
   @Post('client-reschedule-response')
   async handleClientRescheduleRequest(@Body() rescheduleData: ClientRescheduleRequestDto) {
     return await this.appointmentsService.handleClientRescheduleRequest(rescheduleData);
+  }
+
+  //! VALIDER TOKEN DE DEMANDE
+  @Get('validate-appointment-request-token/:token')
+  async validateAppointmentRequestToken(@Param('token') token: string) {
+    return await this.appointmentsService.validateAppointmentRequestToken(token);
+  }
+
+  //! REPONSE CLIENT POUR DEMANDE DE RDV (ACCEPTER OU DECLINER)
+  @Post('appointment-request-response')
+  async handleAppointmentRequestResponse(@Body() body: { token: string; action: 'accept' | 'decline'; reason?: string }) {
+    const { token, action, reason } = body;
+    return await this.appointmentsService.handleAppointmentRequestResponse(token, action, reason);
   }
 }

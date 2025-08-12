@@ -7,6 +7,7 @@ import { MailService } from 'src/mailer.service';
 import { FollowupSchedulerService } from 'src/follow-up/followup-scheduler.service';
 import { SaasService } from 'src/saas/saas.service';
 import * as crypto from 'crypto';
+import { CreateAppointmentRequestDto } from './dto/create-appointment-request.dto';
 
 @Injectable()
 export class AppointmentsService {
@@ -1890,4 +1891,330 @@ export class AppointmentsService {
       };
     }
   }
+
+  //! DEMANDE DE RDV
+  async createAppointmentRequest(dto: CreateAppointmentRequestDto) {
+    console.log('Création d\'une demande de rendez-vous:', dto);
+
+    try {
+      const appointmentRequest = await this.prisma.appointmentRequest.create({
+        data: {
+          userId: dto.userId,
+          prestation: dto.prestation, // ✅ passer la valeur
+          clientFirstname: dto.clientFirstname,
+          clientLastname: dto.clientLastname,
+          clientEmail: dto.clientEmail,
+          clientPhone: dto.clientPhone ?? null,
+          availability: dto.availability, // string (JSON stringifié côté front)
+          details: dto.details ?? null,   // string (JSON stringifié côté front)
+          message: dto.message ?? null,
+          // status: PENDING (par défaut dans le schéma Prisma)
+        },
+      });
+      return {
+        error: false,
+        message: 'Demande de rendez-vous créée avec succès',
+        appointmentRequest,
+      };
+    } catch (error: unknown) {
+      console.error('❌ Erreur lors de la création de la demande de rendez-vous:', error);
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: `Erreur lors de la création de la demande de rendez-vous: ${errorMessage}`,
+      };
+    }
+  }
+
+  //! RECUPERER LES DEMANDES DE RDV D'UN SALON
+  async getAppointmentRequestsBySalon(userId: string) {
+    try {
+      const appointmentRequests = await this.prisma.appointmentRequest.findMany({
+        where: {
+          userId,
+        },
+      });
+
+      return {
+        error: false,
+        appointmentRequests,
+      };
+    } catch (error: unknown) {
+      console.error('❌ Erreur lors de la récupération des demandes de rendez-vous:', error);
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: `Erreur lors de la récupération des demandes de rendez-vous: ${errorMessage}`,
+      };
+    }
+  }
+
+  //! TRAITER UNE DEMANDE DE RDV
+  // async processAppointmentRequest(requestId: string, action: 'accept' | 'decline' | 'reprogrammer') {
+  //   try {
+  //     const appointmentRequest = await this.prisma.appointmentRequest.findUnique({
+  //       where: {
+  //         id: requestId,
+  //       },
+  //     });
+
+  //     if (!appointmentRequest) {
+  //       return {
+  //         error: true,
+  //         message: 'Demande de rendez-vous introuvable',
+  //       };
+  //     }
+
+  //     // Soit on accepte le jour et l'heure indiqué par le client directement donc on crée un rdv
+  //     // Soit on propose une date et une heure en fonction des disponibilités du client
+  //     // Soit on décline la demande avec un message explicatifs
+  //     if (action === 'accept') {
+  //       // On doit créer un rdv et supprimer la demande de RDV
+  //     } else if (action === 'reprogrammer') {
+  //       // Envoyer une demande de reprogrammation, passer la demande avec le statut "REPROGRAMMED" et attendre la réponse du client
+  //       return {
+  //         error: false,
+  //         message: `Demande de reprogrammation envoyée avec succès au client : ${appointmentRequest.clientFirstname} ${appointmentRequest.clientLastname}`,
+  //       };
+  //     } else if (action === 'decline') {
+  //       // Logique pour décliner la demande de rendez-vous
+  //     }
+
+  //     return {
+  //       error: false,
+  //       message: `Demande de rendez-vous ${action}ée avec succès`,
+  //     };
+  //   } catch (error: unknown) {
+  //     console.error('❌ Erreur lors du traitement de la demande de rendez-vous:', error);
+  //     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+  //     return {
+  //       error: true,
+  //       message: `Erreur lors du traitement de la demande de rendez-vous: ${errorMessage}`,
+  //     };
+  //   }
+  // }
+
+  //! PROPOSER UN CRENEAU POUR UNE DEMANDE DE RDV CLIENT
+  async proposeSlotForAppointmentRequest(requestId: string, proposedDate: Date, proposedFrom: Date, proposedTo: Date, tatoueurId?: string, message?: string) {
+    try {
+      const appointmentRequest = await this.prisma.appointmentRequest.findUnique({ where: { id: requestId }, include: { user: true } });
+      if (!appointmentRequest) {
+        return { error: true, message: 'Demande de RDV introuvable' };
+      }
+
+      // ==================== ÉTAPE 3: GÉNÉRER UN TOKEN SÉCURISÉ ====================
+      const proposeToken = crypto.randomBytes(32).toString('hex');
+      const tokenExpiry = new Date();
+      tokenExpiry.setDate(tokenExpiry.getDate() + 7); // Token valide 7 jours
+
+      // Mettre à jour la demande avec les créneaux proposés et le statut
+      await this.prisma.appointmentRequest.update({
+        where: { id: requestId },
+        data: {
+          proposedDate,
+          proposedFrom,
+          proposedTo,
+          tatoueurId: tatoueurId, // Utiliser le tatoueur de la demande si non spécifié
+          status: 'PROPOSED',
+          token: proposeToken,
+          updatedAt: new Date(),
+        },
+      });
+
+      // Envoi d'un email au client avec les créneaux proposés
+      const clientEmail = appointmentRequest.clientEmail;
+      const clientName = `${appointmentRequest.clientFirstname} ${appointmentRequest.clientLastname}`;
+      const salonName = appointmentRequest.user?.salonName || 'Votre salon';
+      const proposedDateStr = proposedDate ? new Date(proposedDate).toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : '';
+      const proposedFromStr = proposedFrom ? new Date(proposedFrom).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '';
+      const proposedToStr = proposedTo ? new Date(proposedTo).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '';
+
+      // Lien d'acceptation/refus (à adapter selon le front)
+      const proposeUrl = `${process.env.FRONTEND_URL_BIS}/rdv-request?token=${proposeToken}`; 
+
+      const emailSubject = `Proposition de créneau pour votre demande de RDV - ${salonName}`;
+      const emailContent = `
+        <div style='font-family: Inter, sans-serif; max-width: 600px; margin: 0 auto; background: #f8fafc; color: #222; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.08);'>
+          <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 32px 24px; text-align: center; border-radius: 16px 16px 0 0;'>
+            <h1 style='margin: 0; font-size: 24px; color: #fff;'>Proposition de créneau</h1>
+            <p style='color: #e0e7ff;'>${salonName} vous propose un créneau pour votre demande de rendez-vous en fonction des disponibilités que vous avez indiquées.</p>
+          </div>
+            <p style='color: #e0e7ff;'>${message}</p>
+          <div style='padding: 32px 24px;'>
+            <p>Bonjour <strong>${clientName}</strong>,</p>
+            <p>Voici le créneau proposé :</p>
+            <ul style='background: #eef2ff; padding: 16px; border-radius: 8px;'>
+              <li><strong>Date :</strong> ${proposedDateStr}</li>
+              <li><strong>De :</strong> ${proposedFromStr}</li>
+              <li><strong>À :</strong> ${proposedToStr}</li>
+            </ul>
+            <div style='margin: 32px 0; text-align: center;'>
+              <a href='${proposeUrl}' style='background: #10b981; color: #fff; padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; margin-right: 16px;'>Cliquez ici pour accepter ou décliner.</a>
+            </div>
+            <p style='color: #64748b; font-size: 14px;'>Si le créneau ne vous convient pas, vous pouvez le décliner et le salon pourra vous proposer un autre horaire.</p>
+          </div>
+          <div style='background: #e0e7ff; padding: 16px; text-align: center; border-radius: 0 0 16px 16px;'>
+            <p style='margin: 0; color: #475569; font-size: 12px;'>© ${new Date().getFullYear()} ${salonName} - Email automatique</p>
+          </div>
+        </div>
+      `;
+      
+      // Envoyer l'email au client
+      await this.mailService.sendMail({
+        to: clientEmail,
+        subject: emailSubject,
+        html: emailContent,
+      });
+
+      return { error: false, message: 'Créneau proposé au client et email envoyé.' };
+    } catch (error: unknown) {
+      return { error: true, message: error instanceof Error ? error.message : 'Erreur inconnue' };
+    }
+  }
+
+    //! VALIDER LE TOKEN DE PROPOSITION DE CRENEAU
+    async validateAppointmentRequestToken(token: string) {
+      try {
+        const appointmentRequest = await this.prisma.appointmentRequest.findFirst({
+          where: { token },
+          include: { user: { select: { id: true, email: true, salonName: true, image: true, salonHours: true, phone: true, address: true, postalCode: true, city: true } } },
+        });
+        if (!appointmentRequest) {
+          return { error: true, message: 'Token invalide ou demande introuvable.' };
+        }
+        // Optionnel: vérifier expiration si vous stockez une date d'expiration
+        // Retourner les infos pour affichage sur le front
+        return {
+          error: false,
+          appointmentRequest: {
+            id: appointmentRequest.id,
+            prestation: appointmentRequest.prestation,
+            clientFirstname: appointmentRequest.clientFirstname,
+            clientLastname: appointmentRequest.clientLastname,
+            clientEmail: appointmentRequest.clientEmail,
+            clientPhone: appointmentRequest.clientPhone,
+            availability: appointmentRequest.availability,
+            proposedDate: appointmentRequest.proposedDate,
+            proposedFrom: appointmentRequest.proposedFrom,
+            proposedTo: appointmentRequest.proposedTo,
+            details: appointmentRequest.details,
+            status: appointmentRequest.status,
+            message: appointmentRequest.message,
+            salonName: appointmentRequest.user?.salonName,
+            salonEmail: appointmentRequest.user?.email,
+            salonImage: appointmentRequest.user?.image,
+            salonHours: appointmentRequest.user?.salonHours,
+            salonPhone: appointmentRequest.user?.phone,
+            salonAddress: appointmentRequest.user?.address,
+            salonPostalCode: appointmentRequest.user?.postalCode,
+            salonCity: appointmentRequest.user?.city,
+          },
+        };
+      } catch (error: unknown) {
+        return { error: true, message: error instanceof Error ? error.message : 'Erreur inconnue' };
+      }
+    }
+
+    //! TRAITER LA REPONSE DU CLIENT (ACCEPTER OU DECLINER)
+    async handleAppointmentRequestResponse(token: string, action: 'accept' | 'decline', reason?: string) {
+      try {
+        const appointmentRequest = await this.prisma.appointmentRequest.findFirst({
+          where: { token },
+          include: { user: { select: { id: true, email: true, salonName: true } } },
+        });
+
+        if (!appointmentRequest) {
+          return { error: true, message: 'Token invalide ou demande introuvable.' };
+        }
+
+        if (appointmentRequest.status !== 'PROPOSED') {
+          return { error: true, message: 'La demande n\'est pas en attente de réponse.' };
+        }
+
+        const salonEmail = appointmentRequest.user?.email;
+        const salonName = appointmentRequest.user?.salonName || 'Salon';
+        const clientName = `${appointmentRequest.clientFirstname} ${appointmentRequest.clientLastname}`;
+        
+        const proposedDateStr = appointmentRequest.proposedDate ? new Date(appointmentRequest.proposedDate).toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : '';
+        const proposedFromStr = appointmentRequest.proposedFrom ? new Date(appointmentRequest.proposedFrom).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '';
+        const proposedToStr = appointmentRequest.proposedTo ? new Date(appointmentRequest.proposedTo).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '';
+
+        if (action === 'accept') {
+          await this.prisma.appointmentRequest.update({
+            where: { id: appointmentRequest.id },
+            data: { status: 'ACCEPTED', updatedAt: new Date() },
+          });
+          // Email au salon
+          if (salonEmail) {
+            const emailSubject = `Le client a accepté le créneau proposé - ${clientName}`;
+            const emailContent = `
+              <div style='font-family: Inter, sans-serif; max-width: 600px; margin: 0 auto; background: #f8fafc; color: #222; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.08);'>
+                <div style='background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 32px 24px; text-align: center; border-radius: 16px 16px 0 0;'>
+                  <h1 style='margin: 0; font-size: 24px; color: #fff;'>Créneau accepté</h1>
+                  <p style='color: #d1fae5;'>${clientName} a accepté le créneau proposé.</p>
+                </div>
+                <div style='padding: 32px 24px;'>
+                  <p>Créneau accepté :</p>
+                  <ul style='background: #d1fae5; padding: 16px; border-radius: 8px;'>
+                    <li><strong>Date :</strong> ${proposedDateStr}</li>
+                    <li><strong>De :</strong> ${proposedFromStr}</li>
+                    <li><strong>À :</strong> ${proposedToStr}</li>
+                  </ul>
+                  <p style='color: #64748b; font-size: 14px;'>Vous pouvez maintenant créer le rendez-vous dans votre planning.</p>
+                </div>
+                <div style='background: #e0e7ff; padding: 16px; text-align: center; border-radius: 0 0 16px 16px;'>
+                  <p style='margin: 0; color: #475569; font-size: 12px;'>© ${new Date().getFullYear()} ${salonName} - Notification automatique</p>
+                </div>
+              </div>
+            `;
+            await this.mailService.sendMail({
+              to: salonEmail,
+              subject: emailSubject,
+              html: emailContent,
+            });
+          }
+          return { error: false, message: 'Demande acceptée, salon notifié.' };
+        } else if (action === 'decline') {
+          await this.prisma.appointmentRequest.update({
+            where: { id: appointmentRequest.id },
+            data: { status: 'DECLINED', updatedAt: new Date(), message: reason ?? appointmentRequest.message },
+          });
+          // Email au salon
+          if (salonEmail) {
+            const emailSubject = `Le client a décliné le créneau proposé - ${clientName}`;
+            const emailContent = `
+              <div style='font-family: Inter, sans-serif; max-width: 600px; margin: 0 auto; background: #f8fafc; color: #222; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.08);'>
+                <div style='background: linear-gradient(135deg, #ef4444 0%, #f59e42 100%); padding: 32px 24px; text-align: center; border-radius: 16px 16px 0 0;'>
+                  <h1 style='margin: 0; font-size: 24px; color: #fff;'>Créneau décliné</h1>
+                  <p style='color: #fee2e2;'>${clientName} a décliné le créneau proposé.</p>
+                </div>
+                <div style='padding: 32px 24px;'>
+                  <p>Créneau proposé :</p>
+                  <ul style='background: #fee2e2; padding: 16px; border-radius: 8px;'>
+                    <li><strong>Date :</strong> ${proposedDateStr}</li>
+                    <li><strong>De :</strong> ${proposedFromStr}</li>
+                    <li><strong>À :</strong> ${proposedToStr}</li>
+                  </ul>
+                  <p style='color: #64748b; font-size: 14px;'>Vous pouvez proposer un autre créneau ou clôturer la demande.</p>
+                  ${reason ? `<div style='margin-top:16px; color:#ef4444;'><strong>Motif du client :</strong> ${reason}</div>` : ''}
+                </div>
+                <div style='background: #e0e7ff; padding: 16px; text-align: center; border-radius: 0 0 16px 16px;'>
+                  <p style='margin: 0; color: #475569; font-size: 12px;'>© ${new Date().getFullYear()} ${salonName} - Notification automatique</p>
+                </div>
+              </div>
+            `;
+            await this.mailService.sendMail({
+              to: salonEmail,
+              subject: emailSubject,
+              html: emailContent,
+            });
+          }
+          return { error: false, message: 'Créneau refusé par le client, salon notifié.' };
+        } else {
+          return { error: true, message: 'Action non reconnue.' };
+        }
+      } catch (error: unknown) {
+        return { error: true, message: error instanceof Error ? error.message : 'Erreur inconnue' };
+      }
+    }
 }

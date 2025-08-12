@@ -7,14 +7,171 @@ export class UserService {
   // Injecter le service Prisma dans le service User
   constructor(private prisma: PrismaService) {}
 
-  //! GET ALL USERS
-  async getUsers() {
+  async getUsers(
+    query?: string,
+    city?: string,
+    page: number = 1,
+    limit: number = 1
+  ) {
     try {
+      // Sanitize pagination
+      const currentPage = Math.max(1, Number(page) || 1);
+      const perPage = Math.min(50, Math.max(1, Number(limit) || 12));
+      const skip = (currentPage - 1) * perPage;
+
+      // Build where
+      let where: Record<string, any> | undefined = {};
+      if (query && query.trim() !== "") {
+        where.OR = [
+          { salonName: { contains: query, mode: "insensitive" as const } },
+          { Tatoueur: { some: { name: { contains: query, mode: "insensitive" as const } } } },
+        ];
+      }
+      if (city && city.trim() !== "") {
+        // Combine avec OR précédent => AND global, c'est ce qu'on veut
+        where.city = { contains: city, mode: "insensitive" as const };
+      }
+      if (where && Object.keys(where).length === 0) where = undefined;
+
+      // Count + Data en transaction
+      const [totalUsers, users] = await this.prisma.$transaction([
+        this.prisma.user.count({ where }),
+        this.prisma.user.findMany({
+          where,
+          select: {
+            id: true,
+            email: true,
+            salonName: true,
+            image: true,
+            firstName: true,
+            lastName: true,
+            phone: true,
+            address: true,
+            city: true,
+            postalCode: true,
+            salonHours: true,
+            role: true,
+            Tatoueur: {
+              select: {
+                id: true,
+                name: true,
+                img: true,
+                description: true,
+                phone: true,
+                hours: true,
+              },
+            },
+            salonPhotos: true,
+            instagram: true,
+            facebook: true,
+            tiktok: true,
+            website: true,
+          },
+          orderBy: { salonName: "asc" }, // adapte selon ton besoin
+          skip,
+          take: perPage,
+        }),
+      ]);
+
+      const totalPages = Math.max(1, Math.ceil(totalUsers / perPage));
+      const startIndex = totalUsers === 0 ? 0 : skip + 1;
+      const endIndex = Math.min(skip + perPage, totalUsers);
+
+      return {
+        error: false,
+        users,
+        pagination: {
+          currentPage,
+          limit: perPage,
+          totalUsers,
+          totalPages,
+          hasNextPage: currentPage < totalPages,
+          hasPreviousPage: currentPage > 1,
+          startIndex,
+          endIndex,
+        },
+        filters: { query: query ?? null, city: city ?? null },
+      };
+    } catch (error) {
+      console.error("Error fetching users:", error);
+      throw new Error("Unable to fetch users");
+    }
+  }
+
+    //! SEARCH USERS (pour la barre de recherche du front)
+    async searchUsers(query: string) {
+      if (!query || query.trim() === "") {
+        // Si pas de query, retourner tout
+        return await this.getUsers();
+      }
+      // Recherche insensible à la casse sur plusieurs champs
+      const users = await this.prisma.user.findMany({
+        where: {
+          OR: [
+            { salonName: { contains: query, mode: "insensitive" } },
+            { Tatoueur: { some: { name: { contains: query, mode: "insensitive" as const } } } },
+          ],
+        },
+        select: {
+          id: true,
+          email: true,
+          salonName: true,
+          image: true,
+          firstName: true,
+          lastName: true,
+          phone: true,
+          address: true,
+          city: true,
+          postalCode: true,
+          salonHours: true,
+          role: true,
+          Tatoueur: {
+            select: {
+              id: true,
+              name: true,
+              img: true,
+              description: true,
+              phone: true,
+              hours: true,
+            }
+          },
+          salonPhotos: true,
+          instagram: true,
+          facebook: true,
+          tiktok: true,
+          website: true,
+        },
+      });
+      return users;
+    }
+
+  //! RECUPERER LES VILLES
+  async getDistinctCities() {
+  const rows = await this.prisma.user.findMany({
+    distinct: ["city"],
+    where: { city: { not: null } },
+    select: { city: true },
+    orderBy: { city: "asc" },
+  });
+  return rows
+    .map(r => r.city?.trim())
+    .filter(Boolean);
+  }
+
+  //! GET USER BY SLUG + LOCALISATION
+  async getUserBySlugAndLocation({ nameSlug, locSlug }: { nameSlug: string; locSlug: string }) {
+    // On récupère tous les salons dont le slug du nom correspond
     const users = await this.prisma.user.findMany({
+      where: {
+        salonName: { not: null },
+        city: { not: null },
+        postalCode: { not: null },
+      },
       select: {
         id: true,
         email: true,
         salonName: true,
+        description: true,
         image: true,
         firstName: true,
         lastName: true,
@@ -32,24 +189,51 @@ export class UserService {
             description: true,
             phone: true,
             hours: true,
+            instagram: true
           }
         },
-        salonPhotos: true, // Assurez-vous d'inclure salonPhotos si nécessaire
+        salonPhotos: true,
         instagram: true,
         facebook: true,
         tiktok: true,
         website: true,
+        Portfolio: {
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            imageUrl: true,
+            tatoueurId: true,
+            createdAt: true,
+            updatedAt: true,
+          }
+        },
+        ProductSalon: {
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            price: true,
+            imageUrl: true,
+            createdAt: true,
+            updatedAt: true,
+          }
+        },
       },
-    }) as { id: string; email: string; salonName: string; role: string }[];
-
-    return users;
-    } catch (error) {
-      console.error('Error fetching users:', error);
-      throw new Error('Unable to fetch users');
-    }
+    });
+    // On filtre côté JS pour matcher les deux slugs
+    const toSlug = (str: string) => str
+      .normalize('NFD').replace(/\p{Diacritic}/gu, '')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
+    const found = users.find(u => {
+      const name = toSlug(u.salonName || '');
+      const locSource = [u.city, u.postalCode].filter(v => typeof v === 'string' && v.trim() !== '').join('-');
+      const loc = toSlug(locSource) || 'localisation';
+      return name === nameSlug && loc === locSlug;
+    });
+    return found || null;
   }
-
-
 
   //! GET USER BY ID
   async getUserById({userId} : {userId: string}) {

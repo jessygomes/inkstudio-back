@@ -77,6 +77,8 @@ model User {
   
   // Relation avec les détails du plan SaaS
   saasPlanDetails SaasPlanDetails?
+
+  AppointmentRequest AppointmentRequest[]
 }
 
 model VerificationToken {
@@ -200,6 +202,33 @@ model Appointment {
   FollowUpSubmission FollowUpSubmission[]
   
   rescheduleRequests RescheduleRequest[]
+}
+
+model AppointmentRequest {
+  id            String   @id @default(cuid())
+  userId        String   // Salon concerné
+  prestation    PrestationType
+  clientFirstname    String
+  clientLastname    String
+  clientEmail   String
+  clientPhone   String?
+  clientBirthDate DateTime?
+  availability  String   // Texte ou JSON selon ton front
+  details       String?  // Zone, taille, style, etc. (JSON ou texte)
+  message       String?  // Message libre du client
+  status        String   @default("PENDING") // PENDING, PROPOSED, ACCEPTED, DECLINED, CLOTURED
+  
+  proposedDate  DateTime?
+  proposedFrom  DateTime?
+  proposedTo    DateTime?
+  tatoueurId    String?
+
+  token         String?         @unique
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user          User     @relation(fields: [userId], references: [id])
 }
 
 model TimeSlot {

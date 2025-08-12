@@ -1,13 +1,34 @@
-import { Body, Controller, Get, Param, Patch } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Query } from '@nestjs/common';
 import { UserService } from './user.service';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { GetUsersDto } from './dto/get-users.dto';
 
 @Controller('users')
 export class UserController {
   constructor(private userService: UserService) {}
+  //! GET ALL USERS
   @Get()
-  getUsers() {
-    return this.userService.getUsers();
+  async getUsers(@Query() dto: GetUsersDto) {
+    const { query, city, page, limit } = dto;
+    return this.userService.getUsers(query, city, page, limit);
+  }
+
+  //! RECUPERER LES VILLES
+  @Get('cities')
+  async getDistinctCities() {
+    return this.userService.getDistinctCities();
+  }
+
+  //! SEARCH USERS (pour la barre de recherche du front)
+  @Get('search')
+  async searchUsers(@Query('query') query: string) {
+    return await this.userService.searchUsers(query);
+  }
+
+  //! GET USER BY SLUG + LOCALISATION
+  @Get(":nameSlug/:locSlug")
+  getUserBySlugAndLocation(@Param('nameSlug') nameSlug: string, @Param('locSlug') locSlug: string) {
+    return this.userService.getUserBySlugAndLocation({ nameSlug, locSlug });
   }
 
   //! Routes spécifiques AVANT les routes avec paramètres
