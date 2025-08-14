@@ -226,4 +226,11 @@ async createAppointmentRequest(@Body() dto: CreateAppointmentRequestDto) {
     const { token, action, reason } = body;
     return await this.appointmentsService.handleAppointmentRequestResponse(token, action, reason);
   }
+  
+  //! SALON : REFUSER LA DEMANDE DE RDV D'UN CLIENT
+  @Patch('decline-appointment-request')
+  async declineAppointmentRequest(@Body() body: { appointmentRequestId: string; reason: string }) {
+    const { appointmentRequestId, reason } = body;
+    return await this.appointmentsService.declineAppointmentRequest(appointmentRequestId, reason);
+  }
 }

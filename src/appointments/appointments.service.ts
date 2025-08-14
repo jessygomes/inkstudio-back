@@ -1949,51 +1949,6 @@ export class AppointmentsService {
     }
   }
 
-  //! TRAITER UNE DEMANDE DE RDV
-  // async processAppointmentRequest(requestId: string, action: 'accept' | 'decline' | 'reprogrammer') {
-  //   try {
-  //     const appointmentRequest = await this.prisma.appointmentRequest.findUnique({
-  //       where: {
-  //         id: requestId,
-  //       },
-  //     });
-
-  //     if (!appointmentRequest) {
-  //       return {
-  //         error: true,
-  //         message: 'Demande de rendez-vous introuvable',
-  //       };
-  //     }
-
-  //     // Soit on accepte le jour et l'heure indiqué par le client directement donc on crée un rdv
-  //     // Soit on propose une date et une heure en fonction des disponibilités du client
-  //     // Soit on décline la demande avec un message explicatifs
-  //     if (action === 'accept') {
-  //       // On doit créer un rdv et supprimer la demande de RDV
-  //     } else if (action === 'reprogrammer') {
-  //       // Envoyer une demande de reprogrammation, passer la demande avec le statut "REPROGRAMMED" et attendre la réponse du client
-  //       return {
-  //         error: false,
-  //         message: `Demande de reprogrammation envoyée avec succès au client : ${appointmentRequest.clientFirstname} ${appointmentRequest.clientLastname}`,
-  //       };
-  //     } else if (action === 'decline') {
-  //       // Logique pour décliner la demande de rendez-vous
-  //     }
-
-  //     return {
-  //       error: false,
-  //       message: `Demande de rendez-vous ${action}ée avec succès`,
-  //     };
-  //   } catch (error: unknown) {
-  //     console.error('❌ Erreur lors du traitement de la demande de rendez-vous:', error);
-  //     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-  //     return {
-  //       error: true,
-  //       message: `Erreur lors du traitement de la demande de rendez-vous: ${errorMessage}`,
-  //     };
-  //   }
-  // }
-
   //! PROPOSER UN CRENEAU POUR UNE DEMANDE DE RDV CLIENT
   async proposeSlotForAppointmentRequest(requestId: string, proposedDate: Date, proposedFrom: Date, proposedTo: Date, tatoueurId?: string, message?: string) {
     try {
@@ -2213,6 +2168,63 @@ export class AppointmentsService {
         } else {
           return { error: true, message: 'Action non reconnue.' };
         }
+      } catch (error: unknown) {
+        return { error: true, message: error instanceof Error ? error.message : 'Erreur inconnue' };
+      }
+    }
+
+    //! SALON : REFUSER LA DEMANDE DE RDV D'UN CLIENT
+    async declineAppointmentRequest(appointmentRequestId: string, reason?: string): Promise<{ error: boolean; message: string }> {
+      try {
+        const appointmentRequest = await this.prisma.appointmentRequest.findUnique({
+          where: { id: appointmentRequestId },
+          include: { user: true }
+        });
+
+        if (!appointmentRequest) {
+          return { error: true, message: 'Demande de rendez-vous introuvable.' };
+        }
+
+        const clientEmail = appointmentRequest.clientEmail;
+        const clientName = `${appointmentRequest.clientFirstname} ${appointmentRequest.clientLastname}`;
+        const salonName = appointmentRequest.user?.salonName || 'Votre salon';
+
+        await this.prisma.appointmentRequest.update({
+          where: { id: appointmentRequest.id },
+          data: { status: 'CLOSED', updatedAt: new Date()},
+        });
+
+        // Email au client
+        if (clientEmail) {
+          const emailSubject = `Votre demande de rendez-vous a été refusée - ${salonName}`;
+          const emailContent = `
+            <div style='font-family: Inter, sans-serif; max-width: 600px; margin: 0 auto; background: #f8fafc; color: #222; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.08);'>
+              <div style='background: linear-gradient(135deg, #ef4444 0%, #f59e42 100%); padding: 32px 24px; text-align: center; border-radius: 16px 16px 0 0;'>
+                <h1 style='margin: 0; font-size: 24px; color: #fff;'>Demande de rendez-vous refusée</h1>
+                <p style='color: #fee2e2;'>Votre demande de rendez-vous a été refusée par le salon.</p>
+              </div>
+              <div style='padding: 32px 24px;'>
+                <p>Motif du refus :</p>
+                <ul style='background: #fee2e2; padding: 16px; border-radius: 8px;'>
+                  <li><strong>Client :</strong> ${clientName}</li>
+                  <li><strong>Salon :</strong> ${salonName}</li>
+                  <li><strong>Motif :</strong> ${reason ?? 'Aucun motif fourni'}</li>
+                </ul>
+                <p style='color: #64748b; font-size: 14px;'>Vous pouvez proposer un autre créneau ou clôturer la demande.</p>
+              </div>
+              <div style='background: #e0e7ff; padding: 16px; text-align: center; border-radius: 0 0 16px 16px;'>
+                <p style='margin: 0; color: #475569; font-size: 12px;'>© ${new Date().getFullYear()} ${salonName} - Notification automatique</p>
+              </div>
+            </div>
+          `;
+          await this.mailService.sendMail({
+            to: clientEmail,
+            subject: emailSubject,
+            html: emailContent,
+          });
+        }
+
+        return { error: false, message: 'Demande de rendez-vous refusée, client notifié.' };
       } catch (error: unknown) {
         return { error: true, message: error instanceof Error ? error.message : 'Erreur inconnue' };
       }
