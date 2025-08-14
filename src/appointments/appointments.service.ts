@@ -575,11 +575,8 @@ export class AppointmentsService {
       if (
           ['TATTOO', 'RETOUCHE', 'PIERCING'].includes(appointment.prestation)
         ) {
-          console.log(`📅 Planification du suivi pour le RDV ${appointment.id}`);
           await this.followupSchedulerService.scheduleFollowup(appointment.id, appointment.end);
         }
-
-        console.log(`✅ Rendez-vous ${appointment.id} confirmé avec succès`);
 
       // Envoi d'un mail de confirmation au client (si le client existe)
       if (appointment.client) {
@@ -2086,6 +2083,7 @@ export class AppointmentsService {
           return { error: true, message: 'La demande n\'est pas en attente de réponse.' };
         }
 
+        const userId = appointmentRequest.userId;
         const salonEmail = appointmentRequest.user?.email;
         const salonName = appointmentRequest.user?.salonName || 'Salon';
         const clientName = `${appointmentRequest.clientFirstname} ${appointmentRequest.clientLastname}`;
@@ -2099,6 +2097,119 @@ export class AppointmentsService {
             where: { id: appointmentRequest.id },
             data: { status: 'ACCEPTED', updatedAt: new Date() },
           });
+
+          //! Créer directement le rdv, le client et les détails tatouage client
+
+          // Vérifier les limites SAAS - RDV Par mois
+          const canCreateAppointment = await this.saasService.canPerformAction(userId, 'appointment');
+
+          if (!canCreateAppointment) {
+            const limits = await this.saasService.checkLimits(userId);
+            return {
+              error: true,
+              message: `Limite de rendez-vous par mois atteinte (${limits.limits.appointments}). Passez au plan PRO ou BUSINESS pour continuer.`,
+            };
+          }
+
+          // Vérifier si le client existe déja sinon on le créé
+          const client = await this.prisma.client.findFirst({
+              where: {
+                email: appointmentRequest.clientEmail,
+                userId: userId, // Pour que chaque salon ait ses propres clients
+              },
+          });
+
+          if (!client) {
+            const canCreateClient = await this.saasService.canPerformAction(userId, 'client');
+        
+            if (!canCreateClient) {
+              const limits = await this.saasService.checkLimits(userId);
+              return {
+                error: true,
+                message: `Limite de fiches clients atteinte (${limits.limits.clients}). Passez au plan PRO ou BUSINESS pour continuer.`,
+              };
+            }
+
+            await this.prisma.client.create({
+              data: {
+                firstName: appointmentRequest.clientFirstname,
+                lastName: appointmentRequest.clientLastname,
+                email: appointmentRequest.clientEmail,
+                phone: appointmentRequest.clientPhone || "",
+                userId,
+              },
+            });
+          }
+
+
+          // Créer le RDV et les détails du tatouage si présents dans appointmentRequest.details
+          if (!client) {
+            return {
+              error: true,
+              message: 'Client introuvable ou non créé.',
+            };
+          }
+
+          if (!appointmentRequest.proposedFrom || !appointmentRequest.proposedTo) {
+            return {
+              error: true,
+              message: "Les dates de début et de fin du créneau proposé sont obligatoires.",
+            };
+          }
+
+          const newAppointment = await this.prisma.appointment.create({
+            data : {
+              userId,
+              title: appointmentRequest.prestation,
+              prestation: appointmentRequest.prestation,
+              start: new Date(appointmentRequest.proposedFrom),
+              end: new Date(appointmentRequest.proposedTo),
+              tatoueurId: appointmentRequest.tatoueurId, // Si tatoueur non spécifié, on le laisse vide
+              clientId : client.id,
+              status: 'CONFIRMED', // Statut CONFIRMED car le client a accepté
+            }
+          });
+
+          if (appointmentRequest.details) {
+            try {
+              type TattooDetailsData = {
+                description?: string;
+                zone?: string;
+                size?: string;
+                colorStyle?: string;
+                sketch?: string;
+                reference?: string;
+              };
+
+              // Assurez-vous que details est un objet JSON valide
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+              const detailsData: TattooDetailsData = typeof appointmentRequest.details === 'string' ? JSON.parse(appointmentRequest.details) : appointmentRequest.details;
+
+              // Assurez-vous que chaque champ est une chaîne de caractères
+              for (const key in detailsData) {
+                if (detailsData[key] && typeof detailsData[key] !== 'string') {
+                  detailsData[key] = String(detailsData[key]);
+                }
+              }
+
+              await this.prisma.tattooDetail.create({
+                data: {
+                  appointmentId: newAppointment.id,
+                  clientId: client.id, // Associer au client créé ou trouvé
+                  description: detailsData.description || '',
+                  zone: detailsData.zone || '',
+                  size: detailsData.size || '',
+                  colorStyle: detailsData.colorStyle || '',
+                  sketch: detailsData.sketch || '',
+                  reference: detailsData.reference || '',
+                },
+              });
+            } catch (e) {
+              // Si parsing ou création échoue, on continue sans bloquer la suite
+              console.error('Erreur création tattooDetail:', e);
+            }
+          }
+
           // Email au salon
           if (salonEmail) {
             const emailSubject = `Le client a accepté le créneau proposé - ${clientName}`;
@@ -2122,12 +2233,32 @@ export class AppointmentsService {
                 </div>
               </div>
             `;
+
             await this.mailService.sendMail({
               to: salonEmail,
               subject: emailSubject,
               html: emailContent,
             });
+
+              // Envoi du mail de confirmation
+            await this.mailService.sendMail({
+              to: client.email,
+              subject: "Rendez-vous confirmé",
+              html: `
+                <h2>Bonjour ${client.firstName} ${client.lastName} !</h2>
+                <p>Votre rendez-vous a été confirmé avec succès.</p>
+                <p><strong>Détails du rendez-vous :</strong></p>
+                <ul>
+                  <li>Date et heure : ${newAppointment.start.toLocaleString()} - ${newAppointment.end.toLocaleString()}</li>
+                  <li>Prestation : ${newAppointment.prestation}</li>
+                </ul>
+                <p>Nous avons hâte de vous voir !</p>
+                <p>Si vous avez des questions, n'hésitez pas à nous contacter.</p>
+                <p>À bientôt !</p>
+              `,
+            });
           }
+
           return { error: false, message: 'Demande acceptée, salon notifié.' };
         } else if (action === 'decline') {
           await this.prisma.appointmentRequest.update({
