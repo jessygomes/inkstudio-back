@@ -13,7 +13,7 @@ export class TatoueursService {
   //! CREER UN TATOUEUR
   async create({ tatoueurBody }: {tatoueurBody: CreateTatoueurDto}) {
     try {
-      const { name, img, description, phone, instagram, hours, userId } = tatoueurBody;
+      const { name, img, description, phone, instagram, hours, userId, style, skills } = tatoueurBody;
 
       // 🔒 VÉRIFIER LES LIMITES SAAS - TATOUEURS
       const canCreateTatoueur = await this.saasService.canPerformAction(userId, 'tatoueur');
@@ -36,6 +36,8 @@ export class TatoueursService {
           instagram,
           hours,
           userId,
+          style,
+          skills,
         },
       });
 
@@ -106,7 +108,7 @@ export class TatoueursService {
   //! MODIFIER UN TATOUEUR
   async updateTatoueur(id: string, tatoueurBody: CreateTatoueurDto) {
     try {
-      const { name, img, description, phone, instagram, hours } = tatoueurBody;
+      const { name, img, description, phone, instagram, hours, style, skills } = tatoueurBody;
 
       const updatedTatoueur = await this.prisma.tatoueur.update({
         where: {
@@ -119,6 +121,8 @@ export class TatoueursService {
           phone,
           instagram,
           hours,
+          style,
+          skills,
         },
       });
 

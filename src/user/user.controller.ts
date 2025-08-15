@@ -9,14 +9,20 @@ export class UserController {
   //! GET ALL USERS
   @Get()
   async getUsers(@Query() dto: GetUsersDto) {
-    const { query, city, page, limit } = dto;
-    return this.userService.getUsers(query, city, page, limit);
+    const { query, city, style, page, limit } = dto;
+    return this.userService.getUsers(query, city, style, page, limit);
   }
 
   //! RECUPERER LES VILLES
   @Get('cities')
   async getDistinctCities() {
     return this.userService.getDistinctCities();
+  }
+
+    //! RECUPERER LES STYLES
+  @Get('styleTattoo')
+  async getDistinctStyles() {
+    return this.userService.getDistinctStyles();
   }
 
   //! SEARCH USERS (pour la barre de recherche du front)

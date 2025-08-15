@@ -1,5 +1,4 @@
-/* eslint-disable prettier/prettier */
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class CreateTatoueurDto {
   @IsString()
@@ -23,6 +22,14 @@ export class CreateTatoueurDto {
   @IsString()
   @IsOptional()
   instagram: string;
+
+  @IsArray()
+  @IsOptional()
+  style: string[];
+
+  @IsArray()
+  @IsOptional()
+  skills: string[];
 
   @IsString()
   @IsNotEmpty()

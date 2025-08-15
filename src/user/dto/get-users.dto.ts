@@ -4,6 +4,7 @@ import { IsInt, IsOptional, IsString, Max, Min } from "class-validator";
 export class GetUsersDto {
   @IsOptional() @IsString() query?: string;
   @IsOptional() @IsString() city?: string;
+  @IsOptional() @IsString() style?: string;
 
   @IsOptional()
   @Transform(({ value }) => parseInt(value, 10))

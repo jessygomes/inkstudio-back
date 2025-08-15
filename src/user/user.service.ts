@@ -10,6 +10,7 @@ export class UserService {
   async getUsers(
     query?: string,
     city?: string,
+    style?: string,
     page: number = 1,
     limit: number = 1
   ) {
@@ -31,6 +32,13 @@ export class UserService {
         // Combine avec OR précédent => AND global, c'est ce qu'on veut
         where.city = { contains: city, mode: "insensitive" as const };
       }
+      if (style && typeof style === 'string' && style.trim() !== '') {
+        where.Tatoueur = {
+          some: {
+            style: { has: style.trim() }
+          }
+        };
+      }
       if (where && Object.keys(where).length === 0) where = undefined;
 
       // Count + Data en transaction
@@ -50,7 +58,7 @@ export class UserService {
             city: true,
             postalCode: true,
             salonHours: true,
-            role: true,
+            prestations: true,
             Tatoueur: {
               select: {
                 id: true,
@@ -59,6 +67,9 @@ export class UserService {
                 description: true,
                 phone: true,
                 hours: true,
+                instagram: true,
+                style: true,
+                skills: true,
               },
             },
             salonPhotos: true,
@@ -124,7 +135,7 @@ export class UserService {
           city: true,
           postalCode: true,
           salonHours: true,
-          role: true,
+          prestations: true,
           Tatoueur: {
             select: {
               id: true,
@@ -133,6 +144,8 @@ export class UserService {
               description: true,
               phone: true,
               hours: true,
+              style: true,
+              skills: true,
             }
           },
           salonPhotos: true,
@@ -158,6 +171,15 @@ export class UserService {
     .filter(Boolean);
   }
 
+  //! RECUPERER LES STYLES
+  async getDistinctStyles(): Promise<string[]> {
+    const rows: { style: string[] }[] = await this.prisma.tatoueur.findMany({
+      select: { style: true },
+    });
+    const allStyles: string[] = rows.flatMap(r => Array.isArray(r.style) ? r.style : []);
+    return Array.from(new Set(allStyles.map(s => s.trim()).filter(Boolean))).sort();
+  }
+
   //! GET USER BY SLUG + LOCALISATION
   async getUserBySlugAndLocation({ nameSlug, locSlug }: { nameSlug: string; locSlug: string }) {
     // On récupère tous les salons dont le slug du nom correspond
@@ -180,7 +202,7 @@ export class UserService {
         city: true,
         postalCode: true,
         salonHours: true,
-        role: true,
+        prestations: true,
         Tatoueur: {
           select: {
             id: true,
@@ -189,7 +211,9 @@ export class UserService {
             description: true,
             phone: true,
             hours: true,
-            instagram: true
+            instagram: true,
+            style: true,
+            skills: true,
           }
         },
         salonPhotos: true,
@@ -260,6 +284,7 @@ export class UserService {
         description: true,
         image: true,
         role: true,
+        prestations: true,
         Tatoueur: {
           select: {
             id: true,
@@ -268,6 +293,9 @@ export class UserService {
             description: true,
             phone: true,
             hours: true,
+            instagram: true,
+            style: true,
+            skills: true,
           }
         }
       },
@@ -297,7 +325,15 @@ export class UserService {
   }
 
   //! UPDATE USER
-  async updateUser({userId, userBody} : {userId: string; userBody: { salonName: string; firstName: string; lastName: string; phone: string; address: string; city: string; postalCode: string; instagram: string; facebook: string; tiktok: string; website: string; description: string; image: string; }}) {
+  async updateUser({userId, userBody} : {userId: string; userBody: { salonName: string; firstName: string; lastName: string; phone: string; address: string; city: string; postalCode: string; instagram: string; facebook: string; tiktok: string; website: string; description: string; image: string; prestations?: string[]; }}) {
+
+  const allowed = new Set(["TATTOO", "RETOUCHE", "PROJET", "PIERCING"]);
+  const safePrestations = Array.isArray(userBody.prestations)
+    ? userBody.prestations
+        .map(p => typeof p === 'string' ? p.toUpperCase().trim() : '')
+        .filter(p => allowed.has(p))
+    : [];
+
     const user = await this.prisma.user.update({
       where: {
         id: userId,
@@ -316,9 +352,9 @@ export class UserService {
         website: userBody.website,
         description: userBody.description,
         image: userBody.image, // Assurez-vous que l'image est gérée correctement
+        prestations: safePrestations
       },
-    }) 
-
+    });
     return user;
   }
 

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CreateAppointmentDto, PrestationType } from './dto/create-appointment.dto';
@@ -1923,12 +1924,74 @@ export class AppointmentsService {
     }
   }
 
-  //! RECUPERER LES DEMANDES DE RDV D'UN SALON
-  async getAppointmentRequestsBySalon(userId: string) {
+  //! RECUPERER TOUTES LES DEMANDES DE RDV D'UN SALON (TOUS LES STATUS)
+// Filtre serveur par status
+async getAppointmentRequestsBySalon(
+  userId: string,
+  page: number = 1,
+  limit: number = 10,
+  status?: string // 👈 nouveau
+) {
+  try {
+    const currentPage = Math.max(1, Number(page) || 1);
+    const perPage = Math.min(50, Math.max(1, Number(limit) || 10));
+    const skip = (currentPage - 1) * perPage;
+
+    const where: { userId: string; status?: string } = { userId };
+    if (status && typeof status === "string" && status.trim() !== "" && status !== "all") {
+      where.status = status.trim(); // "PENDING" | "PROPOSED" | ...
+    }
+
+    const [totalRequests, appointmentRequests] = await this.prisma.$transaction([
+      this.prisma.appointmentRequest.count({ where }),
+      this.prisma.appointmentRequest.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: perPage,
+      }),
+    ]);
+
+    const totalPages = Math.max(1, Math.ceil(totalRequests / perPage));
+    const startIndex = totalRequests === 0 ? 0 : skip + 1;
+    const endIndex = Math.min(skip + perPage, totalRequests);
+
+    return {
+      error: false,
+      appointmentRequests,
+      pagination: {
+        currentPage,
+        limit: perPage,
+        totalRequests,
+        totalPages,
+        hasNextPage: currentPage < totalPages,
+        hasPreviousPage: currentPage > 1,
+        startIndex,
+        endIndex,
+      },
+    };
+  } catch (error: unknown) {
+    console.error("❌ Erreur lors de la récupération des demandes de rendez-vous:", error);
+    const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
+    return {
+      error: true,
+      message: `Erreur lors de la récupération des demandes de rendez-vous: ${errorMessage}`,
+    };
+  }
+}
+
+
+    //! RECUPERER LES DEMANDES DE RDV D'UN SALON (tous sauf les CONFIRMER et les CLOSED)
+  async getAppointmentRequestsBySalonNotConfirmed(userId: string) {
     try {
       const appointmentRequests = await this.prisma.appointmentRequest.findMany({
         where: {
           userId,
+          status: {
+            not: {
+              in: ['ACCEPTED', 'CLOSED'],
+            },
+          },
         },
       });
 
@@ -1942,6 +2005,29 @@ export class AppointmentsService {
       return {
         error: true,
         message: `Erreur lors de la récupération des demandes de rendez-vous: ${errorMessage}`,
+      };
+    }
+  }
+
+  //! RECUPERER LE NOMBRE DE DEMANDE EN ATTENTE
+  async getPendingAppointmentRequestsCount(userId: string) {
+    try {
+      const count = await this.prisma.appointmentRequest.count({
+        where: {
+          userId,
+          status: 'PENDING',
+        },
+      });
+      return {
+        error: false,
+        count,
+      };
+    } catch (error: unknown) {
+      console.error('❌ Erreur lors de la récupération du nombre de demandes en attente:', error);
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: `Erreur lors de la récupération du nombre de demandes en attente: ${errorMessage}`,
       };
     }
   }

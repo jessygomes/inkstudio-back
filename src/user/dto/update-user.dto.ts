@@ -1,5 +1,4 @@
-/* eslint-disable prettier/prettier */
-import { IsOptional, IsString } from 'class-validator';
+import { IsArray, IsOptional, IsString } from 'class-validator';
 
 export class UpdateUserDto {
   @IsString()
@@ -50,4 +49,7 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   tiktok: string;
+
+  @IsArray()
+  prestations: string[];
 }

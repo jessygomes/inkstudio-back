@@ -53,9 +53,14 @@ model User {
   description   String?
   salonHours    String?
   salonPhotos   String[]
+
+  prestations   String[]
+
   saasPlan      SaasPlan  @default(FREE)
   saasPlanUntil DateTime? // Date jusqu'à laquelle le plan est actif
+
   role          Role      @default(user)
+
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -110,6 +115,10 @@ model Tatoueur {
   description String?
   phone       String?
   instagram   String?
+
+  style       String[]
+  skills      String[]
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

@@ -22,9 +22,9 @@ export class AppointmentsController {
 
   //! DEMANDE DE RDV CLIENT
   @Post('appointment-request')
-async createAppointmentRequest(@Body() dto: CreateAppointmentRequestDto) {
-  return await this.appointmentsService.createAppointmentRequest(dto);
-}
+  async createAppointmentRequest(@Body() dto: CreateAppointmentRequestDto) {
+    return await this.appointmentsService.createAppointmentRequest(dto);
+  }
 
   //! VOIR TOUS LES RDV ✅
   @Get()
@@ -72,8 +72,25 @@ async createAppointmentRequest(@Body() dto: CreateAppointmentRequestDto) {
 
   //! VOIR LES DEMANDES DE RDV D'UN SALON ✅
   @Get('appointment-requests/:userId')
-  async getAppointmentRequests(@Param('userId') userId: string) {
-    return await this.appointmentsService.getAppointmentRequestsBySalon(userId);
+  async getAppointmentRequests(
+  @Param('userId') userId: string,
+  @Query('page') page?: string,
+  @Query('limit') limit?: string,
+  @Query('status') status?: string,
+  ) {
+    return await this.appointmentsService.getAppointmentRequestsBySalon( userId, Number(page) || 1, Number(limit) || 10, status);
+  }
+
+  //! RECUPERER LES DEMANDES DE RDV D'UN SALON (tous sauf les CONFIRMER)
+  @Get('appointment-requests/not-confirmed/:userId')
+  async getPendingAppointmentRequests(@Param('userId') userId: string) {
+    return await this.appointmentsService.getAppointmentRequestsBySalonNotConfirmed(userId);
+  }
+
+  //! RECUPERER LE NOMBRE DE DEMANDE EN ATTENTE
+  @Get('appointment-requests/not-confirmed/count/:userId')
+  async getPendingAppointmentRequestsCount(@Param('userId') userId: string) {
+    return await this.appointmentsService.getPendingAppointmentRequestsCount(userId);
   }
 
   //! PROPOSER UN CRENEAU POUR UNE DEMANDE DE RDV CLIENT

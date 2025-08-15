@@ -1,4 +1,5 @@
-import { BadRequestException, Body, Controller, Get, Param, Post } from '@nestjs/common';
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+import { BadRequestException, Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { MailService } from 'src/mailer.service';
 
@@ -143,39 +144,76 @@ export class FollowupsController {
   }
 
   //! RECUPERER TOUS LES SUIVI D'UN SALON
-  @Get('all/:userId')
-  async getAllFollowUps(@Param('userId') userId: string) {
-    const followUps = await this.prisma.followUpSubmission.findMany({
-      where: { userId },
+@Get('all/:userId')
+async getAllFollowUps(
+  @Param('userId') userId: string,
+  @Query('page') page = '1',
+  @Query('limit') limit = '10',
+  @Query('status') status?: 'all' | 'answered' | 'unanswered',
+  @Query('tatoueurId') tatoueurId?: string,
+  @Query('q') q?: string,
+) {
+  const currentPage = Math.max(1, Number(page) || 1);
+  const perPage = Math.min(50, Math.max(1, Number(limit) || 10));
+  const skip = (currentPage - 1) * perPage;
+
+  // where
+  const where: Record<string, unknown> = { userId };
+
+  if (status && status !== 'all') {
+    where.isAnswered = status === 'answered';
+  }
+  if (tatoueurId && tatoueurId !== 'all') {
+    // relation filter via appointment
+    where.appointment = { ...(typeof where.appointment === 'object' && where.appointment !== null ? where.appointment : {}), tatoueurId };
+  }
+  if (q && q.trim() !== '') {
+    const query = q.trim();
+    // Match prénom/nom (insensible à la casse)
+    where.OR = [
+      { appointment: { client: { firstName: { contains: query, mode: 'insensitive' } } } },
+      { appointment: { client: { lastName:  { contains: query, mode: 'insensitive' } } } },
+    ];
+  }
+
+  const [total, followUps] = await this.prisma.$transaction([
+    this.prisma.followUpSubmission.count({ where }),
+    this.prisma.followUpSubmission.findMany({
+      where,
       include: {
         appointment: {
           select: {
-            id: true,
-            title: true,
-            start: true,
-            end: true,
-            client: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-              },
-            },
-            tatoueur: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
+            id: true, title: true, start: true, end: true,
+            client: { select: { id: true, firstName: true, lastName: true } },
+            tatoueur: { select: { id: true, name: true } },
           },
         },
       },
-      orderBy: { createdAt: 'desc' }, // Trier par date de création
-      take: 100, // Limiter à 100 derniers suivis
-    });
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: perPage,
+    }),
+  ]);
 
-    return { followUps };
-  }
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+  const startIndex = total === 0 ? 0 : skip + 1;
+  const endIndex = Math.min(skip + perPage, total);
+
+  return {
+    error: false,
+    followUps,
+    pagination: {
+      currentPage,
+      limit: perPage,
+      totalFollowUps: total,
+      totalPages,
+      hasNextPage: currentPage < totalPages,
+      hasPreviousPage: currentPage > 1,
+      startIndex,
+      endIndex,
+    },
+  };
+}
 
   //! REPONDRE A UN SUIVI
   @Post('reply/:id')
