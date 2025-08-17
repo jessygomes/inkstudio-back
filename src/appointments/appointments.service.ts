@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
@@ -19,7 +20,11 @@ export class AppointmentsService {
     private readonly saasService: SaasService
   ) {}
 
+  //! ------------------------------------------------------------------------------
+
   //! CREER UN RDV
+
+  //! ------------------------------------------------------------------------------
   async create({ rdvBody }: {rdvBody: CreateAppointmentDto}) {
     console.log(`🔄 Création d'un nouveau rendez-vous pour l'utilisateur ${rdvBody.userId}`);
     try {
@@ -182,7 +187,11 @@ export class AppointmentsService {
     }
   } 
 
+  //! ------------------------------------------------------------------------------
+
   //! VOIR TOUS LES RDV
+
+  //! ------------------------------------------------------------------------------
   async getAllAppointments(id: string) {
     try {
       const appointments = await this.prisma.appointment.findMany({
@@ -209,7 +218,11 @@ export class AppointmentsService {
     }
   }
 
+  //! ------------------------------------------------------------------------------
+
   //! VOIR TOUS LES RDV PAR DATE
+
+  //! ------------------------------------------------------------------------------
   async getAppointmentsByDateRange(userId: string, startDate: string, endDate: string, page: number = 1, limit: number = 5) {
     try {
       const start = new Date(startDate);
@@ -282,7 +295,11 @@ export class AppointmentsService {
     }
   }
 
+  //! ------------------------------------------------------------------------------
+
   //! VOIR TOUS LES RDV D'UN SALON
+
+  //! ------------------------------------------------------------------------------
   async getAllAppointmentsBySalon(salonId: string, page: number = 1, limit: number = 5) {
     try {
       const skip = (page - 1) * limit;
@@ -346,7 +363,11 @@ export class AppointmentsService {
     }
   }
 
+  //! ------------------------------------------------------------------------------
+
   //! RECUPERER LES RDV D'UN TATOUEUR PAR DATE 
+
+  //! ------------------------------------------------------------------------------
   async getAppointmentsByTatoueurRange(tatoueurId: string, startDate: string, endDate: string) {
     try {
       const start = new Date(startDate);
@@ -376,7 +397,11 @@ export class AppointmentsService {
   }
 }
 
-    //! VOIR UN SEUL RDV
+  //! ------------------------------------------------------------------------------
+
+  //! VOIR UN SEUL RDV
+
+  //! ------------------------------------------------------------------------------
   async getOneAppointment(id: string) {
     try {
       const appointment = await this.prisma.appointment.findUnique({
@@ -398,7 +423,11 @@ export class AppointmentsService {
     }
   }
 
-    //! SUPPRIMER UN RDV
+  //! ------------------------------------------------------------------------------
+
+  //! SUPPRIMER UN RDV
+
+  //! ------------------------------------------------------------------------------
   async deleteAppointment(id: string) {
     try {
       const appointment = await this.prisma.appointment.delete({
@@ -416,7 +445,11 @@ export class AppointmentsService {
     }
   }
 
+  //! ------------------------------------------------------------------------------
+
   // ! MODIFIER UN RDV
+
+  //! ------------------------------------------------------------------------------
   async updateAppointment(id: string, rdvBody: UpdateAppointmentDto) {
     try {
       const { title, prestation, start, end, tatoueurId } = rdvBody;
@@ -536,7 +569,11 @@ export class AppointmentsService {
     }
   }
 
+  //! ------------------------------------------------------------------------------
+
   //! CONFIRMER UN RDV
+
+  //! ------------------------------------------------------------------------------
   async confirmAppointment(id: string, message: string) {
     try {
     // Récupérer le rendez-vous avec les informations du client et du tatoueur
@@ -616,76 +653,84 @@ export class AppointmentsService {
     }
   }
 
-    //! ANNULER UN RDV
-    async cancelAppointment(id: string, message: string) {
-      try {
-        const existingAppointment = await this.prisma.appointment.findUnique({
-          where: { id },
-          include: {
-            client: true,
-            tatoueur: true,
-          },
-        });
+  //! ------------------------------------------------------------------------------
 
-    if (!existingAppointment) {
+  //! ANNULER UN RDV
+
+  //! ------------------------------------------------------------------------------
+  async cancelAppointment(id: string, message: string) {
+    try {
+      const existingAppointment = await this.prisma.appointment.findUnique({
+        where: { id },
+        include: {
+          client: true,
+          tatoueur: true,
+        },
+      });
+
+  if (!existingAppointment) {
+    return {
+      error: true,
+      message: 'Rendez-vous introuvable.',
+    };
+  }
+
+  const appointment = await this.prisma.appointment.update({
+    where: {
+      id,
+    },
+    data: {
+      status: 'CANCELED',
+    },
+    include: {
+      client: true,
+      tatoueur: true,
+    },
+  });
+
+          // Envoyer un email d'annulation au client (si le client existe)
+  if (appointment.client) {
+    await this.mailService.sendMail({
+      to: appointment.client.email,
+      subject: "Rendez-vous annulé",
+      html: `
+        <h2>Bonjour ${appointment.client.firstName} ${appointment.client.lastName} !</h2>
+        <p>Nous sommes désolés de vous informer que votre rendez-vous a été annulé.</p>
+        <p>${message}</p>
+        <p><strong>Détails du rendez-vous annulé :</strong></p>
+        <ul>
+          <li>Date et heure : ${appointment.start.toLocaleString()} - ${appointment.end.toLocaleString()}</li>
+          <li>Prestation : ${appointment.prestation}</li>
+          <li>Tatoueur : ${appointment.tatoueur?.name || 'Non assigné'}</li>
+          <li>Titre : ${appointment.title}</li>
+        </ul>
+        <p>N'hésitez pas à nous contacter pour reprogrammer votre rendez-vous ou pour toute question.</p>
+        <p>Nous nous excusons pour la gêne occasionnée.</p>
+        <p>Cordialement,</p>
+        <p>L'équipe du salon</p>
+      `,
+    });
+  }
+
+      return {
+        error: false,
+        message: 'Rendez-vous annulé.',
+        appointment: appointment,
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       return {
         error: true,
-        message: 'Rendez-vous introuvable.',
+        message: errorMessage,
       };
     }
+  }
 
-    const appointment = await this.prisma.appointment.update({
-      where: {
-        id,
-      },
-      data: {
-        status: 'CANCELED',
-      },
-      include: {
-        client: true,
-        tatoueur: true,
-      },
-    });
-
-            // Envoyer un email d'annulation au client (si le client existe)
-    if (appointment.client) {
-      await this.mailService.sendMail({
-        to: appointment.client.email,
-        subject: "Rendez-vous annulé",
-        html: `
-          <h2>Bonjour ${appointment.client.firstName} ${appointment.client.lastName} !</h2>
-          <p>Nous sommes désolés de vous informer que votre rendez-vous a été annulé.</p>
-          <p>${message}</p>
-          <p><strong>Détails du rendez-vous annulé :</strong></p>
-          <ul>
-            <li>Date et heure : ${appointment.start.toLocaleString()} - ${appointment.end.toLocaleString()}</li>
-            <li>Prestation : ${appointment.prestation}</li>
-            <li>Tatoueur : ${appointment.tatoueur?.name || 'Non assigné'}</li>
-            <li>Titre : ${appointment.title}</li>
-          </ul>
-          <p>N'hésitez pas à nous contacter pour reprogrammer votre rendez-vous ou pour toute question.</p>
-          <p>Nous nous excusons pour la gêne occasionnée.</p>
-          <p>Cordialement,</p>
-          <p>L'équipe du salon</p>
-        `,
-      });
-    }
-
-        return {
-          error: false,
-          message: 'Rendez-vous annulé.',
-          appointment: appointment,
-        };
-      } catch (error: unknown) {
-        const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-        return {
-          error: true,
-          message: errorMessage,
-        };
-      }
-    }
+  //! ------------------------------------------------------------------------------
 
   //! VOIR LES RDV PAR TATOUEUR
+
+  //! ------------------------------------------------------------------------------
   async getTatoueurAppointments(tatoueurId: string) {
     try {
       const appointments = await this.prisma.appointment.findMany({
@@ -706,7 +751,11 @@ export class AppointmentsService {
     }
   }
 
+  //! ------------------------------------------------------------------------------
+
   //! RENDEZ-VOUS PAYES : Passer isPayed à true
+
+  //! ------------------------------------------------------------------------------
   async markAppointmentAsPaid(id: string, isPayed: boolean) {
     try {
 
@@ -741,7 +790,11 @@ export class AppointmentsService {
 
   // ! --------------------------------------------------------------------------
 
+  //! ------------------------------------------------------------------------------
+
   //! VOIR LES RDV D'UNE DATE SPÉCIFIQUE POUR DASHBOARD
+
+  //! ------------------------------------------------------------------------------
   /**
    * Récupère les rendez-vous d'une date spécifique pour le dashboard
    * Si aucune date n'est fournie, utilise la date du jour
@@ -833,7 +886,11 @@ export class AppointmentsService {
   }
 
 
+  //! ------------------------------------------------------------------------------
+
   //! TAUX DE REMPLISSAGE DES CRENAUX PAR SEMAINE
+
+  //! ------------------------------------------------------------------------------
   /**
    * Calcule le taux de remplissage des créneaux pour une période donnée
    * @param userId - ID du salon/utilisateur
@@ -947,7 +1004,11 @@ export class AppointmentsService {
     return Math.max(0, totalDays * slotsPerDay);
   }
 
+  //! ------------------------------------------------------------------------------
+
   //! TAUX D'ANNULATION GLOBAL DES RDV
+
+  //! ------------------------------------------------------------------------------
   /**
    * Calcule le taux d'annulation global de tous les rendez-vous du salon
    * @param userId - ID du salon/utilisateur
@@ -1027,8 +1088,11 @@ export class AppointmentsService {
       };
     }
   }
+  //! ------------------------------------------------------------------------------
 
   //! SOMME DES PRIX DES RDV PAYÉS PAR MOIS
+
+  //! ------------------------------------------------------------------------------
   /**
    * Calcule la somme des prix des rendez-vous payés pour un mois donné
    * Le prix d'un tatouage se trouve dans la table TattooDetails
@@ -1156,7 +1220,11 @@ export class AppointmentsService {
     }
   }
 
+  //! ------------------------------------------------------------------------------
+
   //! RDV EN ATTENTE DE CONFIRMATION
+
+  //! ------------------------------------------------------------------------------
   async getPendingAppointments(userId: string) {
     try {
       const pendingAppointments = await this.prisma.appointment.findMany({
@@ -1199,7 +1267,11 @@ export class AppointmentsService {
     }
   }
 
+  //! ------------------------------------------------------------------------------
+
   //! VALIDER TOKEN DE REPROGRAMMATION
+
+  //! ------------------------------------------------------------------------------
   /**
    * Valide un token de reprogrammation et retourne les informations du rendez-vous
    * Utilisé par le front-end pour afficher la page de sélection de créneaux
@@ -1358,7 +1430,11 @@ export class AppointmentsService {
     }
   }
 
+  //! ------------------------------------------------------------------------------
+
   //! PROPOSER UNE REPROGRAMMATION DE RDV
+
+  //! ------------------------------------------------------------------------------
   /**
    * Propose une reprogrammation d'un rendez-vous existant
    * Génère un token sécurisé pour que le client puisse confirmer ou refuser
@@ -1569,7 +1645,11 @@ export class AppointmentsService {
     }
   }
 
+  //! ------------------------------------------------------------------------------
+
   //! TRAITER LA RÉPONSE CLIENT POUR REPROGRAMMATION
+
+  //! ------------------------------------------------------------------------------
   /**
    * Traite la réponse du client pour une demande de reprogrammation
    * Le client peut proposer de nouveaux créneaux ou refuser la reprogrammation
@@ -1890,7 +1970,17 @@ export class AppointmentsService {
     }
   }
 
+  //! ------------------------------------------------------------------------------
+
+  //! DEMANDE DE RDV ------------------------------------------------------------------------------
+
+  //! ------------------------------------------------------------------------------
+
+  //! ------------------------------------------------------------------------------
+
   //! DEMANDE DE RDV
+
+  //! ------------------------------------------------------------------------------
   async createAppointmentRequest(dto: CreateAppointmentRequestDto) {
     console.log('Création d\'une demande de rendez-vous:', dto);
 
@@ -1924,64 +2014,72 @@ export class AppointmentsService {
     }
   }
 
+  //! ------------------------------------------------------------------------------
+
   //! RECUPERER TOUTES LES DEMANDES DE RDV D'UN SALON (TOUS LES STATUS)
-// Filtre serveur par status
-async getAppointmentRequestsBySalon(
-  userId: string,
-  page: number = 1,
-  limit: number = 10,
-  status?: string // 👈 nouveau
-) {
-  try {
-    const currentPage = Math.max(1, Number(page) || 1);
-    const perPage = Math.min(50, Math.max(1, Number(limit) || 10));
-    const skip = (currentPage - 1) * perPage;
 
-    const where: { userId: string; status?: string } = { userId };
-    if (status && typeof status === "string" && status.trim() !== "" && status !== "all") {
-      where.status = status.trim(); // "PENDING" | "PROPOSED" | ...
+  //! ------------------------------------------------------------------------------
+  // Filtre serveur par status
+  async getAppointmentRequestsBySalon(
+    userId: string,
+    page: number = 1,
+    limit: number = 10,
+    status?: string // 👈 nouveau
+  ) {
+    try {
+      const currentPage = Math.max(1, Number(page) || 1);
+      const perPage = Math.min(50, Math.max(1, Number(limit) || 10));
+      const skip = (currentPage - 1) * perPage;
+
+      const where: { userId: string; status?: string } = { userId };
+      if (status && typeof status === "string" && status.trim() !== "" && status !== "all") {
+        where.status = status.trim(); // "PENDING" | "PROPOSED" | ...
+      }
+
+      const [totalRequests, appointmentRequests] = await this.prisma.$transaction([
+        this.prisma.appointmentRequest.count({ where }),
+        this.prisma.appointmentRequest.findMany({
+          where,
+          orderBy: { createdAt: "desc" },
+          skip,
+          take: perPage,
+        }),
+      ]);
+
+      const totalPages = Math.max(1, Math.ceil(totalRequests / perPage));
+      const startIndex = totalRequests === 0 ? 0 : skip + 1;
+      const endIndex = Math.min(skip + perPage, totalRequests);
+
+      return {
+        error: false,
+        appointmentRequests,
+        pagination: {
+          currentPage,
+          limit: perPage,
+          totalRequests,
+          totalPages,
+          hasNextPage: currentPage < totalPages,
+          hasPreviousPage: currentPage > 1,
+          startIndex,
+          endIndex,
+        },
+      };
+    } catch (error: unknown) {
+      console.error("❌ Erreur lors de la récupération des demandes de rendez-vous:", error);
+      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
+      return {
+        error: true,
+        message: `Erreur lors de la récupération des demandes de rendez-vous: ${errorMessage}`,
+      };
     }
-
-    const [totalRequests, appointmentRequests] = await this.prisma.$transaction([
-      this.prisma.appointmentRequest.count({ where }),
-      this.prisma.appointmentRequest.findMany({
-        where,
-        orderBy: { createdAt: "desc" },
-        skip,
-        take: perPage,
-      }),
-    ]);
-
-    const totalPages = Math.max(1, Math.ceil(totalRequests / perPage));
-    const startIndex = totalRequests === 0 ? 0 : skip + 1;
-    const endIndex = Math.min(skip + perPage, totalRequests);
-
-    return {
-      error: false,
-      appointmentRequests,
-      pagination: {
-        currentPage,
-        limit: perPage,
-        totalRequests,
-        totalPages,
-        hasNextPage: currentPage < totalPages,
-        hasPreviousPage: currentPage > 1,
-        startIndex,
-        endIndex,
-      },
-    };
-  } catch (error: unknown) {
-    console.error("❌ Erreur lors de la récupération des demandes de rendez-vous:", error);
-    const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
-    return {
-      error: true,
-      message: `Erreur lors de la récupération des demandes de rendez-vous: ${errorMessage}`,
-    };
   }
-}
 
 
-    //! RECUPERER LES DEMANDES DE RDV D'UN SALON (tous sauf les CONFIRMER et les CLOSED)
+  //! ------------------------------------------------------------------------------
+
+  //! RECUPERER LES DEMANDES DE RDV D'UN SALON (tous sauf les CONFIRMER et les CLOSED)
+
+  //! ------------------------------------------------------------------------------
   async getAppointmentRequestsBySalonNotConfirmed(userId: string) {
     try {
       const appointmentRequests = await this.prisma.appointmentRequest.findMany({
@@ -2009,7 +2107,11 @@ async getAppointmentRequestsBySalon(
     }
   }
 
+  //! ------------------------------------------------------------------------------
+
   //! RECUPERER LE NOMBRE DE DEMANDE EN ATTENTE
+
+  //! ------------------------------------------------------------------------------
   async getPendingAppointmentRequestsCount(userId: string) {
     try {
       const count = await this.prisma.appointmentRequest.count({
@@ -2032,40 +2134,58 @@ async getAppointmentRequestsBySalon(
     }
   }
 
-  //! PROPOSER UN CRENEAU POUR UNE DEMANDE DE RDV CLIENT
-  async proposeSlotForAppointmentRequest(requestId: string, proposedDate: Date, proposedFrom: Date, proposedTo: Date, tatoueurId?: string, message?: string) {
-    try {
-      const appointmentRequest = await this.prisma.appointmentRequest.findUnique({ where: { id: requestId }, include: { user: true } });
-      if (!appointmentRequest) {
-        return { error: true, message: 'Demande de RDV introuvable' };
-      }
+  //! ------------------------------------------------------------------------------
 
-      // ==================== ÉTAPE 3: GÉNÉRER UN TOKEN SÉCURISÉ ====================
+  //! PROPOSER UN CRENEAU POUR UNE DEMANDE DE RDV CLIENT
+
+  //! ------------------------------------------------------------------------------
+  async proposeSlotForAppointmentRequest(requestId: string, slots: Array<{ from: Date; to: Date; tatoueurId?: string }>, message?: string) {
+    try {
+      const appointmentRequest = await this.prisma.appointmentRequest.findUnique({where: { id: requestId }, include: { user: true },});
+      if (!appointmentRequest) return { error: true, message: 'Demande de RDV introuvable' };
+      if (!slots?.length) return { error: true, message: 'Aucun créneau fourni' };
+
+      // GÉNÉRER UN TOKEN SÉCURISÉ ====================
       const proposeToken = crypto.randomBytes(32).toString('hex');
       const tokenExpiry = new Date();
-      tokenExpiry.setDate(tokenExpiry.getDate() + 7); // Token valide 7 jours
+      tokenExpiry.setDate(tokenExpiry.getDate() + 7); // Le token expire dans 7 jours
 
-      // Mettre à jour la demande avec les créneaux proposés et le statut
-      await this.prisma.appointmentRequest.update({
-        where: { id: requestId },
-        data: {
-          proposedDate,
-          proposedFrom,
-          proposedTo,
-          tatoueurId: tatoueurId, // Utiliser le tatoueur de la demande si non spécifié
-          status: 'PROPOSED',
-          token: proposeToken,
-          updatedAt: new Date(),
-        },
+     // Met à jour la demande + remet à zéro d’anciens slots si tu veux repartir propre
+      await this.prisma.$transaction(async (tx) => {
+        await tx.proposedSlot.deleteMany({ where: { appointmentRequestId: requestId } });
+
+        await tx.appointmentRequest.update({
+          where: { id: requestId },
+          data: {
+            status: 'PROPOSED',
+            token: proposeToken,
+            tokenExpiresAt: tokenExpiry,
+            updatedAt: new Date(),
+          },
+        });
+
+        await tx.proposedSlot.createMany({
+          data: slots.map((s) => ({
+            appointmentRequestId: requestId,
+            from: s.from,
+            to: s.to,
+            tatoueurId: s.tatoueurId ?? null,
+          })),
+        });
       });
 
+      // Récupère les slots créés (avec leurs IDs)
+      const createdSlots = await this.prisma.proposedSlot.findMany({
+        where: { appointmentRequestId: requestId },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      console.log('Créneaux proposés:', createdSlots);
+
       // Envoi d'un email au client avec les créneaux proposés
+      const salonName = appointmentRequest.user?.salonName || 'Votre salon';
       const clientEmail = appointmentRequest.clientEmail;
       const clientName = `${appointmentRequest.clientFirstname} ${appointmentRequest.clientLastname}`;
-      const salonName = appointmentRequest.user?.salonName || 'Votre salon';
-      const proposedDateStr = proposedDate ? new Date(proposedDate).toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : '';
-      const proposedFromStr = proposedFrom ? new Date(proposedFrom).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '';
-      const proposedToStr = proposedTo ? new Date(proposedTo).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '';
 
       // Lien d'acceptation/refus (à adapter selon le front)
       const proposeUrl = `${process.env.FRONTEND_URL_BIS}/rdv-request?token=${proposeToken}`; 
@@ -2080,15 +2200,13 @@ async getAppointmentRequestsBySalon(
             <p style='color: #e0e7ff;'>${message}</p>
           <div style='padding: 32px 24px;'>
             <p>Bonjour <strong>${clientName}</strong>,</p>
-            <p>Voici le créneau proposé :</p>
-            <ul style='background: #eef2ff; padding: 16px; border-radius: 8px;'>
-              <li><strong>Date :</strong> ${proposedDateStr}</li>
-              <li><strong>De :</strong> ${proposedFromStr}</li>
-              <li><strong>À :</strong> ${proposedToStr}</li>
-            </ul>
-            <div style='margin: 32px 0; text-align: center;'>
-              <a href='${proposeUrl}' style='background: #10b981; color: #fff; padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; margin-right: 16px;'>Cliquez ici pour accepter ou décliner.</a>
-            </div>
+            <p>Pour choisir votre créneau ou décliner, merci d’ouvrir la page sécurisée :</p>
+            <p style="text-align:center;margin:20px 0;">
+            <a href="${proposeUrl}" style="display:inline-block;padding:10px 16px;border-radius:8px;background:#0ea5e9;color:#fff;text-decoration:none;font-weight:600;">
+              Ouvrir la page de confirmation
+            </a>
+          </p>
+            <p style="color:#64748b;font-size:13px;">Ce lien expire le ${tokenExpiry.toLocaleDateString('fr-FR')}.</p>
             <p style='color: #64748b; font-size: 14px;'>Si le créneau ne vous convient pas, vous pouvez le décliner et le salon pourra vous proposer un autre horaire.</p>
           </div>
           <div style='background: #e0e7ff; padding: 16px; text-align: center; border-radius: 0 0 16px 16px;'>
@@ -2115,10 +2233,22 @@ async getAppointmentRequestsBySalon(
       try {
         const appointmentRequest = await this.prisma.appointmentRequest.findFirst({
           where: { token },
-          include: { user: { select: { id: true, email: true, salonName: true, image: true, salonHours: true, phone: true, address: true, postalCode: true, city: true } } },
+          include: {
+            user: {
+              select: {
+                id: true, email: true, salonName: true, image: true, salonHours: true,
+                phone: true, address: true, postalCode: true, city: true,
+              },
+            },
+            slots: { select: { id: true, from: true, to: true, tatoueurId: true, status: true } },
+          },
         });
+
         if (!appointmentRequest) {
-          return { error: true, message: 'Token invalide ou demande introuvable.' };
+          return { error: true, code: 'INVALID_TOKEN', message: 'Token invalide ou demande introuvable.' };
+        }
+        if (appointmentRequest.tokenExpiresAt && appointmentRequest.tokenExpiresAt < new Date()) {
+          return { error: true, code: 'EXPIRED_TOKEN', message: 'Lien expiré.' };
         }
         // Optionnel: vérifier expiration si vous stockez une date d'expiration
         // Retourner les infos pour affichage sur le front
@@ -2132,9 +2262,6 @@ async getAppointmentRequestsBySalon(
             clientEmail: appointmentRequest.clientEmail,
             clientPhone: appointmentRequest.clientPhone,
             availability: appointmentRequest.availability,
-            proposedDate: appointmentRequest.proposedDate,
-            proposedFrom: appointmentRequest.proposedFrom,
-            proposedTo: appointmentRequest.proposedTo,
             details: appointmentRequest.details,
             status: appointmentRequest.status,
             message: appointmentRequest.message,
@@ -2146,6 +2273,15 @@ async getAppointmentRequestsBySalon(
             salonAddress: appointmentRequest.user?.address,
             salonPostalCode: appointmentRequest.user?.postalCode,
             salonCity: appointmentRequest.user?.city,
+
+            // <-- nouveau : tous les créneaux proposés
+            proposedSlots: appointmentRequest.slots.map(s => ({
+              id: s.id,
+              from: s.from,
+              to: s.to,
+              tatoueurId: s.tatoueurId,
+              status: s.status,
+            })),
           },
         };
       } catch (error: unknown) {
@@ -2153,8 +2289,12 @@ async getAppointmentRequestsBySalon(
       }
     }
 
+    //! ------------------------------------------------------------------------------
+
     //! TRAITER LA REPONSE DU CLIENT (ACCEPTER OU DECLINER)
-    async handleAppointmentRequestResponse(token: string, action: 'accept' | 'decline', reason?: string) {
+
+    //! ------------------------------------------------------------------------------
+    async handleAppointmentRequestResponse(token: string, action: 'accept' | 'decline', slotId?: string, reason?: string) {
       try {
         const appointmentRequest = await this.prisma.appointmentRequest.findFirst({
           where: { token },
@@ -2169,23 +2309,42 @@ async getAppointmentRequestsBySalon(
           return { error: true, message: 'La demande n\'est pas en attente de réponse.' };
         }
 
+        if (appointmentRequest.tokenExpiresAt && appointmentRequest.tokenExpiresAt < new Date())
+        return { error: true, message: 'Lien expiré.' };
+
         const userId = appointmentRequest.userId;
         const salonEmail = appointmentRequest.user?.email;
         const salonName = appointmentRequest.user?.salonName || 'Salon';
         const clientName = `${appointmentRequest.clientFirstname} ${appointmentRequest.clientLastname}`;
         
-        const proposedDateStr = appointmentRequest.proposedDate ? new Date(appointmentRequest.proposedDate).toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : '';
-        const proposedFromStr = appointmentRequest.proposedFrom ? new Date(appointmentRequest.proposedFrom).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '';
-        const proposedToStr = appointmentRequest.proposedTo ? new Date(appointmentRequest.proposedTo).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '';
-
         if (action === 'accept') {
+          if (!slotId) return { error: true, message: 'slotId manquant pour acceptation.' };
+
+          const slot = await this.prisma.proposedSlot.findFirst({
+            where: { id: slotId, appointmentRequestId: appointmentRequest.id },
+          });
+          if (!slot) return { error: true, message: 'Créneau introuvable.' };
+
+
           await this.prisma.appointmentRequest.update({
             where: { id: appointmentRequest.id },
             data: { status: 'ACCEPTED', updatedAt: new Date() },
           });
 
-          //! Créer directement le rdv, le client et les détails tatouage client
+          // vérifier collision sur le tatoueur
+          if (slot.tatoueurId) {
+            const overlap = await this.prisma.appointment.findFirst({
+              where: {
+                tatoueurId: slot.tatoueurId,
+                // [start,end) overlap
+                NOT: [{ end: { lte: slot.from } }, { start: { gte: slot.to } }],
+              },
+              select: { id: true },
+            });
+            if (overlap) return { error: true, message: 'Ce créneau n\'est plus disponible.' };
+          }
 
+          //! Créer directement le rdv, le client et les détails tatouage client
           // Vérifier les limites SAAS - RDV Par mois
           const canCreateAppointment = await this.saasService.canPerformAction(userId, 'appointment');
 
@@ -2198,11 +2357,8 @@ async getAppointmentRequestsBySalon(
           }
 
           // Vérifier si le client existe déja sinon on le créé
-          const client = await this.prisma.client.findFirst({
-              where: {
-                email: appointmentRequest.clientEmail,
-                userId: userId, // Pour que chaque salon ait ses propres clients
-              },
+          let client = await this.prisma.client.findFirst({
+            where: { email: appointmentRequest.clientEmail, userId },
           });
 
           if (!client) {
@@ -2216,85 +2372,70 @@ async getAppointmentRequestsBySalon(
               };
             }
 
-            await this.prisma.client.create({
+            client = await this.prisma.client.create({
               data: {
                 firstName: appointmentRequest.clientFirstname,
                 lastName: appointmentRequest.clientLastname,
                 email: appointmentRequest.clientEmail,
-                phone: appointmentRequest.clientPhone || "",
+                phone: appointmentRequest.clientPhone || '',
                 userId,
               },
             });
           }
 
 
-          // Créer le RDV et les détails du tatouage si présents dans appointmentRequest.details
-          if (!client) {
-            return {
-              error: true,
-              message: 'Client introuvable ou non créé.',
-            };
-          }
+         // Transaction : créer RDV + marquer le slot choisi + invalider le token
+          const newAppointment = await this.prisma.$transaction(async (tx) => {
+            const appt = await tx.appointment.create({
+              data: {
+                userId,
+                title: appointmentRequest.prestation,
+                prestation: appointmentRequest.prestation,
+                start: slot.from,
+                end: slot.to,
+                tatoueurId: slot.tatoueurId ?? appointmentRequest.tatoueurId ?? null,
+                clientId: client.id,
+                status: 'CONFIRMED',
+              },
+            });
 
-          if (!appointmentRequest.proposedFrom || !appointmentRequest.proposedTo) {
-            return {
-              error: true,
-              message: "Les dates de début et de fin du créneau proposé sont obligatoires.",
-            };
-          }
+            await tx.proposedSlot.update({
+              where: { id: slot.id },
+              data: { status: 'ACCEPTED', selectedAt: new Date() },
+            });
+            await tx.proposedSlot.updateMany({
+              where: { appointmentRequestId: appointmentRequest.id, NOT: { id: slot.id } },
+              data: { status: 'DECLINED' },
+            });
+            await tx.appointmentRequest.update({
+              where: { id: appointmentRequest.id },
+              data: { status: 'ACCEPTED', token: null, tokenExpiresAt: null, updatedAt: new Date() },
+            });
 
-          const newAppointment = await this.prisma.appointment.create({
-            data : {
-              userId,
-              title: appointmentRequest.prestation,
-              prestation: appointmentRequest.prestation,
-              start: new Date(appointmentRequest.proposedFrom),
-              end: new Date(appointmentRequest.proposedTo),
-              tatoueurId: appointmentRequest.tatoueurId, // Si tatoueur non spécifié, on le laisse vide
-              clientId : client.id,
-              status: 'CONFIRMED', // Statut CONFIRMED car le client a accepté
+            // Détails tatouage éventuels
+            if (appointmentRequest.details) {
+              try {
+                const raw = typeof appointmentRequest.details === 'string'
+                  ? JSON.parse(appointmentRequest.details)
+                  : appointmentRequest.details;
+
+                await tx.tattooDetail.create({
+                  data: {
+                    appointmentId: appt.id,
+                    clientId: client.id,
+                    description: String(raw.description ?? ''),
+                    zone: String(raw.zone ?? null),
+                    size: String(raw.size ?? null),
+                    colorStyle: String(raw.colorStyle ?? null),
+                    sketch: String(raw.sketch ?? null),
+                    reference: String(raw.reference ?? null),
+                  },
+                });
+              } catch {/* ignore */}
             }
+
+            return appt;
           });
-
-          if (appointmentRequest.details) {
-            try {
-              type TattooDetailsData = {
-                description?: string;
-                zone?: string;
-                size?: string;
-                colorStyle?: string;
-                sketch?: string;
-                reference?: string;
-              };
-
-              // Assurez-vous que details est un objet JSON valide
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-              const detailsData: TattooDetailsData = typeof appointmentRequest.details === 'string' ? JSON.parse(appointmentRequest.details) : appointmentRequest.details;
-
-              // Assurez-vous que chaque champ est une chaîne de caractères
-              for (const key in detailsData) {
-                if (detailsData[key] && typeof detailsData[key] !== 'string') {
-                  detailsData[key] = String(detailsData[key]);
-                }
-              }
-
-              await this.prisma.tattooDetail.create({
-                data: {
-                  appointmentId: newAppointment.id,
-                  clientId: client.id, // Associer au client créé ou trouvé
-                  description: detailsData.description || '',
-                  zone: detailsData.zone || '',
-                  size: detailsData.size || '',
-                  colorStyle: detailsData.colorStyle || '',
-                  sketch: detailsData.sketch || '',
-                  reference: detailsData.reference || '',
-                },
-              });
-            } catch (e) {
-              // Si parsing ou création échoue, on continue sans bloquer la suite
-              console.error('Erreur création tattooDetail:', e);
-            }
-          }
 
           // Email au salon
           if (salonEmail) {
@@ -2308,9 +2449,8 @@ async getAppointmentRequestsBySalon(
                 <div style='padding: 32px 24px;'>
                   <p>Créneau accepté :</p>
                   <ul style='background: #d1fae5; padding: 16px; border-radius: 8px;'>
-                    <li><strong>Date :</strong> ${proposedDateStr}</li>
-                    <li><strong>De :</strong> ${proposedFromStr}</li>
-                    <li><strong>À :</strong> ${proposedToStr}</li>
+                    <li><strong>De :</strong> ${newAppointment.start.toLocaleString()}</li>
+                    <li><strong>À :</strong> ${newAppointment.end.toLocaleString()}</li>
                   </ul>
                   <p style='color: #64748b; font-size: 14px;'>Vous pouvez maintenant créer le rendez-vous dans votre planning.</p>
                 </div>
@@ -2347,9 +2487,21 @@ async getAppointmentRequestsBySalon(
 
           return { error: false, message: 'Demande acceptée, salon notifié.' };
         } else if (action === 'decline') {
-          await this.prisma.appointmentRequest.update({
-            where: { id: appointmentRequest.id },
-            data: { status: 'DECLINED', updatedAt: new Date(), message: reason ?? appointmentRequest.message },
+          await this.prisma.$transaction(async (tx) => {
+            await tx.proposedSlot.updateMany({
+              where: { appointmentRequestId: appointmentRequest.id },
+              data: { status: 'DECLINED' },
+            });
+            await tx.appointmentRequest.update({
+              where: { id: appointmentRequest.id },
+              data: {
+                status: 'DECLINED',
+                message: reason ?? appointmentRequest.message,
+                token: null,
+                tokenExpiresAt: null,
+                updatedAt: new Date(),
+              },
+            });
           });
           // Email au salon
           if (salonEmail) {
@@ -2361,12 +2513,6 @@ async getAppointmentRequestsBySalon(
                   <p style='color: #fee2e2;'>${clientName} a décliné le créneau proposé.</p>
                 </div>
                 <div style='padding: 32px 24px;'>
-                  <p>Créneau proposé :</p>
-                  <ul style='background: #fee2e2; padding: 16px; border-radius: 8px;'>
-                    <li><strong>Date :</strong> ${proposedDateStr}</li>
-                    <li><strong>De :</strong> ${proposedFromStr}</li>
-                    <li><strong>À :</strong> ${proposedToStr}</li>
-                  </ul>
                   <p style='color: #64748b; font-size: 14px;'>Vous pouvez proposer un autre créneau ou clôturer la demande.</p>
                   ${reason ? `<div style='margin-top:16px; color:#ef4444;'><strong>Motif du client :</strong> ${reason}</div>` : ''}
                 </div>
@@ -2390,7 +2536,11 @@ async getAppointmentRequestsBySalon(
       }
     }
 
+    //! ------------------------------------------------------------------------------
+
     //! SALON : REFUSER LA DEMANDE DE RDV D'UN CLIENT
+
+    //! ------------------------------------------------------------------------------
     async declineAppointmentRequest(appointmentRequestId: string, reason?: string): Promise<{ error: boolean; message: string }> {
       try {
         const appointmentRequest = await this.prisma.appointmentRequest.findUnique({

@@ -23,6 +23,7 @@ export class CreateAppointmentRequestDto {
   clientEmail: string;
 
   @IsString()
+  @IsOptional()
   clientPhone: string;
 
   @IsString()

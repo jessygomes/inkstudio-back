@@ -233,11 +233,29 @@ model AppointmentRequest {
   tatoueurId    String?
 
   token         String?         @unique
+  tokenExpiresAt   DateTime?
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  slots            ProposedSlot[] // <-- nouveau : 1-N propositions
+
   user          User     @relation(fields: [userId], references: [id])
+}
+
+model ProposedSlot {
+  id                   String   @id @default(cuid())
+  appointmentRequestId String
+  from                 DateTime
+  to                   DateTime
+  tatoueurId           String?
+  status               String   @default("PENDING") // PENDING, ACCEPTED, DECLINED, EXPIRED
+  selectedAt           DateTime?
+  createdAt            DateTime @default(now())
+
+  appointmentRequest   AppointmentRequest @relation(fields: [appointmentRequestId], references: [id])
+
+  @@index([appointmentRequestId])
 }
 
 model TimeSlot {

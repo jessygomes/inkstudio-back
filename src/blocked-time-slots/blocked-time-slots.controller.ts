@@ -27,6 +27,16 @@ export class BlockedTimeSlotsController {
     return this.blockedSlotsService.getBlockedSlotsByTatoueur(tatoueurId);
   }
 
+  //! VOIR LES CRENEAU PROPOSE PAR LE SALON SUITE A UNE DEMANDE DE RDV CLIENT
+  @Get('propose-creneau')
+  async getProposedSlotsForSalon(
+    @Query('tatoueurId') tatoueurId: string,
+    @Query('start') start: string,
+    @Query('end') end: string,
+  ) {
+    return this.blockedSlotsService.getProposedSlotsForSalon(tatoueurId, start, end);
+  }
+
   //! VÉRIFIER SI UN CRÉNEAU EST BLOQUÉ
   @Get('check')
   async checkIfBlocked(

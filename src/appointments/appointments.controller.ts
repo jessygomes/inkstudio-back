@@ -97,20 +97,24 @@ export class AppointmentsController {
   @Post('appointment-request/propose-slot/:requestId')
   async proposeSlotForAppointmentRequest(
     @Param('requestId') requestId: string,
-    @Body() body: { proposedDate: string; proposedFrom: string; proposedTo: string, tatoueurId?: string, message?: string }
+    @Body() body: { slots: Array<{ from: Date; to: Date; tatoueurId?: string }>, message?: string }
   ) {
     // Les dates sont envoyées en string, à convertir en Date
-    const { proposedDate, proposedFrom, proposedTo, tatoueurId, message } = body;
-    if (!proposedDate || !proposedFrom || !proposedTo) {
-      throw new Error('All date fields (proposedDate, proposedFrom, proposedTo) are required.');
+    const { slots, message } = body;
+    if (!slots || slots.length === 0) {
+      throw new Error('At least one slot is required.');
     }
+
+    const normalized = slots.map(s => ({
+      from: new Date(s.from),
+      to: new Date(s.to),
+      tatoueurId: s.tatoueurId,
+    }));
+
     return await this.appointmentsService.proposeSlotForAppointmentRequest(
       requestId,
-      new Date(proposedDate),
-      new Date(proposedFrom),
-      new Date(proposedTo),
-      tatoueurId,
-      message
+      normalized,
+      message,
     );
   }
 
@@ -239,9 +243,9 @@ export class AppointmentsController {
 
   //! REPONSE CLIENT POUR DEMANDE DE RDV (ACCEPTER OU DECLINER)
   @Post('appointment-request-response')
-  async handleAppointmentRequestResponse(@Body() body: { token: string; action: 'accept' | 'decline'; reason?: string }) {
-    const { token, action, reason } = body;
-    return await this.appointmentsService.handleAppointmentRequestResponse(token, action, reason);
+  async handleAppointmentRequestResponse(@Body() body: { token: string; action: 'accept' | 'decline'; slotId: string; reason?: string }) {
+    const { token, action, slotId, reason } = body;
+    return await this.appointmentsService.handleAppointmentRequestResponse(token, action, slotId, reason);
   }
   
   //! SALON : REFUSER LA DEMANDE DE RDV D'UN CLIENT

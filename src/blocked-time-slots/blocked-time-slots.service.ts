@@ -293,4 +293,44 @@ export class BlockedTimeSlotsService {
       };
     }
   }
+
+  //! VOIR LES CRENEAU PROPOSE PAR LE SALON SUITE A UNE DEMANDE DE RDV CLIENT
+  async getProposedSlotsForSalon(tatoueurId: string, startDate: string, endDate: string) {
+    try {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+
+      const proposedSlots = await this.prisma.proposedSlot.findMany({
+        where: {
+          tatoueurId,
+          status: 'PENDING',
+          from: {
+            gte: start,
+          },
+          to: {
+            lte: end,
+          },
+        },
+        include: {
+          appointmentRequest: {
+            select: {
+              id: true,
+              clientFirstname: true,
+              clientLastname: true,
+              clientEmail: true,
+              status: true,
+              prestation: true,
+              createdAt: true,
+            }
+          }
+        },
+        orderBy: { from: 'asc' },
+      });
+
+      return proposedSlots;
+    } catch (error) {
+      console.error('Erreur lors de la récupération des créneaux proposés:', error);
+      throw new Error('Erreur lors de la récupération des créneaux proposés');
+    }
+  }
 }
