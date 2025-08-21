@@ -1,23 +1,25 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Request, UseGuards } from '@nestjs/common';
 import { AppointmentsService } from './appointments.service';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
 import { ProposeRescheduleDto, ClientRescheduleRequestDto } from './dto/reschedule-appointment.dto';
-// import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
+import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 // import { SaasLimitGuard } from 'src/saas/saas-limit.guard';
-import { SaasLimit } from 'src/saas/saas-limit.decorator';
+// import { SaasLimit } from 'src/saas/saas-limit.decorator';
 import { CreateAppointmentRequestDto } from './dto/create-appointment-request.dto';
+import { RequestWithUser } from 'src/auth/jwt.strategy';
 
 @Controller('appointments')
 export class AppointmentsController {
   constructor(private readonly appointmentsService: AppointmentsService) {}
 
   //! CREER UN RDV ✅
+  @UseGuards(JwtAuthGuard)
   @Post()
-  // @UseGuards(SaasLimitGuard)
-  @SaasLimit('appointment')
-  async create(@Body() rdvBody: CreateAppointmentDto) {
-    return await this.appointmentsService.create({ rdvBody });
+  // @SaasLimit('appointment')
+  async create(@Request() req: RequestWithUser, @Body() rdvBody: CreateAppointmentDto) {
+    const userId = req.user.userId;
+    return await this.appointmentsService.create({userId, rdvBody });
   }
 
   //! DEMANDE DE RDV CLIENT
@@ -33,22 +35,23 @@ export class AppointmentsController {
   }
 
   //! VOIR TOUS LES RDV PAR DATE ✅
-  // @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard)
   @Get('range')
   async getByDateRange(
-    @Query('userId') userId: string,
+    @Request() req: RequestWithUser,
     @Query('start') start: string,
     @Query('end') end: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string
   ) {
+    const userId = req.user.userId; // ✅ source de vérité
     const pageNumber = page ? parseInt(page, 10) : 1;
     const limitNumber = limit ? parseInt(limit, 10) : 5;
     return this.appointmentsService.getAppointmentsByDateRange(userId, start, end, pageNumber, limitNumber);
   }
 
   //! VOIR TOUS LES RDV D'UN SALON AVEC PAGINATION ✅
-  // @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard)
   @Get('salon/:id')
   async getAllAppointmentsBySalon(
     @Param('id') salonId: string,
@@ -61,29 +64,34 @@ export class AppointmentsController {
   }
 
   //! VOIR LES RDV DU JOUR POUR DASHBOARD ✅
-  // @UseGuards(JwtAuthGuard) // Temporairement commenté pour debug
-  @Get('today/:id')
+  @UseGuards(JwtAuthGuard)
+  @Get('today')
   async getTodaysAppointments(
-    @Param('id') userId: string,
+    @Request() req: RequestWithUser,
     @Query('date') targetDate?: string
   ) {
+    const userId = req.user.userId;
     return await this.appointmentsService.getTodaysAppointments(userId, targetDate);
   }
 
   //! VOIR LES DEMANDES DE RDV D'UN SALON ✅
-  @Get('appointment-requests/:userId')
+  @UseGuards(JwtAuthGuard)
+  @Get('appointment-requests')
   async getAppointmentRequests(
-  @Param('userId') userId: string,
+  @Request() req: RequestWithUser,
   @Query('page') page?: string,
   @Query('limit') limit?: string,
   @Query('status') status?: string,
   ) {
+    const userId = req.user.userId;
     return await this.appointmentsService.getAppointmentRequestsBySalon( userId, Number(page) || 1, Number(limit) || 10, status);
   }
 
   //! RECUPERER LES DEMANDES DE RDV D'UN SALON (tous sauf les CONFIRMER)
-  @Get('appointment-requests/not-confirmed/:userId')
-  async getPendingAppointmentRequests(@Param('userId') userId: string) {
+  @UseGuards(JwtAuthGuard)
+  @Get('appointment-requests/not-confirmed')
+  async getPendingAppointmentRequests(@Request() req: RequestWithUser) {
+    const userId = req.user.userId;
     return await this.appointmentsService.getAppointmentRequestsBySalonNotConfirmed(userId);
   }
 
@@ -94,6 +102,7 @@ export class AppointmentsController {
   }
 
   //! PROPOSER UN CRENEAU POUR UNE DEMANDE DE RDV CLIENT
+  @UseGuards(JwtAuthGuard)
   @Post('appointment-request/propose-slot/:requestId')
   async proposeSlotForAppointmentRequest(
     @Param('requestId') requestId: string,
@@ -118,46 +127,55 @@ export class AppointmentsController {
     );
   }
 
-  //! TAUX DE REMPLISSAGE DES CRENAUX PAR SEMAINE ✅
-  // @UseGuards(JwtAuthGuard) // Temporairement commenté pour debug
-  @Get('weekly-fill-rate/:id')
+  //! TAUX DE REMPLISSAGE DES CRENEAUX PAR SEMAINE ✅
+  @UseGuards(JwtAuthGuard)
+  @Get('weekly-fill-rate')
   async getWeeklyFillRate(
-    @Param('id') userId: string,
+    @Request() req: RequestWithUser,
     @Query('start') start: string,
     @Query('end') end: string
   ) {
+    const userId = req.user.userId;
     return await this.appointmentsService.getWeeklyFillRate(userId, start, end);
   }
 
   //! TAUX D'ANNULATION DES RDV ✅
-  @Get('cancellation-rate/:id')
-  async getGlobalCancellationRate(@Param('id') userId: string) {
+  @UseGuards(JwtAuthGuard)
+  @Get('cancellation-rate')
+  async getGlobalCancellationRate(@Request() req: RequestWithUser) {
+    const userId = req.user.userId;
     return await this.appointmentsService.getGlobalCancellationRate(userId);
   }
 
   //! TOTAL DES RDV PAYES PAR MOIS ✅
-  @Get('monthly-paid-appointments/:id')
+  @UseGuards(JwtAuthGuard)
+  @Get('monthly-paid-appointments')
   async getMonthlyPaidAppointments(
-    @Param('id') userId: string,
+    @Request() req: RequestWithUser,
     @Query('month') month: number,
     @Query('year') year: number
   ) {
+    const userId = req.user.userId;
     return await this.appointmentsService.getTotalPaidAppointmentsByMonth(userId, month, year);
   }
 
-  //! SOMME DES PRIX DES RDV PAYES PAR MOIS ✅
-  @Get('total-paid-appointments/:id')
-  async getTotalPaidAppointments(
-    @Param('id') userId: string,
-    @Query('month') month: number,
-    @Query('year') year: number
-  ) {
-    return await this.appointmentsService.getTotalPaidAppointmentsByMonth(userId, month, year);
-  }
+  // //! SOMME DES PRIX DES RDV PAYES PAR MOIS ✅
+  // @UseGuards(JwtAuthGuard)
+  // @Get('total-paid-appointments')
+  // async getTotalPaidAppointments(
+  //   @Request() req: RequestWithUser,
+  //   @Query('month') month: number,
+  //   @Query('year') year: number
+  // ) {
+  //   const userId = req.user.userId;
+  //   return await this.appointmentsService.getTotalPaidAppointmentsByMonth(userId, month, year);
+  // }
 
   //! RDV EN ATTENTE DE CONFIRMATION ✅
-  @Get('pending-confirmation/:id')
-  async getPendingConfirmationAppointments(@Param('id') userId: string) {
+  @UseGuards(JwtAuthGuard)
+  @Get('pending-confirmation')
+  async getPendingConfirmationAppointments(@Request() req: RequestWithUser) {
+    const userId = req.user.userId;
     return await this.appointmentsService.getPendingAppointments(userId);
   }
 
@@ -178,30 +196,36 @@ export class AppointmentsController {
   }
 
   //! SUPPRIMER UN RDV ✅
+  @UseGuards(JwtAuthGuard)
   @Delete('delete/:id')
   async deleteAppointment(@Param('id') appointmentId: string) {
     return await this.appointmentsService.deleteAppointment(appointmentId);
   }
 
   //! MODIFIER UN RDV ✅
+  @UseGuards(JwtAuthGuard)
   @Patch('update/:id')
   async updateAppointment(@Param('id') appointmentId: string, @Body() rdvBody: UpdateAppointmentDto) {
+    console.log('Updating appointment with ID:', appointmentId, 'and body:', rdvBody);
     return await this.appointmentsService.updateAppointment(appointmentId, rdvBody);
   }
 
   //! CONFIRMER UN RDV ✅
+  @UseGuards(JwtAuthGuard)
   @Patch('confirm/:id')
   async confirmAppointment(@Param('id') appointmentId: string, @Body() message: { message: string }) {
     return await this.appointmentsService.confirmAppointment(appointmentId, message.message);
   }
 
   //! ANNULER UN RDV ✅
+  @UseGuards(JwtAuthGuard)
   @Patch('cancel/:id')
   async cancelAppointment(@Param('id') appointmentId: string, @Body() message: { message: string }) {
     return await this.appointmentsService.cancelAppointment(appointmentId, message.message);
   }
 
   //! RDV PAYE ✅
+  @UseGuards(JwtAuthGuard)
   @Patch('payed/:id')
   async markAppointmentAsPaid(@Param('id') appointmentId: string, @Body() body: { isPayed: boolean }) {
     return await this.appointmentsService.markAppointmentAsPaid(appointmentId, body.isPayed);
@@ -214,12 +238,14 @@ export class AppointmentsController {
   }
 
   //! PROPOSER UNE REPROGRAMMATION DE RDV ✅
-  // @UseGuards(JwtAuthGuard) // À décommenter quand l'auth sera activée
-  @Post('propose-reschedule/:userId')
+  @UseGuards(JwtAuthGuard)
+  @Post('propose-reschedule')
   async proposeReschedule(
-    @Param('userId') userId: string,
+    @Request() req: RequestWithUser,
     @Body() proposeData: ProposeRescheduleDto
   ) {
+    console.log('Proposing reschedule with data:', proposeData);
+    const userId = req.user.userId;
     return await this.appointmentsService.proposeReschedule(proposeData, userId);
   }
 
@@ -249,6 +275,7 @@ export class AppointmentsController {
   }
   
   //! SALON : REFUSER LA DEMANDE DE RDV D'UN CLIENT
+  @UseGuards(JwtAuthGuard)
   @Patch('decline-appointment-request')
   async declineAppointmentRequest(@Body() body: { appointmentRequestId: string; reason: string }) {
     const { appointmentRequestId, reason } = body;

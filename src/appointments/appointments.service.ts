@@ -25,10 +25,10 @@ export class AppointmentsService {
   //! CREER UN RDV
 
   //! ------------------------------------------------------------------------------
-  async create({ rdvBody }: {rdvBody: CreateAppointmentDto}) {
-    console.log(`🔄 Création d'un nouveau rendez-vous pour l'utilisateur ${rdvBody.userId}`);
+  async create({ userId, rdvBody }: {userId: string, rdvBody: CreateAppointmentDto}) {
+    console.log(`🔄 Création d'un nouveau rendez-vous pour l'utilisateur ${userId}`);
     try {
-      const { userId, title, prestation, start, end, clientFirstname, clientLastname, clientEmail, clientPhone, tatoueurId } = rdvBody;
+      const {  title, prestation, start, end, clientFirstname, clientLastname, clientEmail, clientPhone, tatoueurId } = rdvBody;
 
       // 🔒 VÉRIFIER LES LIMITES SAAS - RENDEZ-VOUS PAR MOIS
       const canCreateAppointment = await this.saasService.canPerformAction(userId, 'appointment');
@@ -1096,7 +1096,7 @@ export class AppointmentsService {
   /**
    * Calcule la somme des prix des rendez-vous payés pour un mois donné
    * Le prix d'un tatouage se trouve dans la table TattooDetails
-   * @param userId - ID du salon/utilisateur
+   * @request userId - ID du salon/utilisateur
    * @param month - Mois (1-12)
    * @param year - Année (ex: 2024)
    * @returns Objet contenant le total des prix des RDV payés
@@ -1443,6 +1443,7 @@ export class AppointmentsService {
    * @returns Résultat de la proposition avec token généré
    */
   async proposeReschedule(proposeData: ProposeRescheduleDto, userId: string) {
+    console.log('Proposing reschedule with data:', proposeData);
     try {
       const { appointmentId, reason, newTatoueurId } = proposeData;
 

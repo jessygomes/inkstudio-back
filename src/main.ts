@@ -17,6 +17,7 @@ async function bootstrap() {
     origin: [process.env.FRONTEND_URL, process.env.FRONTEND_URL_BIS],
     credentials: true, // Permet d'envoyer des cookies
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
   await app.listen(process.env.PORT ?? 3000);

@@ -1,15 +1,15 @@
-/* eslint-disable prettier/prettier */
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PassportStrategy } from '@nestjs/passport';
 import { Injectable } from '@nestjs/common';
+import { Request } from 'express';
 
 export type UserPayload = {
   userId: string,
 };
 
-export type RequestWithUser = {
-  user: UserPayload,
-};
+export interface RequestWithUser extends Request {
+  user: UserPayload;
+}
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {

@@ -14,11 +14,7 @@ export enum PrestationType {
   PROJET = 'PROJET',
 }
 
-export class CreateAppointmentDto {
-  @IsString()
-  @IsNotEmpty()
-  userId: string;
-  
+export class CreateAppointmentDto {  
   @IsString()
   title: string;
 
