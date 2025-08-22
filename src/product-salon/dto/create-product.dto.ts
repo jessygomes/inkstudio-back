@@ -1,10 +1,6 @@
-/* eslint-disable prettier/prettier */
 import { IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class CreateProductDto {
-  @IsString()
-  userId: string; // ID de l'utilisateur qui crée le produit
-
   @IsString()
   name: string;
 

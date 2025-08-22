@@ -16,8 +16,4 @@ export class CreateBlockedSlotDto {
   @IsOptional()
   @IsString({ message: 'L\'ID du tatoueur doit être une chaîne de caractères' })
   tatoueurId?: string; // Si null/undefined, bloque pour tous les tatoueurs
-
-  @IsNotEmpty({ message: 'L\'ID de l\'utilisateur est requis' })
-  @IsString({ message: 'L\'ID de l\'utilisateur doit être une chaîne de caractères' })
-  userId: string; // Salon propriétaire
 }

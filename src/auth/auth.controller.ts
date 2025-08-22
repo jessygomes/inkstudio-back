@@ -73,14 +73,15 @@ export class AuthController {
     return this.authService.resetPassword({ email, token, password });
   }
 
-  // @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard)
   @Post('change-password')
   async changePassword(
     @Request() request: RequestWithUser,
     @Body() changePasswordDto: ChangePasswordDto
   ) {
     try {
-      const { currentPassword, newPassword, confirmPassword, userId } = changePasswordDto;
+      const userId = request.user.userId;
+      const { currentPassword, newPassword, confirmPassword } = changePasswordDto;
 
       // Vérifier que les mots de passe de confirmation correspondent
       if (newPassword !== confirmPassword) {

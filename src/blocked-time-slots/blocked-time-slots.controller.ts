@@ -1,18 +1,21 @@
-import { Controller, Post, Get, Put, Delete, Body, Param, Query, ValidationPipe, UsePipes } from '@nestjs/common';
+import { Controller, Post, Get, Put, Delete, Body, Param, Query, ValidationPipe, UsePipes, UseGuards, Request } from '@nestjs/common';
 import { BlockedTimeSlotsService } from './blocked-time-slots.service';
 import { CreateBlockedSlotDto } from './dto/create-blocked-slot.dto';
 import { UpdateBlockedSlotDto } from './dto/update-blocked-slot.dto';
+import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
+import { RequestWithUser } from 'src/auth/jwt.strategy';
 
 @Controller('blocked-slots')
 export class BlockedTimeSlotsController {
   constructor(private readonly blockedSlotsService: BlockedTimeSlotsService) {}
 
   //! CRÉER UN CRÉNEAU BLOQUÉ
+  @UseGuards(JwtAuthGuard)
   @Post()
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
-  async createBlockedSlot(@Body() createBlockedSlotDto: CreateBlockedSlotDto) {
-    console.log('Données reçues dans le contrôleur:', createBlockedSlotDto);
-    return this.blockedSlotsService.createBlockedSlot(createBlockedSlotDto);
+  async createBlockedSlot(@Request() req: RequestWithUser, @Body() createBlockedSlotDto: CreateBlockedSlotDto) {
+    const userId = req.user.userId;
+    return this.blockedSlotsService.createBlockedSlot(createBlockedSlotDto, userId);
   }
 
   //! VOIR TOUS LES CRÉNEAUX BLOQUÉS D'UN SALON
@@ -57,6 +60,7 @@ export class BlockedTimeSlotsController {
   }
 
   //! MODIFIER UN CRÉNEAU BLOQUÉ
+  @UseGuards(JwtAuthGuard)
   @Put(':id')
   async updateBlockedSlot(
     @Param('id') id: string,
@@ -66,6 +70,7 @@ export class BlockedTimeSlotsController {
   }
 
   //! SUPPRIMER UN CRÉNEAU BLOQUÉ
+  @UseGuards(JwtAuthGuard)
   @Delete(':id')
   async deleteBlockedSlot(@Param('id') id: string) {
     return this.blockedSlotsService.deleteBlockedSlot(id);

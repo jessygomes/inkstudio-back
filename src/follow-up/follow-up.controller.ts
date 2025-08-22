@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
-import { BadRequestException, Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Post, Query, Request, UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
+import { RequestWithUser } from 'src/auth/jwt.strategy';
 import { PrismaService } from 'src/database/prisma.service';
 import { MailService } from 'src/mailer.service';
 
@@ -105,8 +107,10 @@ export class FollowupsController {
   }
 
   //! RECUPERER LES SUIVIS PAS ENCORE REPONDU PAR LE SALON
-  @Get('unanswered/:userId')
-  async getUnansweredFollowUps(userId: string) {
+  @UseGuards(JwtAuthGuard)
+  @Get('unanswered')
+  async getUnansweredFollowUps(@Request() req: RequestWithUser) {
+    const userId = req.user.userId;
     const followUps = await this.prisma.followUpSubmission.findMany({
       where: { isAnswered: false, userId },
       include: { appointment: {
@@ -144,78 +148,81 @@ export class FollowupsController {
   }
 
   //! RECUPERER TOUS LES SUIVI D'UN SALON
-@Get('all/:userId')
-async getAllFollowUps(
-  @Param('userId') userId: string,
-  @Query('page') page = '1',
-  @Query('limit') limit = '10',
-  @Query('status') status?: 'all' | 'answered' | 'unanswered',
-  @Query('tatoueurId') tatoueurId?: string,
-  @Query('q') q?: string,
-) {
-  const currentPage = Math.max(1, Number(page) || 1);
-  const perPage = Math.min(50, Math.max(1, Number(limit) || 10));
-  const skip = (currentPage - 1) * perPage;
+  @UseGuards(JwtAuthGuard)
+  @Get('all')
+  async getAllFollowUps(
+    @Request() req: RequestWithUser,
+    @Query('page') page = '1',
+    @Query('limit') limit = '10',
+    @Query('status') status?: 'all' | 'answered' | 'unanswered',
+    @Query('tatoueurId') tatoueurId?: string,
+    @Query('q') q?: string,
+  ) {
+    const userId = req.user.userId;
+    const currentPage = Math.max(1, Number(page) || 1);
+    const perPage = Math.min(50, Math.max(1, Number(limit) || 10));
+    const skip = (currentPage - 1) * perPage;
 
-  // where
-  const where: Record<string, unknown> = { userId };
+    // where
+    const where: Record<string, unknown> = { userId };
 
-  if (status && status !== 'all') {
-    where.isAnswered = status === 'answered';
-  }
-  if (tatoueurId && tatoueurId !== 'all') {
-    // relation filter via appointment
-    where.appointment = { ...(typeof where.appointment === 'object' && where.appointment !== null ? where.appointment : {}), tatoueurId };
-  }
-  if (q && q.trim() !== '') {
-    const query = q.trim();
-    // Match prénom/nom (insensible à la casse)
-    where.OR = [
-      { appointment: { client: { firstName: { contains: query, mode: 'insensitive' } } } },
-      { appointment: { client: { lastName:  { contains: query, mode: 'insensitive' } } } },
-    ];
-  }
+    if (status && status !== 'all') {
+      where.isAnswered = status === 'answered';
+    }
+    if (tatoueurId && tatoueurId !== 'all') {
+      // relation filter via appointment
+      where.appointment = { ...(typeof where.appointment === 'object' && where.appointment !== null ? where.appointment : {}), tatoueurId };
+    }
+    if (q && q.trim() !== '') {
+      const query = q.trim();
+      // Match prénom/nom (insensible à la casse)
+      where.OR = [
+        { appointment: { client: { firstName: { contains: query, mode: 'insensitive' } } } },
+        { appointment: { client: { lastName:  { contains: query, mode: 'insensitive' } } } },
+      ];
+    }
 
-  const [total, followUps] = await this.prisma.$transaction([
-    this.prisma.followUpSubmission.count({ where }),
-    this.prisma.followUpSubmission.findMany({
-      where,
-      include: {
-        appointment: {
-          select: {
-            id: true, title: true, start: true, end: true,
-            client: { select: { id: true, firstName: true, lastName: true } },
-            tatoueur: { select: { id: true, name: true } },
+    const [total, followUps] = await this.prisma.$transaction([
+      this.prisma.followUpSubmission.count({ where }),
+      this.prisma.followUpSubmission.findMany({
+        where,
+        include: {
+          appointment: {
+            select: {
+              id: true, title: true, start: true, end: true,
+              client: { select: { id: true, firstName: true, lastName: true } },
+              tatoueur: { select: { id: true, name: true } },
+            },
           },
         },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: perPage,
+      }),
+    ]);
+
+    const totalPages = Math.max(1, Math.ceil(total / perPage));
+    const startIndex = total === 0 ? 0 : skip + 1;
+    const endIndex = Math.min(skip + perPage, total);
+
+    return {
+      error: false,
+      followUps,
+      pagination: {
+        currentPage,
+        limit: perPage,
+        totalFollowUps: total,
+        totalPages,
+        hasNextPage: currentPage < totalPages,
+        hasPreviousPage: currentPage > 1,
+        startIndex,
+        endIndex,
       },
-      orderBy: { createdAt: 'desc' },
-      skip,
-      take: perPage,
-    }),
-  ]);
-
-  const totalPages = Math.max(1, Math.ceil(total / perPage));
-  const startIndex = total === 0 ? 0 : skip + 1;
-  const endIndex = Math.min(skip + perPage, total);
-
-  return {
-    error: false,
-    followUps,
-    pagination: {
-      currentPage,
-      limit: perPage,
-      totalFollowUps: total,
-      totalPages,
-      hasNextPage: currentPage < totalPages,
-      hasPreviousPage: currentPage > 1,
-      startIndex,
-      endIndex,
-    },
-  };
-}
+    };
+  }
 
   //! REPONDRE A UN SUIVI
+  @UseGuards(JwtAuthGuard)
   @Post('reply/:id')
   async replyToFollowUp(
     @Param('id') id: string,

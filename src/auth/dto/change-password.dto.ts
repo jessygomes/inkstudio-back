@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, MinLength, Matches } from 'class-validator';
+import { IsString, IsNotEmpty, MinLength } from 'class-validator';
 
 export class ChangePasswordDto {
   @IsNotEmpty({ message: 'Le mot de passe actuel est requis' })
@@ -23,8 +23,4 @@ export class ChangePasswordDto {
   @IsNotEmpty({ message: 'La confirmation du mot de passe est requise' })
   @IsString({ message: 'La confirmation doit être une chaîne de caractères' })
   confirmPassword: string;
-
-  @IsString()
-  @IsNotEmpty({ message: "L'ID utilisateur est requis" })
-  userId: string;
 }

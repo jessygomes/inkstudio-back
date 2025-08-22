@@ -8,7 +8,7 @@ import { RequestWithUser } from 'src/auth/jwt.strategy';
 export class PortfolioController {
   constructor(private readonly portfolioService: PortfolioService) {}
 
-   //! AJOUTER UNE PHOTO AU PORTFOLIO
+  //! AJOUTER UNE PHOTO AU PORTFOLIO
   @UseGuards(JwtAuthGuard)
   @Post()
   async addPhotoToPortfolio(@Request() req: RequestWithUser, @Body() portfolioBody: AddPhotoDto) {

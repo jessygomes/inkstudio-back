@@ -8,11 +8,11 @@ export class BlockedTimeSlotsService {
   constructor(private readonly prisma: PrismaService) {}
 
   //! CRÉER UN CRÉNEAU BLOQUÉ
-  async createBlockedSlot(blockedSlotData: CreateBlockedSlotDto) {
+  async createBlockedSlot(blockedSlotData: CreateBlockedSlotDto, userId: string) {
     try {
       console.log('Données reçues:', blockedSlotData);
-      
-      const { startDate, endDate, reason, tatoueurId, userId } = blockedSlotData;
+
+      const { startDate, endDate, reason, tatoueurId } = blockedSlotData;
 
       // Validation des données requises
       if (!startDate || !endDate || !userId) {

@@ -7,9 +7,9 @@ export class ProductSalonService {
   constructor(private readonly prisma: PrismaService) {}
 
   //! CRÉER UN NOUVEAU PRODUIT
-  async createProduct(createProductDto: CreateProductDto) {
+  async createProduct(createProductDto: CreateProductDto, userId: string) {
     try {
-      const { userId, name, description, price, imageUrl } = createProductDto;
+      const { name, description, price, imageUrl } = createProductDto;
 
       // Vérifier si l'utilisateur existe
       const user = await this.prisma.user.findUnique({
