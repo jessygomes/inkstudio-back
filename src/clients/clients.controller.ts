@@ -7,11 +7,15 @@ import {
   Patch,
   Post,
   Query,
+  Request,
+  UseGuards,
   // Request,
   // UseGuards,
 } from '@nestjs/common';
 import { ClientsService } from './clients.service';
 import { CreateClientDto } from './dto/create-client.dto';
+import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
+import { RequestWithUser } from 'src/auth/jwt.strategy';
 // import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 
 @Controller('clients')
@@ -19,9 +23,11 @@ export class ClientsController {
   constructor(private readonly clientsService: ClientsService) {}
 
   //! CREER UN CLIENT ✅
+  @UseGuards(JwtAuthGuard)
   @Post()
-  create(@Body() clientBody: CreateClientDto) {
-    return this.clientsService.createClient({ clientBody });
+  create(@Request() req: RequestWithUser, @Body() clientBody: CreateClientDto) {
+    const userId = req.user.userId;
+    return this.clientsService.createClient({ clientBody, userId });
   }
 
   //! CREER UN CLIENT VIA RDV  (via le bearer token, à tester en front) ✅
@@ -39,11 +45,13 @@ export class ClientsController {
   // }
   
   //! VOIR TOUS LES CLIENTS D'UN SALON ✅
-  @Get('salon/:id')
-  async getClientsBySalon(@Param('id') id: string,  @Query('page') page?: string, @Query('limit') limit?: string,  @Query('search') search: string = '') {
+  @UseGuards(JwtAuthGuard)
+  @Get('salon')
+  async getClientsBySalon(@Request() req: RequestWithUser, @Query('page') page?: string, @Query('limit') limit?: string,  @Query('search') search: string = '') {
+    const userId = req.user.userId;
     const pageNumber = page ? parseInt(page, 10) : 1;
     const limitNumber = limit ? parseInt(limit, 10) : 5;
-    return this.clientsService.getClientsBySalon(id, pageNumber, limitNumber, search);
+    return this.clientsService.getClientsBySalon(userId, pageNumber, limitNumber, search);
   }
 
   //! NOMRE DE NVX CLIENTS PAR MOIS ✅
@@ -73,12 +81,14 @@ export class ClientsController {
   }
 
   //! MODIFIER UN CLIENT ✅
+  @UseGuards(JwtAuthGuard)
   @Patch('update/:id')
   updateClient(@Param('id') id: string, @Body() clientBody: CreateClientDto) {
     return this.clientsService.updateClient(id, clientBody); 
   }
 
   //! SUPPRIMER UN CLIENT ✅
+  @UseGuards(JwtAuthGuard)
   @Delete('delete/:id')
   deleteClient(@Param('id') id: string) {
     return this.clientsService.deleteClient(id);

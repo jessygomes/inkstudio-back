@@ -11,9 +11,9 @@ export class PortfolioService {
   ) {}
 
    //! AJOUTER UNE PHOTO AU PORTFOLIO
-  async addPhotoToPortfolio({portfolioBody}: {portfolioBody: AddPhotoDto}) {
+  async addPhotoToPortfolio({portfolioBody, userId}: {portfolioBody: AddPhotoDto, userId: string}) {
     try {
-      const { userId, title, imageUrl, description, tatoueurId } = portfolioBody;
+      const { title, imageUrl, description, tatoueurId } = portfolioBody;
 
       // 🔒 VÉRIFIER LES LIMITES SAAS - IMAGES PORTFOLIO
       const canAddPortfolioImage = await this.saasService.canPerformAction(userId, 'portfolio');

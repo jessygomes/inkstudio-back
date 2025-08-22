@@ -1,4 +1,3 @@
-/* eslint-disable prettier/prettier */
 import { IsBoolean, IsDateString, IsEmail, IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class CreateClientDto {
@@ -21,9 +20,6 @@ export class CreateClientDto {
   @IsOptional()
   @IsString()
   address: string;
-
-  @IsString()
-  userId: string; // ID du salon qui crée la fiche
 
   // Infos Tatouage
   @IsOptional() @IsString() description: string;

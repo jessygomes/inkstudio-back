@@ -30,8 +30,4 @@ export class CreateTatoueurDto {
   @IsArray()
   @IsOptional()
   skills: string[];
-
-  @IsString()
-  @IsNotEmpty()
-  userId: string; // ID du salon (utilisateur "admin")
 }

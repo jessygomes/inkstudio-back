@@ -11,7 +11,7 @@ export class ClientsService {
   ) {}
 
   //! CREER UN CLIENT
-  async createClient({ clientBody }: { clientBody: CreateClientDto }) {
+  async createClient({ clientBody, userId }: { clientBody: CreateClientDto, userId: string }) {
     try {
       const {
         firstName,
@@ -20,7 +20,6 @@ export class ClientsService {
         phone,
         birthDate,
         address,
-        userId,
         description,
         zone,
         size,
@@ -478,8 +477,6 @@ export class ClientsService {
           where: { id: clientId },
         });
       });
-
-      console.log(`Client supprimé avec succès : ${clientId}`);
 
       return {
         error: false,

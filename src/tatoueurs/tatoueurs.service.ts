@@ -11,9 +11,9 @@ export class TatoueursService {
   ) {}
 
   //! CREER UN TATOUEUR
-  async create({ tatoueurBody }: {tatoueurBody: CreateTatoueurDto}) {
+  async create({ tatoueurBody, userId }: {tatoueurBody: CreateTatoueurDto, userId: string}) {
     try {
-      const { name, img, description, phone, instagram, hours, userId, style, skills } = tatoueurBody;
+      const { name, img, description, phone, instagram, hours, style, skills } = tatoueurBody;
 
       // 🔒 VÉRIFIER LES LIMITES SAAS - TATOUEURS
       const canCreateTatoueur = await this.saasService.canPerformAction(userId, 'tatoueur');
