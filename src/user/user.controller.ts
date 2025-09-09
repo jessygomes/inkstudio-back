@@ -1,25 +1,23 @@
-import { Body, Controller, Get, Param, Patch, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Query, UseGuards, Request } from '@nestjs/common';
 import { UserService } from './user.service';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { UpdateConfirmationSettingDto } from './dto/update-confirmation-setting.dto';
 import { GetUsersDto } from './dto/get-users.dto';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RequestWithUser } from '../auth/jwt.strategy';
 
 @Controller('users')
 export class UserController {
   constructor(private userService: UserService) {}
-  //! GET ALL USERS
-  @Get()
-  async getUsers(@Query() dto: GetUsersDto) {
-    const { query, city, style, page, limit } = dto;
-    return this.userService.getUsers(query, city, style, page, limit);
-  }
 
+  //! 1️⃣ ROUTES STATIQUES SPÉCIFIQUES EN PREMIER
   //! RECUPERER LES VILLES
   @Get('cities')
   async getDistinctCities() {
     return this.userService.getDistinctCities();
   }
 
-    //! RECUPERER LES STYLES
+  //! RECUPERER LES STYLES
   @Get('styleTattoo')
   async getDistinctStyles() {
     return this.userService.getDistinctStyles();
@@ -31,18 +29,49 @@ export class UserController {
     return await this.userService.searchUsers(query);
   }
 
+  //! RECUPERER LE PARAMÈTRE DE CONFIRMATION DES RDV
+  @UseGuards(JwtAuthGuard)
+  @Get('confirmation-setting')
+  getConfirmationSetting(@Request() req: RequestWithUser) {
+    const userId = req.user.userId;
+    return this.userService.getConfirmationSetting({ userId });
+  }
+
+  //! MISE À JOUR DU PARAMÈTRE DE CONFIRMATION DES RDV
+  @UseGuards(JwtAuthGuard)
+  @Patch('confirmation-setting')
+  updateConfirmationSetting(@Body() body: UpdateConfirmationSettingDto, @Request() req: RequestWithUser) {
+    const userId = req.user.userId;
+    console.log("userId dans le controller:", body, userId);
+    return this.userService.updateConfirmationSetting({
+      userId,
+      addConfirmationEnabled: body.addConfirmationEnabled,
+    });
+  }
+
+  //! 2️⃣ ROUTES GÉNÉRIQUES (sans paramètres)
+  //! GET ALL USERS
+  @Get()
+  async getUsers(@Query() dto: GetUsersDto) {
+    const { query, city, style, page, limit } = dto;
+    return this.userService.getUsers(query, city, style, page, limit);
+  }
+
+  //! 3️⃣ ROUTES AVEC PARAMÈTRES COMPLEXES
   //! GET USER BY SLUG + LOCALISATION
   @Get(":nameSlug/:locSlug")
   getUserBySlugAndLocation(@Param('nameSlug') nameSlug: string, @Param('locSlug') locSlug: string) {
     return this.userService.getUserBySlugAndLocation({ nameSlug, locSlug });
   }
 
-  //! Routes spécifiques AVANT les routes avec paramètres
+  //! 4️⃣ ROUTES AVEC PARAMÈTRES SIMPLES EN DERNIER
+  //! RECUPERER LES PHOTOS DU SALON
   @Get(":userId/photos")
   getPhotosSalon(@Param('userId') userId: string) {
+    console.log("userId dans le controller:", userId);
     return this.userService.getPhotosSalon({userId});
   }
-  
+
   @Patch(":userId/photos")
   addOrUpdatePhotoSalon(@Param('userId') userId: string, @Body() body: string[] | {photoUrls: string[]}) {
     // Le body peut être soit un tableau directement, soit un objet avec photoUrls
@@ -55,7 +84,6 @@ export class UserController {
     return this.userService.updateHoursSalon({userId, salonHours: JSON.stringify(salonHours),}); // On appelle la méthode getUserById du service UserService
   }
 
-  //! Routes génériques APRÈS les routes spécifiques
   @Get(":userId") // :userId est un paramètre dynamique qui sera récupéré dans la méthode getUser
   getUser(@Param('userId') userId: string) { // On récupère le paramètre dynamique userId
     return this.userService.getUserById({userId}); // On appelle la méthode getUserById du service UserService

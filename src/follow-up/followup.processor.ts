@@ -1,4 +1,3 @@
-/* eslint-disable prettier/prettier */
 // followup.processor.ts
 import { Processor, Process } from '@nestjs/bull';
 import { Job } from 'bull';

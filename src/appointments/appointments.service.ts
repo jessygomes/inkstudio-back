@@ -83,7 +83,7 @@ export class AppointmentsService {
       });
 
       if (!client) {
-                // 🔒 VÉRIFIER LES LIMITES SAAS - CLIENTS (seulement si on crée un nouveau client)
+        // 🔒 VÉRIFIER LES LIMITES SAAS - CLIENTS (seulement si on crée un nouveau client)
         const canCreateClient = await this.saasService.canPerformAction(userId, 'client');
         
         if (!canCreateClient) {
@@ -116,6 +116,7 @@ export class AppointmentsService {
             end: new Date(end),
             tatoueurId,
             clientId: client.id,
+            status: 'CONFIRMED',
           },
         });
       
@@ -161,15 +162,16 @@ export class AppointmentsService {
           subject: "Confirmez votre adresse email",
           html: `
             <h2>Bonjour ${client.firstName} ${client.lastName} !</h2>
-            <p>Votre demande de rendez-vous a été reçue.</p>
-            <p>Vous allez recevoir une confirmation très bientôt.</p>
-            <p>Merci de votre confiance !</p>
-            <p>Date et heure du rendez-vous : ${newAppointment.start.toLocaleString()}</p>
-            <p>Nom du tatoueur : ${artist.name}</p>
-            <p>Prestation : ${newAppointment.prestation}</p>
+            <p>Votre rendez-vous a été confirmé avec succès.</p>
+            <p><strong>Détails du rendez-vous :</strong></p>
+            <ul>
+              <li>Date et heure : ${newAppointment.start.toLocaleString()} - ${newAppointment.end.toLocaleString()}</li>
+              <li>Prestation : ${newAppointment.prestation}</li>
+              <li>Titre : ${newAppointment.title}</li>
+            </ul>
+            <p>Nous avons hâte de vous voir !</p>
             <p>Si vous avez des questions, n'hésitez pas à nous contacter.</p>
             <p>À bientôt !</p>
-            <p>Nom du salon</p>
           `,
         });
 
@@ -177,6 +179,305 @@ export class AppointmentsService {
         error: false,
         message: 'Rendez-vous créé avec succès.',
         appointment: newAppointment,
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  } 
+
+    //! ------------------------------------------------------------------------------
+
+  //! CREER UN RDV PAR UN CLIENT (sans authentification)
+
+  //! ------------------------------------------------------------------------------
+  async createByClient({ userId, rdvBody }: {userId: string, rdvBody: CreateAppointmentDto}) {
+    console.log(`🔄 Création d'un nouveau rendez-vous pour l'utilisateur ${userId}`);
+    try {
+      const {  title, prestation, start, end, clientFirstname, clientLastname, clientEmail, clientPhone, tatoueurId } = rdvBody;
+
+      // 🔒 VÉRIFIER LES LIMITES SAAS - RENDEZ-VOUS PAR MOIS
+      const canCreateAppointment = await this.saasService.canPerformAction(userId, 'appointment');
+      
+      if (!canCreateAppointment) {
+        const limits = await this.saasService.checkLimits(userId);
+        return {
+          error: true,
+          message: `Limite de rendez-vous par mois atteinte (${limits.limits.appointments}). Passez au plan PRO ou BUSINESS pour continuer.`,
+        };
+      }
+
+        // Vérifier si le tatoueur existe
+        const artist = await this.prisma.tatoueur.findUnique({
+          where: {
+            id: tatoueurId,
+          },
+        });
+
+        if (!artist) {
+          return {
+            error: true,
+            message: 'Tatoueur introuvable.',
+          };
+        }
+
+      // Vérifier si il y a deja un rendez-vous à ce créneau horaire avec ce tatoueur
+      const existingAppointment = await this.prisma.appointment.findFirst({
+        where: {
+          tatoueurId: tatoueurId,
+          OR: [
+            {
+              start: { lt: new Date(end) },
+              end: { gt: new Date(start) },
+            },
+          ],
+        },
+      });
+
+      if (existingAppointment) {
+        return {
+          error: true,
+          message: 'Ce créneau horaire est déjà réservé.',
+        };
+      }
+
+      let client = await this.prisma.client.findFirst({
+        where: {
+          email: clientEmail,
+          userId: userId, // Pour que chaque salon ait ses propres clients
+        },
+      });
+
+      if (!client) {
+        // 🔒 VÉRIFIER LES LIMITES SAAS - CLIENTS (seulement si on crée un nouveau client)
+        const canCreateClient = await this.saasService.canPerformAction(userId, 'client');
+        
+        if (!canCreateClient) {
+          const limits = await this.saasService.checkLimits(userId);
+          return {
+            error: true,
+            message: `Limite de fiches clients atteinte (${limits.limits.clients}). Passez au plan PRO ou BUSINESS pour continuer.`,
+          };
+        }
+
+        // Étape 2 : Créer le client s'il n'existe pas
+        client = await this.prisma.client.create({
+          data: {
+            firstName: clientFirstname,
+            lastName: clientLastname,
+            email: clientEmail,
+            phone: clientPhone || "",
+            userId,
+          },
+        });
+      }
+
+      // Récupérer les informations du salon pour vérifier addConfirmationEnabled
+      const salon = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { addConfirmationEnabled: true, salonName: true, email: true },
+      });
+
+      if (!salon) {
+        return {
+          error: true,
+          message: 'Salon introuvable.',
+        };
+      }
+
+      // Déterminer le statut du rendez-vous selon addConfirmationEnabled
+      const appointmentStatus = salon.addConfirmationEnabled ? 'PENDING' : 'CONFIRMED';
+
+      if (prestation === PrestationType.PROJET || prestation === PrestationType.TATTOO || prestation === PrestationType.PIERCING || prestation === PrestationType.RETOUCHE) {
+        const newAppointment = await this.prisma.appointment.create({
+          data: {
+            userId,
+            title,
+            prestation,
+            start: new Date(start),
+            end: new Date(end),
+            tatoueurId,
+            clientId: client.id,
+            status: appointmentStatus,
+          },
+        });
+      
+        const tattooDetail = await this.prisma.tattooDetail.create({
+          data: {
+            appointmentId: newAppointment.id,
+            clientId: client.id,
+            description: rdvBody.description || '',
+            zone: rdvBody.zone || '',
+            size: rdvBody.size || '',
+            colorStyle: rdvBody.colorStyle || '',
+            reference: rdvBody.reference,
+            sketch: rdvBody.sketch,
+            estimatedPrice: rdvBody.estimatedPrice || 0,
+            price: rdvBody.price || 0,
+          },
+        });
+
+        // Gestion des emails selon le statut
+        if (salon.addConfirmationEnabled) {
+          // RDV en attente : mail au tatoueur uniquement
+          await this.mailService.sendMail({
+            to: salon.email, // Email du salon
+            subject: "Nouveau rendez-vous en attente de confirmation",
+            html: `
+              <h2>Nouveau rendez-vous en attente</h2>
+              <p>Un nouveau rendez-vous nécessite votre confirmation.</p>
+              <p><strong>Détails du rendez-vous :</strong></p>
+              <ul>
+                <li>Client : ${client.firstName} ${client.lastName}</li>
+                <li>Email : ${client.email}</li>
+                <li>Téléphone : ${client.phone}</li>
+                <li>Date et heure : ${newAppointment.start.toLocaleString()} - ${newAppointment.end.toLocaleString()}</li>
+                <li>Prestation : ${newAppointment.prestation}</li>
+                <li>Titre : ${newAppointment.title}</li>
+              </ul>
+              <p>Connectez-vous à votre espace pour confirmer ou modifier ce rendez-vous.</p>
+            `,
+          });
+        } else {
+          // RDV confirmé : mail au client et au tatoueur
+          // Mail au client
+          await this.mailService.sendMail({
+            to: client.email,
+            subject: "Rendez-vous confirmé",
+            html: `
+              <h2>Bonjour ${client.firstName} ${client.lastName} !</h2>
+              <p>Votre rendez-vous a été confirmé avec succès.</p>
+              <p><strong>Détails du rendez-vous :</strong></p>
+              <ul>
+                <li>Date et heure : ${newAppointment.start.toLocaleString()} - ${newAppointment.end.toLocaleString()}</li>
+                <li>Prestation : ${newAppointment.prestation}</li>
+                <li>Titre : ${newAppointment.title}</li>
+                <li>Tatoueur : ${artist.name}</li>
+              </ul>
+              <p>Nous avons hâte de vous voir !</p>
+              <p>Si vous avez des questions, n'hésitez pas à nous contacter.</p>
+              <p>À bientôt !</p>
+            `,
+          });
+
+          // Mail au tatoueur
+          await this.mailService.sendMail({
+            to: salon.email,
+            subject: "Nouveau rendez-vous confirmé",
+            html: `
+              <h2>Nouveau rendez-vous confirmé</h2>
+              <p>Un nouveau rendez-vous a été confirmé automatiquement.</p>
+              <p><strong>Détails du rendez-vous :</strong></p>
+              <ul>
+                <li>Client : ${client.firstName} ${client.lastName}</li>
+                <li>Email : ${client.email}</li>
+                <li>Téléphone : ${client.phone}</li>
+                <li>Date et heure : ${newAppointment.start.toLocaleString()} - ${newAppointment.end.toLocaleString()}</li>
+                <li>Prestation : ${newAppointment.prestation}</li>
+                <li>Titre : ${newAppointment.title}</li>
+              </ul>
+            `,
+          });
+        }
+      
+        return {
+          error: false,
+          message: salon.addConfirmationEnabled 
+            ? 'Rendez-vous projet créé en attente de confirmation.' 
+            : 'Rendez-vous projet créé avec détail tatouage.',
+          appointment: newAppointment,
+          tattooDetail,
+          status: appointmentStatus,
+        };
+      }
+
+      // Créer le rendez-vous
+      const newAppointment = await this.prisma.appointment.create({
+        data: {
+          userId,
+          title,
+          prestation,
+          start: new Date(start),
+          end: new Date(end),
+          tatoueurId,
+          clientId: client.id,
+          status: appointmentStatus,
+        },
+      });
+
+      // Gestion des emails selon le statut
+      if (salon.addConfirmationEnabled) {
+        // RDV en attente : mail au tatoueur uniquement
+        await this.mailService.sendMail({
+          to: salon.email, // Email du salon
+          subject: "Nouveau rendez-vous en attente de confirmation",
+          html: `
+            <h2>Nouveau rendez-vous en attente</h2>
+            <p>Un nouveau rendez-vous nécessite votre confirmation.</p>
+            <p><strong>Détails du rendez-vous :</strong></p>
+            <ul>
+              <li>Client : ${client.firstName} ${client.lastName}</li>
+              <li>Email : ${client.email}</li>
+              <li>Téléphone : ${client.phone}</li>
+              <li>Date et heure : ${newAppointment.start.toLocaleString()} - ${newAppointment.end.toLocaleString()}</li>
+              <li>Prestation : ${newAppointment.prestation}</li>
+              <li>Titre : ${newAppointment.title}</li>
+            </ul>
+            <p>Connectez-vous à votre espace pour confirmer ou modifier ce rendez-vous.</p>
+          `,
+        });
+      } else {
+        // RDV confirmé : mail au client et au tatoueur
+        // Mail au client
+        await this.mailService.sendMail({
+          to: client.email,
+          subject: "Rendez-vous confirmé",
+          html: `
+            <h2>Bonjour ${client.firstName} ${client.lastName} !</h2>
+            <p>Votre rendez-vous a été confirmé avec succès.</p>
+            <p><strong>Détails du rendez-vous :</strong></p>
+            <ul>
+              <li>Date et heure : ${newAppointment.start.toLocaleString()} - ${newAppointment.end.toLocaleString()}</li>
+              <li>Prestation : ${newAppointment.prestation}</li>
+              <li>Titre : ${newAppointment.title}</li>
+              <li>Tatoueur : ${artist.name}</li>
+            </ul>
+            <p>Nous avons hâte de vous voir !</p>
+            <p>Si vous avez des questions, n'hésitez pas à nous contacter.</p>
+            <p>À bientôt !</p>
+          `,
+        });
+
+        // Mail au tatoueur
+        await this.mailService.sendMail({
+          to: salon.email,
+          subject: "Nouveau rendez-vous confirmé",
+          html: `
+            <h2>Nouveau rendez-vous confirmé</h2>
+            <p>Un nouveau rendez-vous a été confirmé automatiquement.</p>
+            <p><strong>Détails du rendez-vous :</strong></p>
+            <ul>
+              <li>Client : ${client.firstName} ${client.lastName}</li>
+              <li>Email : ${client.email}</li>
+              <li>Téléphone : ${client.phone}</li>
+              <li>Date et heure : ${newAppointment.start.toLocaleString()} - ${newAppointment.end.toLocaleString()}</li>
+              <li>Prestation : ${newAppointment.prestation}</li>
+              <li>Titre : ${newAppointment.title}</li>
+            </ul>
+          `,
+        });
+      }
+
+      return {
+        error: false,
+        message: salon.addConfirmationEnabled 
+          ? 'Rendez-vous créé en attente de confirmation.' 
+          : 'Rendez-vous créé avec succès.',
+        appointment: newAppointment,
+        status: appointmentStatus,
       };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
@@ -520,6 +821,7 @@ export class AppointmentsService {
           },
           create: {
             appointmentId: id,
+            clientId: existingAppointment.clientId, // ← AJOUT DU clientId manquant
             description,
             zone,
             size,

@@ -18,8 +18,14 @@ export class AppointmentsController {
   @Post()
   // @SaasLimit('appointment')
   async create(@Request() req: RequestWithUser, @Body() rdvBody: CreateAppointmentDto) {
-    const userId = req.user.userId;
+    const userId = req.user.userId; // Permettre aussi de passer userId dans le body pour les RDV clients
     return await this.appointmentsService.create({userId, rdvBody });
+  }
+
+  @Post('by-client')
+  async createByClient(@Body() rdvBody: CreateAppointmentDto) {
+    const userId = rdvBody.userId;
+    return await this.appointmentsService.createByClient({userId, rdvBody });
   }
 
   //! DEMANDE DE RDV CLIENT
@@ -244,7 +250,7 @@ export class AppointmentsController {
     @Request() req: RequestWithUser,
     @Body() proposeData: ProposeRescheduleDto
   ) {
-    console.log('Proposing reschedule with data:', proposeData);
+    console.log('Proposing reschedule with data:', proposeData); 
     const userId = req.user.userId;
     return await this.appointmentsService.proposeReschedule(proposeData, userId);
   }
@@ -261,24 +267,24 @@ export class AppointmentsController {
     return await this.appointmentsService.handleClientRescheduleRequest(rescheduleData);
   }
 
-  //! VALIDER TOKEN DE DEMANDE
-  @Get('validate-appointment-request-token/:token')
-  async validateAppointmentRequestToken(@Param('token') token: string) {
-    return await this.appointmentsService.validateAppointmentRequestToken(token);
-  }
+  // //! VALIDER TOKEN DE DEMANDE
+  // @Get('validate-appointment-request-token/:token')
+  // async validateAppointmentRequestToken(@Param('token') token: string) {
+  //   return await this.appointmentsService.validateAppointmentRequestToken(token);
+  // }
 
-  //! REPONSE CLIENT POUR DEMANDE DE RDV (ACCEPTER OU DECLINER)
-  @Post('appointment-request-response')
-  async handleAppointmentRequestResponse(@Body() body: { token: string; action: 'accept' | 'decline'; slotId: string; reason?: string }) {
-    const { token, action, slotId, reason } = body;
-    return await this.appointmentsService.handleAppointmentRequestResponse(token, action, slotId, reason);
-  }
+  // //! REPONSE CLIENT POUR DEMANDE DE RDV (ACCEPTER OU DECLINER)
+  // @Post('appointment-request-response')
+  // async handleAppointmentRequestResponse(@Body() body: { token: string; action: 'accept' | 'decline'; slotId: string; reason?: string }) {
+  //   const { token, action, slotId, reason } = body;
+  //   return await this.appointmentsService.handleAppointmentRequestResponse(token, action, slotId, reason);
+  // }
   
-  //! SALON : REFUSER LA DEMANDE DE RDV D'UN CLIENT
-  @UseGuards(JwtAuthGuard)
-  @Patch('decline-appointment-request')
-  async declineAppointmentRequest(@Body() body: { appointmentRequestId: string; reason: string }) {
-    const { appointmentRequestId, reason } = body;
-    return await this.appointmentsService.declineAppointmentRequest(appointmentRequestId, reason);
-  }
+  // //! SALON : REFUSER LA DEMANDE DE RDV D'UN CLIENT
+  // @UseGuards(JwtAuthGuard)
+  // @Patch('decline-appointment-request')
+  // async declineAppointmentRequest(@Body() body: { appointmentRequestId: string; reason: string }) {
+  //   const { appointmentRequestId, reason } = body;
+  //   return await this.appointmentsService.declineAppointmentRequest(appointmentRequestId, reason);
+  // }
 }

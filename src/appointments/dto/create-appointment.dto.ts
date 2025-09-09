@@ -15,6 +15,10 @@ export enum PrestationType {
 }
 
 export class CreateAppointmentDto {  
+  @IsOptional()
+  @IsString()
+  userId: string; // Permet de créer un RDV pour un client spécifique (admin ou tatoueur)
+
   @IsString()
   title: string;
 

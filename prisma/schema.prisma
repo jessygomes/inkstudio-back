@@ -55,6 +55,7 @@ model User {
   salonPhotos   String[]
 
   prestations   String[]
+  addConfirmationEnabled Boolean   @default(false)
 
   saasPlan      SaasPlan  @default(FREE)
   saasPlanUntil DateTime? // Date jusqu'à laquelle le plan est actif

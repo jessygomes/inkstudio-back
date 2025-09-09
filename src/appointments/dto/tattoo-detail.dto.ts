@@ -1,4 +1,3 @@
-/* eslint-disable prettier/prettier */
 import { IsOptional, IsString, IsNumber } from 'class-validator';
 
 export class TattooDetailDto {

@@ -411,4 +411,71 @@ export class UserService {
     console.log("Salon photos updated:", limitedPhotos);
     return user;
   }
+
+  //! ------------------------------------------------------------------------------
+
+  //! RECUPERER LE PARAMÈTRE DE CONFIRMATION DES RDV
+
+  //! ------------------------------------------------------------------------------
+  async getConfirmationSetting({userId}: {userId: string}) {
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: {
+          id: userId,
+        },
+        select: {
+          addConfirmationEnabled: true,
+        },
+      });
+
+      return {
+        error: false,
+        user,
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
+
+  //! ------------------------------------------------------------------------------
+
+  //! METTRE À JOUR LE PARAMÈTRE DE CONFIRMATION DES RDV
+
+  //! ------------------------------------------------------------------------------
+  async updateConfirmationSetting({userId, addConfirmationEnabled}: {userId: string, addConfirmationEnabled: boolean}) {
+    console.log("userId dans le service:", userId, addConfirmationEnabled);
+    try {
+      const user = await this.prisma.user.update({
+        where: {
+          id: userId,
+        },
+        data: {
+          addConfirmationEnabled,
+        },
+        select: {
+          id: true,
+          addConfirmationEnabled: true,
+          salonName: true,
+        },
+      });
+
+      return {
+        error: false,
+        message: addConfirmationEnabled 
+          ? 'Confirmation manuelle activée - Les nouveaux RDV devront être confirmés'
+          : 'Confirmation automatique activée - Les nouveaux RDV seront directement confirmés',
+        user,
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
 }
