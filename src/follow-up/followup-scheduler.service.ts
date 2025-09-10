@@ -86,6 +86,11 @@ export class FollowupSchedulerService {
               name: true,
             },
           },
+          user: {
+            select: {
+              salonName: true,
+            },
+          },
         },
       });
 
@@ -143,43 +148,16 @@ export class FollowupSchedulerService {
       // URL de suivi (à adapter selon votre frontend)
       const followupUrl = `${process.env.WEB_URL}/suivi/${token}`;
 
-      // Envoyer l'email de suivi
-      await this.mailService.sendMail({
-        to: appointment.client.email,
-        subject: `Comment s'est passé votre ${appointment.prestation.toLowerCase()} ?`,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2>Bonjour ${appointment.client.firstName} ${appointment.client.lastName} !</h2>
-            
-            <p>Nous espérons que votre <strong>${appointment.prestation.toLowerCase()}</strong> s'est bien passé(e) !</p>
-            
-            <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
-              <h3>Détails de votre rendez-vous :</h3>
-              <ul style="list-style: none; padding: 0;">
-                <li>📅 <strong>Date :</strong> ${appointment.start.toLocaleDateString()}</li>
-                <li>👨‍🎨 <strong>Artiste :</strong> ${appointment.tatoueur?.name || 'Non assigné'}</li>
-                <li>🎨 <strong>Prestation :</strong> ${appointment.prestation}</li>
-              </ul>
-            </div>
-
-            <p>Votre avis nous intéresse ! Pouvez-vous prendre quelques minutes pour nous faire un retour ?</p>
-            
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${followupUrl}" 
-                style="background-color: #007bff; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; display: inline-block;">
-                💬 Laisser mon avis
-              </a>
-            </div>
-
-            <p style="font-size: 12px; color: #666;">
-              Ce lien expire dans 7 jours. Si vous avez des questions, n'hésitez pas à nous contacter.
-            </p>
-            
-            <p>Merci pour votre confiance ! 🙏</p>
-            <p><strong>L'équipe du salon</strong></p>
-          </div>
-        `,
-      });
+      // Envoyer l'email de demande d'avis
+      await this.mailService.sendFeedbackRequest(appointment.client.email, {
+        feedbackRequestDetails: {
+          clientName: `${appointment.client.firstName} ${appointment.client.lastName}`,
+          appointmentDate: appointment.start.toLocaleDateString('fr-FR'),
+          tatoueurName: appointment.tatoueur?.name || 'Non assigné',
+          prestationName: appointment.prestation,
+          followupUrl: followupUrl
+        }
+      }, appointment.user?.salonName || undefined);
 
       this.logger.log(`✅ Email de suivi envoyé avec succès pour le RDV ${appointmentId} à ${appointment.client.email}`);
 

@@ -26,7 +26,6 @@ export class AppointmentsService {
 
   //! ------------------------------------------------------------------------------
   async create({ userId, rdvBody }: {userId: string, rdvBody: CreateAppointmentDto}) {
-    console.log(`🔄 Création d'un nouveau rendez-vous pour l'utilisateur ${userId}`);
     try {
       const {  title, prestation, start, end, clientFirstname, clientLastname, clientEmail, clientPhone, tatoueurId } = rdvBody;
 
@@ -107,6 +106,7 @@ export class AppointmentsService {
       }
 
       if (prestation === PrestationType.PROJET || prestation === PrestationType.TATTOO || prestation === PrestationType.PIERCING || prestation === PrestationType.RETOUCHE) {
+        // Créer le rendez-vous
         const newAppointment = await this.prisma.appointment.create({
           data: {
             userId,
@@ -118,8 +118,21 @@ export class AppointmentsService {
             clientId: client.id,
             status: 'CONFIRMED',
           },
+          include: {
+            tatoueur: {
+              select: {
+                name: true
+              }
+            }
+          }
         });
-      
+
+        // Récupérer les informations du salon pour le nom
+        const salon = await this.prisma.user.findUnique({
+          where: { id: userId },
+          select: { salonName: true }
+        });
+
         const tattooDetail = await this.prisma.tattooDetail.create({
           data: {
             appointmentId: newAppointment.id,
@@ -134,6 +147,38 @@ export class AppointmentsService {
             price: rdvBody.price || 0,
           },
         });
+        
+        try {
+          await this.mailService.sendAppointmentConfirmation(
+            client.email, 
+            {
+              recipientName: `${client.firstName} ${client.lastName}`,
+              appointmentDetails: {
+                date: newAppointment.start.toLocaleDateString('fr-FR', { 
+                  weekday: 'long', 
+                  year: 'numeric', 
+                  month: 'long', 
+                  day: 'numeric' 
+                }),
+                time: `${newAppointment.start.toLocaleTimeString('fr-FR', { 
+                  hour: '2-digit', 
+                  minute: '2-digit' 
+                })} - ${newAppointment.end.toLocaleTimeString('fr-FR', { 
+                  hour: '2-digit', 
+                  minute: '2-digit' 
+                })}`,
+                service: newAppointment.prestation,
+                tatoueur: newAppointment.tatoueur?.name || 'Non assigné'
+              }
+            },
+            salon?.salonName || undefined // Passer le nom du salon
+          );
+          
+          console.log('🎯 Email de confirmation PROJET/TATTOO envoyé avec succès !');
+        } catch (emailError) {
+          console.error('💥 ERREUR lors de l\'envoi de l\'email PROJET/TATTOO:', emailError);
+          // Ne pas faire échouer la création du RDV si l'email échoue
+        }
       
         return {
           error: false,
@@ -154,26 +199,52 @@ export class AppointmentsService {
           tatoueurId,
           clientId: client.id,
         },
+        include: {
+          tatoueur: {
+            select: {
+              name: true
+            }
+          }
+        }
       });
 
-      // Envoi du mail de confirmation
-      await this.mailService.sendMail({
-          to: client.email,
-          subject: "Confirmez votre adresse email",
-          html: `
-            <h2>Bonjour ${client.firstName} ${client.lastName} !</h2>
-            <p>Votre rendez-vous a été confirmé avec succès.</p>
-            <p><strong>Détails du rendez-vous :</strong></p>
-            <ul>
-              <li>Date et heure : ${newAppointment.start.toLocaleString()} - ${newAppointment.end.toLocaleString()}</li>
-              <li>Prestation : ${newAppointment.prestation}</li>
-              <li>Titre : ${newAppointment.title}</li>
-            </ul>
-            <p>Nous avons hâte de vous voir !</p>
-            <p>Si vous avez des questions, n'hésitez pas à nous contacter.</p>
-            <p>À bientôt !</p>
-          `,
-        });
+      // Récupérer les informations du salon pour le nom
+      const salon = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { salonName: true }
+      });
+      
+      try {
+        await this.mailService.sendAppointmentConfirmation(
+          client.email, 
+          {
+            recipientName: `${client.firstName} ${client.lastName}`,
+            appointmentDetails: {
+              date: newAppointment.start.toLocaleDateString('fr-FR', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+              }),
+              time: `${newAppointment.start.toLocaleTimeString('fr-FR', { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+              })} - ${newAppointment.end.toLocaleTimeString('fr-FR', { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+              })}`,
+              service: newAppointment.prestation,
+              tatoueur: newAppointment.tatoueur?.name || 'Non assigné'
+            }
+          },
+          salon?.salonName || undefined // Passer le nom du salon
+        );
+        
+        console.log('🎯 Email de confirmation envoyé avec succès !');
+      } catch (emailError) {
+        console.error('💥 ERREUR lors de l\'envoi de l\'email:', emailError);
+        // Ne pas faire échouer la création du RDV si l'email échoue
+      }
 
       return {
         error: false,
@@ -323,64 +394,89 @@ export class AppointmentsService {
         // Gestion des emails selon le statut
         if (salon.addConfirmationEnabled) {
           // RDV en attente : mail au tatoueur uniquement
-          await this.mailService.sendMail({
-            to: salon.email, // Email du salon
-            subject: "Nouveau rendez-vous en attente de confirmation",
-            html: `
-              <h2>Nouveau rendez-vous en attente</h2>
-              <p>Un nouveau rendez-vous nécessite votre confirmation.</p>
-              <p><strong>Détails du rendez-vous :</strong></p>
-              <ul>
-                <li>Client : ${client.firstName} ${client.lastName}</li>
-                <li>Email : ${client.email}</li>
-                <li>Téléphone : ${client.phone}</li>
-                <li>Date et heure : ${newAppointment.start.toLocaleString()} - ${newAppointment.end.toLocaleString()}</li>
-                <li>Prestation : ${newAppointment.prestation}</li>
-                <li>Titre : ${newAppointment.title}</li>
-              </ul>
-              <p>Connectez-vous à votre espace pour confirmer ou modifier ce rendez-vous.</p>
-            `,
-          });
+          await this.mailService.sendPendingAppointmentNotification(
+            salon.email,
+            {
+              recipientName: `${client.firstName} ${client.lastName}`,
+              appointmentDetails: {
+                date: newAppointment.start.toLocaleDateString('fr-FR', { 
+                  weekday: 'long', 
+                  year: 'numeric', 
+                  month: 'long', 
+                  day: 'numeric' 
+                }),
+                time: `${newAppointment.start.toLocaleTimeString('fr-FR', { 
+                  hour: '2-digit', 
+                  minute: '2-digit' 
+                })} - ${newAppointment.end.toLocaleTimeString('fr-FR', { 
+                  hour: '2-digit', 
+                  minute: '2-digit' 
+                })}`,
+                service: newAppointment.prestation,
+                title: newAppointment.title,
+                clientEmail: client.email,
+                clientPhone: client.phone
+              }
+            },
+            salon.salonName || undefined
+          );
         } else {
           // RDV confirmé : mail au client et au tatoueur
           // Mail au client
-          await this.mailService.sendMail({
-            to: client.email,
-            subject: "Rendez-vous confirmé",
-            html: `
-              <h2>Bonjour ${client.firstName} ${client.lastName} !</h2>
-              <p>Votre rendez-vous a été confirmé avec succès.</p>
-              <p><strong>Détails du rendez-vous :</strong></p>
-              <ul>
-                <li>Date et heure : ${newAppointment.start.toLocaleString()} - ${newAppointment.end.toLocaleString()}</li>
-                <li>Prestation : ${newAppointment.prestation}</li>
-                <li>Titre : ${newAppointment.title}</li>
-                <li>Tatoueur : ${artist.name}</li>
-              </ul>
-              <p>Nous avons hâte de vous voir !</p>
-              <p>Si vous avez des questions, n'hésitez pas à nous contacter.</p>
-              <p>À bientôt !</p>
-            `,
-          });
+          await this.mailService.sendAutoConfirmedAppointment(
+            client.email,
+            {
+              recipientName: `${client.firstName} ${client.lastName}`,
+              appointmentDetails: {
+                date: newAppointment.start.toLocaleDateString('fr-FR', { 
+                  weekday: 'long', 
+                  year: 'numeric', 
+                  month: 'long', 
+                  day: 'numeric' 
+                }),
+                time: `${newAppointment.start.toLocaleTimeString('fr-FR', { 
+                  hour: '2-digit', 
+                  minute: '2-digit' 
+                })} - ${newAppointment.end.toLocaleTimeString('fr-FR', { 
+                  hour: '2-digit', 
+                  minute: '2-digit' 
+                })}`,
+                service: newAppointment.prestation,
+                title: newAppointment.title,
+                tatoueur: artist.name
+              }
+            },
+            salon.salonName || undefined
+          );
 
           // Mail au tatoueur
-          await this.mailService.sendMail({
-            to: salon.email,
-            subject: "Nouveau rendez-vous confirmé",
-            html: `
-              <h2>Nouveau rendez-vous confirmé</h2>
-              <p>Un nouveau rendez-vous a été confirmé automatiquement.</p>
-              <p><strong>Détails du rendez-vous :</strong></p>
-              <ul>
-                <li>Client : ${client.firstName} ${client.lastName}</li>
-                <li>Email : ${client.email}</li>
-                <li>Téléphone : ${client.phone}</li>
-                <li>Date et heure : ${newAppointment.start.toLocaleString()} - ${newAppointment.end.toLocaleString()}</li>
-                <li>Prestation : ${newAppointment.prestation}</li>
-                <li>Titre : ${newAppointment.title}</li>
-              </ul>
-            `,
-          });
+          await this.mailService.sendNewAppointmentNotification(
+            salon.email,
+            {
+              recipientName: `${client.firstName} ${client.lastName}`,
+              appointmentDetails: {
+                date: newAppointment.start.toLocaleDateString('fr-FR', { 
+                  weekday: 'long', 
+                  year: 'numeric', 
+                  month: 'long', 
+                  day: 'numeric' 
+                }),
+                time: `${newAppointment.start.toLocaleTimeString('fr-FR', { 
+                  hour: '2-digit', 
+                  minute: '2-digit' 
+                })} - ${newAppointment.end.toLocaleTimeString('fr-FR', { 
+                  hour: '2-digit', 
+                  minute: '2-digit' 
+                })}`,
+                service: newAppointment.prestation,
+                title: newAppointment.title,
+                tatoueur: artist.name,
+                clientEmail: client.email,
+                clientPhone: client.phone
+              }
+            },
+            salon.salonName || undefined
+          );
         }
       
         return {
@@ -411,64 +507,89 @@ export class AppointmentsService {
       // Gestion des emails selon le statut
       if (salon.addConfirmationEnabled) {
         // RDV en attente : mail au tatoueur uniquement
-        await this.mailService.sendMail({
-          to: salon.email, // Email du salon
-          subject: "Nouveau rendez-vous en attente de confirmation",
-          html: `
-            <h2>Nouveau rendez-vous en attente</h2>
-            <p>Un nouveau rendez-vous nécessite votre confirmation.</p>
-            <p><strong>Détails du rendez-vous :</strong></p>
-            <ul>
-              <li>Client : ${client.firstName} ${client.lastName}</li>
-              <li>Email : ${client.email}</li>
-              <li>Téléphone : ${client.phone}</li>
-              <li>Date et heure : ${newAppointment.start.toLocaleString()} - ${newAppointment.end.toLocaleString()}</li>
-              <li>Prestation : ${newAppointment.prestation}</li>
-              <li>Titre : ${newAppointment.title}</li>
-            </ul>
-            <p>Connectez-vous à votre espace pour confirmer ou modifier ce rendez-vous.</p>
-          `,
-        });
+        await this.mailService.sendPendingAppointmentNotification(
+          salon.email,
+          {
+            recipientName: `${client.firstName} ${client.lastName}`,
+            appointmentDetails: {
+              date: newAppointment.start.toLocaleDateString('fr-FR', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+              }),
+              time: `${newAppointment.start.toLocaleTimeString('fr-FR', { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+              })} - ${newAppointment.end.toLocaleTimeString('fr-FR', { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+              })}`,
+              service: newAppointment.prestation,
+              title: newAppointment.title,
+              clientEmail: client.email,
+              clientPhone: client.phone
+            }
+          },
+          salon.salonName || undefined
+        );
       } else {
         // RDV confirmé : mail au client et au tatoueur
         // Mail au client
-        await this.mailService.sendMail({
-          to: client.email,
-          subject: "Rendez-vous confirmé",
-          html: `
-            <h2>Bonjour ${client.firstName} ${client.lastName} !</h2>
-            <p>Votre rendez-vous a été confirmé avec succès.</p>
-            <p><strong>Détails du rendez-vous :</strong></p>
-            <ul>
-              <li>Date et heure : ${newAppointment.start.toLocaleString()} - ${newAppointment.end.toLocaleString()}</li>
-              <li>Prestation : ${newAppointment.prestation}</li>
-              <li>Titre : ${newAppointment.title}</li>
-              <li>Tatoueur : ${artist.name}</li>
-            </ul>
-            <p>Nous avons hâte de vous voir !</p>
-            <p>Si vous avez des questions, n'hésitez pas à nous contacter.</p>
-            <p>À bientôt !</p>
-          `,
-        });
+        await this.mailService.sendAutoConfirmedAppointment(
+          client.email,
+          {
+            recipientName: `${client.firstName} ${client.lastName}`,
+            appointmentDetails: {
+              date: newAppointment.start.toLocaleDateString('fr-FR', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+              }),
+              time: `${newAppointment.start.toLocaleTimeString('fr-FR', { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+              })} - ${newAppointment.end.toLocaleTimeString('fr-FR', { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+              })}`,
+              service: newAppointment.prestation,
+              title: newAppointment.title,
+              tatoueur: artist.name
+            }
+          },
+          salon.salonName || undefined
+        );
 
         // Mail au tatoueur
-        await this.mailService.sendMail({
-          to: salon.email,
-          subject: "Nouveau rendez-vous confirmé",
-          html: `
-            <h2>Nouveau rendez-vous confirmé</h2>
-            <p>Un nouveau rendez-vous a été confirmé automatiquement.</p>
-            <p><strong>Détails du rendez-vous :</strong></p>
-            <ul>
-              <li>Client : ${client.firstName} ${client.lastName}</li>
-              <li>Email : ${client.email}</li>
-              <li>Téléphone : ${client.phone}</li>
-              <li>Date et heure : ${newAppointment.start.toLocaleString()} - ${newAppointment.end.toLocaleString()}</li>
-              <li>Prestation : ${newAppointment.prestation}</li>
-              <li>Titre : ${newAppointment.title}</li>
-            </ul>
-          `,
-        });
+        await this.mailService.sendNewAppointmentNotification(
+          salon.email,
+          {
+            recipientName: `${client.firstName} ${client.lastName}`,
+            appointmentDetails: {
+              date: newAppointment.start.toLocaleDateString('fr-FR', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+              }),
+              time: `${newAppointment.start.toLocaleTimeString('fr-FR', { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+              })} - ${newAppointment.end.toLocaleTimeString('fr-FR', { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+              })}`,
+              service: newAppointment.prestation,
+              title: newAppointment.title,
+              tatoueur: artist.name,
+              clientEmail: client.email,
+              clientPhone: client.phone
+            }
+          },
+          salon.salonName || undefined
+        );
       }
 
       return {
@@ -842,19 +963,36 @@ export class AppointmentsService {
 
       // Envoi d'un mail de confirmation si les horaires ont changé
       if ((originalStart !== newStart || originalEnd !== newEnd) && updatedAppointment.client) {
-        await this.mailService.sendMail({
-          to: updatedAppointment.client.email,
-          subject: "Rendez-vous modifié",
-          html: `
-            <h2>Bonjour ${updatedAppointment.client.firstName} ${updatedAppointment.client.lastName} !</h2>
-            <p>Votre rendez-vous a été modifié.</p>
-            <p>Nouvelle date et heure : ${updatedAppointment.start.toLocaleString()} - ${updatedAppointment.end.toLocaleString()}</p>
-            <p>Nom du tatoueur : ${artist.name}</p>
-            <p>Prestation : ${updatedAppointment.prestation}</p>
-            <p>Si vous avez des questions, n'hésitez pas à nous contacter.</p>
-            <p>À bientôt !</p>
-          `,
+        // Récupérer les informations du salon
+        const salon = await this.prisma.user.findUnique({
+          where: { id: existingAppointment.userId },
+          select: { salonName: true }
         });
+
+        await this.mailService.sendAppointmentModification(
+          updatedAppointment.client.email,
+          {
+            recipientName: `${updatedAppointment.client.firstName} ${updatedAppointment.client.lastName}`,
+            appointmentDetails: {
+              date: updatedAppointment.start.toLocaleDateString('fr-FR', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+              }),
+              time: `${updatedAppointment.start.toLocaleTimeString('fr-FR', { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+              })} - ${updatedAppointment.end.toLocaleTimeString('fr-FR', { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+              })}`,
+              service: updatedAppointment.prestation,
+              tatoueur: artist.name
+            }
+          },
+          salon?.salonName || undefined
+        );
       }
 
       return {
@@ -912,6 +1050,8 @@ export class AppointmentsService {
       });
 
       //! Si la prestation est TATTOO, RETOUCHE ou PIERCING, planifier un suivi
+      //! L'email sera envoyé 5 minutes après la fin du RDV (uniquement si confirmé)
+      //! TODO: Rendre ce délai paramétrable (5 jours après la fin du RDV)
       if (
           ['TATTOO', 'RETOUCHE', 'PIERCING'].includes(appointment.prestation)
         ) {
@@ -920,25 +1060,39 @@ export class AppointmentsService {
 
       // Envoi d'un mail de confirmation au client (si le client existe)
       if (appointment.client) {
-        await this.mailService.sendMail({
-          to: appointment.client.email,
-          subject: "Rendez-vous confirmé",
-          html: `
-            <h2>Bonjour ${appointment.client.firstName} ${appointment.client.lastName} !</h2>
-            <p>Votre rendez-vous a été confirmé avec succès.</p>
-            <p>${message}</p>
-            <p><strong>Détails du rendez-vous :</strong></p>
-            <ul>
-              <li>Date et heure : ${appointment.start.toLocaleString()} - ${appointment.end.toLocaleString()}</li>
-              <li>Prestation : ${appointment.prestation}</li>
-              <li>Tatoueur : ${appointment.tatoueur?.name || 'Non assigné'}</li>
-              <li>Titre : ${appointment.title}</li>
-            </ul>
-            <p>Nous avons hâte de vous voir !</p>
-            <p>Si vous avez des questions, n'hésitez pas à nous contacter.</p>
-            <p>À bientôt !</p>
-          `,
+        // Récupérer les informations du salon
+        const salon = await this.prisma.user.findUnique({
+          where: { id: existingAppointment.userId },
+          select: { salonName: true, email: true }
         });
+
+        await this.mailService.sendAppointmentConfirmation(
+          appointment.client.email,
+          {
+            recipientName: `${appointment.client.firstName} ${appointment.client.lastName}`,
+            appointmentDetails: {
+              date: appointment.start.toLocaleDateString('fr-FR', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+              }),
+              time: `${appointment.start.toLocaleTimeString('fr-FR', { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+              })} - ${appointment.end.toLocaleTimeString('fr-FR', { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+              })}`,
+              service: appointment.prestation,
+              tatoueur: appointment.tatoueur?.name || 'Non assigné',
+              title: appointment.title
+            },
+            customMessage: message || undefined
+          },
+          salon?.salonName || undefined,
+          salon?.email || undefined
+        );
     }
 
       return {
@@ -992,32 +1146,150 @@ export class AppointmentsService {
 
           // Envoyer un email d'annulation au client (si le client existe)
   if (appointment.client) {
-    await this.mailService.sendMail({
-      to: appointment.client.email,
-      subject: "Rendez-vous annulé",
-      html: `
-        <h2>Bonjour ${appointment.client.firstName} ${appointment.client.lastName} !</h2>
-        <p>Nous sommes désolés de vous informer que votre rendez-vous a été annulé.</p>
-        <p>${message}</p>
-        <p><strong>Détails du rendez-vous annulé :</strong></p>
-        <ul>
-          <li>Date et heure : ${appointment.start.toLocaleString()} - ${appointment.end.toLocaleString()}</li>
-          <li>Prestation : ${appointment.prestation}</li>
-          <li>Tatoueur : ${appointment.tatoueur?.name || 'Non assigné'}</li>
-          <li>Titre : ${appointment.title}</li>
-        </ul>
-        <p>N'hésitez pas à nous contacter pour reprogrammer votre rendez-vous ou pour toute question.</p>
-        <p>Nous nous excusons pour la gêne occasionnée.</p>
-        <p>Cordialement,</p>
-        <p>L'équipe du salon</p>
-      `,
+    // Récupérer les informations du salon
+    const salon = await this.prisma.user.findUnique({
+      where: { id: existingAppointment.userId },
+      select: { salonName: true, email: true }
     });
+
+    await this.mailService.sendAppointmentCancellation(
+      appointment.client.email,
+      {
+        recipientName: `${appointment.client.firstName} ${appointment.client.lastName}`,
+        appointmentDetails: {
+          date: appointment.start.toLocaleDateString('fr-FR', { 
+            weekday: 'long', 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+          }),
+          time: `${appointment.start.toLocaleTimeString('fr-FR', { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+          })} - ${appointment.end.toLocaleTimeString('fr-FR', { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+          })}`,
+          service: appointment.prestation,
+          tatoueur: appointment.tatoueur?.name || 'Non assigné',
+          title: appointment.title
+        },
+        customMessage: message || undefined
+      },
+      salon?.salonName || undefined,
+      salon?.email || undefined
+    );
   }
 
       return {
         error: false,
         message: 'Rendez-vous annulé.',
         appointment: appointment,
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
+
+  //! ------------------------------------------------------------------------------
+
+  //! CHANGER LE STATUT D'UN RDV CONFIRME PASSE À "COMPLETED" OU "NO_SHOW"
+
+  //! ------------------------------------------------------------------------------
+  async changeAppointmentStatus(id: string, statusData: 'COMPLETED' | 'NO_SHOW' | { status: 'COMPLETED' | 'NO_SHOW' }) {
+    // Extraire le statut si c'est un objet, sinon utiliser directement la valeur
+    const status = typeof statusData === 'object' && statusData !== null && 'status' in statusData 
+      ? statusData.status 
+      : statusData;
+    
+    console.log(`🔄 Changement du statut du rendez-vous ${id} à ${status}`);
+    
+    // Validation du statut
+    if (!['COMPLETED', 'NO_SHOW'].includes(status)) {
+      return {
+        error: true,
+        message: `Statut invalide: ${status}. Les statuts autorisés sont: COMPLETED, NO_SHOW`,
+      };
+    }
+
+    try {
+      const appointment = await this.prisma.appointment.update({
+        where: { id },
+        data: { status },
+        include: {
+          tatoueur: true,
+          client: true,
+          tattooDetail: true,
+        },
+      });
+      return {
+        error: false,
+        message: `Statut du rendez-vous mis à jour à ${status}.`,
+        appointment: appointment,
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
+
+  //! ------------------------------------------------------------------------------
+
+  //! ENVOYER UN MAIL PERSONNALISÉ A UN CLIENT 
+
+  //! ------------------------------------------------------------------------------
+  async sendCustomEmail(appointmentId: string, subject: string, body: string) {
+    try {
+      // Récupérer le rendez-vous avec les informations du client et du salon
+      const appointment = await this.prisma.appointment.findUnique({
+        where: { id: appointmentId },
+        include: {
+          client: true,
+          user: {
+            select: {
+              salonName: true,
+              email: true,
+            },
+          },
+        },
+      });
+
+      if (!appointment) {
+        return {
+          error: true,
+          message: 'Rendez-vous non trouvé',
+        };
+      }
+
+      if (!appointment.client) {
+        return {
+          error: true,
+          message: 'Client non trouvé pour ce rendez-vous',
+        };
+      }
+
+      // Envoyer l'email personnalisé avec le template et le nom du salon
+      await this.mailService.sendCustomEmail(
+        appointment.client.email,
+        subject,
+        {
+          recipientName: `${appointment.client.firstName} ${appointment.client.lastName}`,
+          customMessage: body,
+        },
+        appointment.user?.salonName || undefined,
+        appointment.user?.email || undefined
+      );
+
+      return {
+        error: false,
+        message: 'Email personnalisé envoyé avec succès.',
       };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
@@ -1745,9 +2017,10 @@ export class AppointmentsService {
    * @returns Résultat de la proposition avec token généré
    */
   async proposeReschedule(proposeData: ProposeRescheduleDto, userId: string) {
-    console.log('Proposing reschedule with data:', proposeData);
     try {
       const { appointmentId, reason, newTatoueurId } = proposeData;
+
+      console.log(reason)
 
       // ==================== ÉTAPE 1: VÉRIFICATION DU RDV EXISTANT ====================
       const existingAppointment = await this.prisma.appointment.findFirst({
@@ -1759,6 +2032,7 @@ export class AppointmentsService {
           client: true,
           tatoueur: true,
           tattooDetail: true,
+          user: true, // Inclure les infos du salon
         },
       });
 
@@ -1855,77 +2129,21 @@ export class AppointmentsService {
       // URL pour que le client puisse choisir de nouveaux créneaux
       const rescheduleUrl = `${process.env.FRONTEND_URL}/nouveau-creneau?token=${rescheduleToken}`;
 
-      const emailSubject = '🔄 Reprogrammation de votre rendez-vous - Action requise';
-      const emailContent = `
-        <div style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; max-width: 600px; margin: 0 auto; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: #e2e8f0; border-radius: 16px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.3);">
-          
-          <!-- Header -->
-          <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 32px 24px; text-align: center;">
-            <h1 style="margin: 0; font-size: 28px; font-weight: 700; color: white; text-shadow: 0 2px 4px rgba(0,0,0,0.3);">
-              🔄 Reprogrammation Nécessaire
-            </h1>
-            <p style="margin: 8px 0 0 0; font-size: 16px; color: rgba(255,255,255,0.9);">
-              Votre rendez-vous doit être reprogrammé
-            </p>
-          </div>
-
-          <!-- Content -->
-          <div style="padding: 32px 24px;">
-            <p style="font-size: 18px; margin: 0 0 24px 0; color: #f1f5f9;">
-              Bonjour <strong style="color: #60a5fa;">${clientName}</strong>,
-            </p>
-
-            <div style="background: rgba(99, 102, 241, 0.1); border-left: 4px solid #6366f1; padding: 20px; border-radius: 8px; margin: 24px 0;">
-              <p style="margin: 0 0 16px 0; color: #f1f5f9; font-size: 16px;">
-                Nous devons reprogrammer votre rendez-vous :
-              </p>
-              <div style="background: rgba(0,0,0,0.2); padding: 16px; border-radius: 8px;">
-                <p style="margin: 0 0 8px 0; color: #cbd5e1;"><strong>📅 Date actuelle :</strong> ${appointmentDateStr}</p>
-                <p style="margin: 0 0 8px 0; color: #cbd5e1;"><strong>👨‍🎨 Tatoueur :</strong> ${oldTatoueurName}</p>
-                ${newTatoueurId ? `<p style="margin: 0; color: #60a5fa;"><strong>👨‍🎨 Nouveau tatoueur :</strong> ${newTatoueurName}</p>` : ''}
-              </div>
-            </div>
-
-            ${reason ? `
-              <div style="background: rgba(245, 158, 11, 0.1); border-left: 4px solid #f59e0b; padding: 20px; border-radius: 8px; margin: 24px 0;">
-                <p style="margin: 0 0 8px 0; color: #f59e0b; font-weight: 600;">Motif :</p>
-                <p style="margin: 0; color: #e2e8f0; font-style: italic;">${reason}</p>
-              </div>
-            ` : ''}
-
-            <div style="text-align: center; margin: 32px 0;">
-              <a href="${rescheduleUrl}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-decoration: none; padding: 16px 32px; border-radius: 12px; font-weight: 600; font-size: 16px; box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3); transition: transform 0.2s;">
-                📅 Choisir de nouveaux créneaux
-              </a>
-            </div>
-
-            <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); padding: 16px; border-radius: 8px; margin: 24px 0;">
-              <p style="margin: 0; color: #fca5a5; font-size: 14px; text-align: center;">
-                ⏰ <strong>Important :</strong> Ce lien expire dans 7 jours. Veuillez choisir vos nouveaux créneaux rapidement.
-              </p>
-            </div>
-
-            <p style="color: #94a3b8; font-size: 14px; margin: 24px 0 0 0; text-align: center;">
-              Si vous avez des questions, n'hésitez pas à nous contacter.<br>
-              Merci de votre compréhension ! 🙏
-            </p>
-          </div>
-
-          <!-- Footer -->
-          <div style="background: rgba(0,0,0,0.2); padding: 20px 24px; text-align: center; border-top: 1px solid rgba(255,255,255,0.1);">
-            <p style="margin: 0; color: #64748b; font-size: 12px;">
-              © 2024 Tattoo Studio Management - Email automatique
-            </p>
-          </div>
-        </div>
-      `;
-
       // Envoyer l'email
-      await this.mailService.sendMail({
-        to: clientEmail,
-        subject: emailSubject,
-        html: emailContent,
-      });
+      await this.mailService.sendRescheduleProposal(
+        clientEmail,
+        {
+          recipientName: clientName,
+          rescheduleDetails: {
+            currentDate: appointmentDateStr,
+            oldTatoueurName,
+            newTatoueurName: newTatoueurId ? newTatoueurName : undefined,
+            reason,
+            rescheduleUrl,
+          }
+        },
+        existingAppointment.user.salonName || undefined
+      );
 
       // ==================== ÉTAPE 7: RETOUR DU RÉSULTAT ====================
       return {
@@ -2013,33 +2231,19 @@ export class AppointmentsService {
       }
 
       // ==================== ÉTAPE 3: VÉRIFIER DISPONIBILITÉ DU TATOUEUR ====================
-      // Vérifier s'il y a des conflits avec d'autres RDV
-      const conflictingAppointments = await this.prisma.appointment.findMany({
-        where: {
-          tatoueurId,
-          id: { not: appointmentId }, // Exclure le RDV actuel
-          status: { in: ['PENDING', 'CONFIRMED'] }, // Uniquement les RDV actifs
-          OR: [
-            {
-              start: { lte: newStartDate },
-              end: { gt: newStartDate },
-            },
-            {
-              start: { lt: newEndDate },
-              end: { gte: newEndDate },
-            },
-            {
-              start: { gte: newStartDate },
-              end: { lte: newEndDate },
-            },
-          ],
-        },
-      });
+      // Utiliser notre méthode complète qui vérifie rendez-vous ET créneaux bloqués
+      const availabilityCheck = await this.isTimeSlotAvailable(
+        newStartDate,
+        newEndDate,
+        tatoueurId,
+        rescheduleRequest.appointment.userId,
+        appointmentId // Exclure le rendez-vous actuel de la vérification
+      );
 
-      if (conflictingAppointments.length > 0) {
+      if (!availabilityCheck.available) {
         return {
           error: true,
-          message: 'Le tatoueur n\'est pas disponible sur ce créneau. Veuillez choisir un autre horaire.',
+          message: availabilityCheck.reason || 'Ce créneau n\'est pas disponible.',
         };
       }
       
@@ -2058,6 +2262,7 @@ export class AppointmentsService {
           client: true,
           tatoueur: true,
           tattooDetail: true,
+          user: true, // Inclure les infos du salon
         },
       });
 
@@ -2092,70 +2297,19 @@ export class AppointmentsService {
         minute: '2-digit',
       });
 
-      const confirmationSubject = '✅ Rendez-vous reprogrammé avec succès !';
-      const confirmationContent = `
-        <div style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; max-width: 600px; margin: 0 auto; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: #e2e8f0; border-radius: 16px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.3);">
-          
-          <!-- Header -->
-          <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 32px 24px; text-align: center;">
-            <h1 style="margin: 0; font-size: 28px; font-weight: 700; color: white; text-shadow: 0 2px 4px rgba(0,0,0,0.3);">
-              ✅ Rendez-vous Reprogrammé !
-            </h1>
-            <p style="margin: 8px 0 0 0; font-size: 16px; color: rgba(255,255,255,0.9);">
-              Votre nouveau créneau a été confirmé
-            </p>
-          </div>
-
-          <!-- Content -->
-          <div style="padding: 32px 24px;">
-            <p style="font-size: 18px; margin: 0 0 24px 0; color: #f1f5f9;">
-              Bonjour <strong style="color: #60a5fa;">${clientName}</strong>,
-            </p>
-
-            <div style="background: rgba(16, 185, 129, 0.1); border-left: 4px solid #10b981; padding: 20px; border-radius: 8px; margin: 24px 0;">
-              <p style="margin: 0 0 16px 0; color: #f1f5f9; font-size: 16px;">
-                🎉 Parfait ! Votre rendez-vous a été reprogrammé avec succès :
-              </p>
-              <div style="background: rgba(0,0,0,0.2); padding: 16px; border-radius: 8px;">
-                <p style="margin: 0 0 8px 0; color: #cbd5e1;"><strong>📅 Nouvelle date :</strong> ${newAppointmentDate}</p>
-                <p style="margin: 0; color: #cbd5e1;"><strong>👨‍🎨 Tatoueur :</strong> ${tatoueurName}</p>
-              </div>
-            </div>
-
-            ${clientMessage ? `
-              <div style="background: rgba(99, 102, 241, 0.1); border-left: 4px solid #6366f1; padding: 20px; border-radius: 8px; margin: 24px 0;">
-                <p style="margin: 0 0 8px 0; color: #6366f1; font-weight: 600;">Votre message :</p>
-                <p style="margin: 0; color: #e2e8f0; font-style: italic;">"${clientMessage}"</p>
-              </div>
-            ` : ''}
-
-            <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); padding: 16px; border-radius: 8px; margin: 24px 0;">
-              <p style="margin: 0; color: #6ee7b7; font-size: 14px; text-align: center;">
-                ✅ <strong>Confirme :</strong> Votre rendez-vous est maintenant confirmé pour le nouveau créneau.
-              </p>
-            </div>
-
-            <p style="color: #94a3b8; font-size: 14px; margin: 24px 0 0 0; text-align: center;">
-              Merci pour votre flexibilité ! Nous avons hâte de vous voir. 🎨<br>
-              Si vous avez des questions, n'hésitez pas à nous contacter.
-            </p>
-          </div>
-
-          <!-- Footer -->
-          <div style="background: rgba(0,0,0,0.2); padding: 20px 24px; text-align: center; border-top: 1px solid rgba(255,255,255,0.1);">
-            <p style="margin: 0; color: #64748b; font-size: 12px;">
-              © 2024 Tattoo Studio Management - Email automatique
-            </p>
-          </div>
-        </div>
-      `;
-
       // Envoyer l'email de confirmation au client
-      await this.mailService.sendMail({
-        to: clientEmail,
-        subject: confirmationSubject,
-        html: confirmationContent,
-      });
+      await this.mailService.sendRescheduleConfirmation(
+        clientEmail,
+        {
+          recipientName: clientName,
+          rescheduleConfirmationDetails: {
+            newDate: newAppointmentDate,
+            tatoueurName,
+            clientMessage,
+          }
+        },
+        updatedAppointment.user?.salonName || undefined
+      );
 
       // ==================== ÉTAPE 7: ENVOYER EMAIL DE NOTIFICATION AU SALON ====================
       // Récupérer les informations du salon pour envoyer la notification
@@ -2178,80 +2332,22 @@ export class AppointmentsService {
           minute: '2-digit',
         });
 
-        const salonNotificationSubject = '🔄 Client a accepté la reprogrammation';
-        const salonNotificationContent = `
-          <div style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; max-width: 600px; margin: 0 auto; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: #e2e8f0; border-radius: 16px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.3);">
-            
-            <!-- Header -->
-            <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 32px 24px; text-align: center;">
-              <h1 style="margin: 0; font-size: 28px; font-weight: 700; color: white; text-shadow: 0 2px 4px rgba(0,0,0,0.3);">
-                ✅ Reprogrammation Acceptée
-              </h1>
-              <p style="margin: 8px 0 0 0; font-size: 16px; color: rgba(255,255,255,0.9);">
-                Le client a choisi ses nouveaux créneaux
-              </p>
-            </div>
-
-            <!-- Content -->
-            <div style="padding: 32px 24px;">
-              <p style="font-size: 18px; margin: 0 0 24px 0; color: #f1f5f9;">
-                Bonjour <strong style="color: #60a5fa;">${salonInfo.salonName || 'Salon'}</strong>,
-              </p>
-
-              <div style="background: rgba(16, 185, 129, 0.1); border-left: 4px solid #10b981; padding: 20px; border-radius: 8px; margin: 24px 0;">
-                <p style="margin: 0 0 16px 0; color: #f1f5f9; font-size: 16px;">
-                  🎉 Le client <strong>${clientName}</strong> a accepté la reprogrammation et choisi un nouveau créneau :
-                </p>
-                <div style="background: rgba(0,0,0,0.2); padding: 16px; border-radius: 8px;">
-                  <p style="margin: 0 0 8px 0; color: #f87171;"><strong>📅 Ancien créneau :</strong> ${originalAppointmentDateStr}</p>
-                  <p style="margin: 0 0 8px 0; color: #6ee7b7;"><strong>📅 Nouveau créneau :</strong> ${newAppointmentDate}</p>
-                  <p style="margin: 0; color: #cbd5e1;"><strong>👨‍🎨 Tatoueur :</strong> ${tatoueurName}</p>
-                </div>
-              </div>
-
-              <div style="background: rgba(99, 102, 241, 0.1); border-left: 4px solid #6366f1; padding: 20px; border-radius: 8px; margin: 24px 0;">
-                <p style="margin: 0 0 8px 0; color: #f1f5f9; font-weight: 600;">Informations du client :</p>
-                <div style="background: rgba(0,0,0,0.2); padding: 12px; border-radius: 6px;">
-                  <p style="margin: 0 0 4px 0; color: #cbd5e1;"><strong>Nom :</strong> ${clientName}</p>
-                  <p style="margin: 0 0 4px 0; color: #cbd5e1;"><strong>Email :</strong> ${clientEmail}</p>
-                  <p style="margin: 0; color: #cbd5e1;"><strong>Prestation :</strong> ${updatedAppointment.prestation}</p>
-                </div>
-              </div>
-
-              ${clientMessage ? `
-                <div style="background: rgba(245, 158, 11, 0.1); border-left: 4px solid #f59e0b; padding: 20px; border-radius: 8px; margin: 24px 0;">
-                  <p style="margin: 0 0 8px 0; color: #f59e0b; font-weight: 600;">Message du client :</p>
-                  <p style="margin: 0; color: #e2e8f0; font-style: italic;">"${clientMessage}"</p>
-                </div>
-              ` : ''}
-
-              <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); padding: 16px; border-radius: 8px; margin: 24px 0;">
-                <p style="margin: 0; color: #6ee7b7; font-size: 14px; text-align: center;">
-                  ✅ <strong>Status :</strong> Le rendez-vous a été automatiquement confirmé pour le nouveau créneau.
-                </p>
-              </div>
-
-              <p style="color: #94a3b8; font-size: 14px; margin: 24px 0 0 0; text-align: center;">
-                Le client a été notifié par email de la confirmation.<br>
-                Vous pouvez retrouver ce rendez-vous dans votre planning. 📅
-              </p>
-            </div>
-
-            <!-- Footer -->
-            <div style="background: rgba(0,0,0,0.2); padding: 20px 24px; text-align: center; border-top: 1px solid rgba(255,255,255,0.1);">
-              <p style="margin: 0; color: #64748b; font-size: 12px;">
-                © 2024 Tattoo Studio Management - Notification automatique
-              </p>
-            </div>
-          </div>
-        `;
-
         // Envoyer l'email de notification au salon
-        await this.mailService.sendMail({
-          to: salonInfo.email,
-          subject: salonNotificationSubject,
-          html: salonNotificationContent,
-        });
+        await this.mailService.sendRescheduleAcceptedNotification(
+          salonInfo.email,
+          {
+            rescheduleAcceptedDetails: {
+              clientName,
+              clientEmail,
+              originalDate: originalAppointmentDateStr,
+              newDate: newAppointmentDate,
+              tatoueurName,
+              prestation: updatedAppointment.prestation,
+              clientMessage,
+            }
+          },
+          salonInfo.salonName || undefined
+        );
       }
 
       // ==================== ÉTAPE 8: RETOUR DU RÉSULTAT ====================
@@ -2899,4 +2995,141 @@ export class AppointmentsService {
         return { error: true, message: error instanceof Error ? error.message : 'Erreur inconnue' };
       }
     }
+
+  /**
+   * Vérification complète de disponibilité d'un créneau
+   * Prend en compte les rendez-vous existants ET les créneaux bloqués
+   */
+  async isTimeSlotAvailable(
+    startDate: Date, 
+    endDate: Date, 
+    tatoueurId: string, 
+    userId: string,
+    excludeAppointmentId?: string
+  ): Promise<{ available: boolean; reason?: string }> {
+    try {
+      // 1. Vérifier les conflits avec d'autres rendez-vous
+      const whereCondition: any = {
+        tatoueurId,
+        status: { in: ['PENDING', 'CONFIRMED', 'RESCHEDULING'] },
+        OR: [
+          {
+            start: { lte: startDate },
+            end: { gt: startDate },
+          },
+          {
+            start: { lt: endDate },
+            end: { gte: endDate },
+          },
+          {
+            start: { gte: startDate },
+            end: { lte: endDate },
+          },
+        ],
+      };
+
+      // Exclure un appointment spécifique si demandé (utile pour la reprogrammation)
+      if (excludeAppointmentId) {
+        whereCondition.id = { not: excludeAppointmentId };
+      }
+
+      const conflictingAppointments = await this.prisma.appointment.findMany({
+        where: whereCondition,
+      });
+
+      if (conflictingAppointments.length > 0) {
+        return {
+          available: false,
+          reason: 'Le tatoueur a déjà un rendez-vous sur ce créneau.',
+        };
+      }
+
+      // 2. Vérifier les créneaux bloqués
+      const blockedSlots = await this.prisma.blockedTimeSlot.findMany({
+        where: {
+          userId,
+          OR: [
+            { tatoueurId: tatoueurId }, // Créneau bloqué pour ce tatoueur spécifique
+            { tatoueurId: null }, // Créneau bloqué pour tout le salon
+          ],
+          AND: [
+            {
+              startDate: { lt: endDate },
+            },
+            {
+              endDate: { gt: startDate },
+            },
+          ],
+        },
+      });
+
+      if (blockedSlots.length > 0) {
+        return {
+          available: false,
+          reason: 'Ce créneau est bloqué.',
+        };
+      }
+
+      return { available: true };
+    } catch (error) {
+      console.error('Erreur lors de la vérification de disponibilité:', error);
+      return {
+        available: false,
+        reason: 'Erreur lors de la vérification de disponibilité.',
+      };
+    }
+  }
+
+  //! ------------------------------------------------------------------------------
+
+  //! MÉTHODE DE TEST POUR L'ENVOI D'EMAILS
+
+  //! ------------------------------------------------------------------------------
+  async testEmailSending(email: string) {
+    try {
+      console.log('🧪 Test d\'envoi d\'email vers:', email);
+      
+      // Test 1: Email basique
+      console.log('📤 Test 1: Email basique...');
+      await this.mailService.sendMail({
+        to: email,
+        subject: '🧪 Test Email Basique - Salon Test',
+        html: '<h1>Test réussi !</h1><p>Si vous recevez cet email, la configuration de base fonctionne.</p>',
+        salonName: 'Salon Test'
+      });
+
+      // Test 2: Email avec template
+      console.log('📤 Test 2: Email avec template...');
+      await this.mailService.sendAppointmentConfirmation(
+        email, 
+        {
+          recipientName: 'Test User',
+          appointmentDetails: {
+            date: 'Lundi 10 septembre 2025',
+            time: '14:00 - 16:00',
+            service: 'Test Service',
+            tatoueur: 'Test Artist',
+            price: 150
+          }
+        },
+        'Salon Test' // Nom du salon de test
+      );
+
+      return {
+        error: false,
+        message: 'Tests d\'email envoyés avec succès ! Vérifiez votre boîte de réception.',
+        tests: [
+          'Email basique envoyé',
+          'Email avec template envoyé'
+        ]
+      };
+    } catch (error) {
+      console.error('💥 Erreur lors du test d\'email:', error);
+      return {
+        error: true,
+        message: `Erreur lors du test: ${error instanceof Error ? error.message : 'Erreur inconnue'}`,
+        details: error
+      };
+    }
+  }
 }

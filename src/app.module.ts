@@ -17,7 +17,7 @@ import { TattooHistoryController } from './tattoo-history/tattoo-history.control
 import { TattooHistoryModule } from './tattoo-history/tattoo-history.module';
 import { AftercareModule } from './aftercare/aftercare.module';
 import { TimeSlotModule } from './time-slot/time-slot.module';
-import { MailService } from './mailer.service';
+import { MailModule } from './mail.module';
 import { PortfolioService } from './portfolio/portfolio.service';
 import { PortfolioController } from './portfolio/portfolio.controller';
 import { PortfolioModule } from './portfolio/portfolio.module';
@@ -39,6 +39,7 @@ import { BlockedTimeSlotsModule } from './blocked-time-slots/blocked-time-slots.
     TattooHistoryModule,
     AftercareModule,
     TimeSlotModule,
+    MailModule,
     PortfolioModule,
     ProductSalonModule,
     // 🔴 Configuration Redis globale pour Bull
@@ -71,7 +72,6 @@ import { BlockedTimeSlotsModule } from './blocked-time-slots/blocked-time-slots.
     AppointmentsService,
     ClientsService,
     TattooHistoryService,
-    MailService,
     PortfolioService,
   ],
 })

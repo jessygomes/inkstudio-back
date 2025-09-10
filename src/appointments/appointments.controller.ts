@@ -7,6 +7,7 @@ import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 // import { SaasLimitGuard } from 'src/saas/saas-limit.guard';
 // import { SaasLimit } from 'src/saas/saas-limit.decorator';
 import { CreateAppointmentRequestDto } from './dto/create-appointment-request.dto';
+import { SendCustomEmailDto } from './dto/send-custom-email.dto';
 import { RequestWithUser } from 'src/auth/jwt.strategy';
 
 @Controller('appointments')
@@ -223,6 +224,13 @@ export class AppointmentsController {
     return await this.appointmentsService.confirmAppointment(appointmentId, message.message);
   }
 
+  //! COMPLETER UN RDV ✅
+  @UseGuards(JwtAuthGuard)
+  @Patch('change-status/:id')
+  async changeAppointmentStatus(@Param('id') appointmentId: string, @Body() statusBody: { status: 'COMPLETED' | 'NO_SHOW' } | 'COMPLETED' | 'NO_SHOW') {
+    return await this.appointmentsService.changeAppointmentStatus(appointmentId, statusBody);
+  }
+
   //! ANNULER UN RDV ✅
   @UseGuards(JwtAuthGuard)
   @Patch('cancel/:id')
@@ -287,4 +295,15 @@ export class AppointmentsController {
   //   const { appointmentRequestId, reason } = body;
   //   return await this.appointmentsService.declineAppointmentRequest(appointmentRequestId, reason);
   // }
+
+  //! ENVOYER UN EMAIL PERSONNALISÉ À UN CLIENT ✅
+  @UseGuards(JwtAuthGuard)
+  @Post('send-custom-email/:appointmentId')
+  async sendCustomEmail(
+    @Param('appointmentId') appointmentId: string,
+    @Body() emailData: SendCustomEmailDto
+  ) {
+    const { subject, message } = emailData;
+    return await this.appointmentsService.sendCustomEmail(appointmentId, subject, message);
+  }
 }

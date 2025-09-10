@@ -176,6 +176,8 @@ enum AppointmentStatus {
   DECLINED
   CANCELED
   RESCHEDULING
+  NO_SHOW
+  COMPLETED
 }
 
 model Appointment {

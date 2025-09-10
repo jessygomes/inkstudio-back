@@ -273,35 +273,14 @@ export class FollowupsController {
     const salon = followUp.appointment.user?.salonName || 'Notre salon';
     const tatoueur = followUp.appointment.tatoueur?.name || 'notre artiste';
     
-    await this.mailService.sendMail({
-      to: client.email,
-      subject: `Réponse à votre suivi de cicatrisation - ${salon}`,
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <h2 style="color: #333;">Bonjour ${client.firstName} ${client.lastName},</h2>
-          
-          <p>Merci pour votre photo et votre avis concernant votre ${followUp.appointment.prestation.toLowerCase()} réalisé par ${tatoueur} !</p>
-          
-          <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
-            <h3 style="color: #007bff; margin-top: 0;">💬 Notre réponse :</h3>
-            <p style="font-size: 16px; line-height: 1.6; margin-bottom: 0;">${body.response}</p>
-          </div>
-          
-          <p>Nous espérons que ces informations vous seront utiles. N'hésitez pas à nous contacter si vous avez d'autres questions.</p>
-          
-          <p style="margin-top: 30px;">
-            Cordialement,<br>
-            <strong>L'équipe de ${salon}</strong>
-          </p>
-          
-          <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
-          <p style="color: #666; font-size: 12px; text-align: center;">
-            Cet email est une réponse à votre suivi de cicatrisation.<br>
-            Si vous n'avez pas envoyé de suivi, veuillez nous contacter.
-          </p>
-        </div>
-      `,
-    });
+    await this.mailService.sendFollowUpResponse(client.email, {
+      followUpResponseDetails: {
+        clientName: `${client.firstName} ${client.lastName}`,
+        tatoueurName: tatoueur,
+        prestationName: followUp.appointment.prestation,
+        response: body.response
+      }
+    }, salon);
 
     // Optionnel : mettre à jour le statut de la demande de suivi
     // await this.prisma.followUpRequest.update({
@@ -326,8 +305,6 @@ export class FollowupsController {
     if (!followUp) {
       throw new BadRequestException('Suivi non trouvé');
     }
-
-    console.log('Deleting follow-up:', followUp);
 
     try {
       // D'abord, supprimer la relation dans FollowUpRequest si elle existe

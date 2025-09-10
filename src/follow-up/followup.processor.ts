@@ -48,6 +48,12 @@ export class FollowupProcessor {
         return;
       }
 
+      // Vérifier que le rendez-vous est confirmé
+      if (appt.status !== 'CONFIRMED') {
+        this.logger.log(`⏸️ Rendez-vous ${appointmentId} non confirmé (statut: ${appt.status}), email de suivi non envoyé`);
+        return;
+      }
+
       // Vérifier si un suivi a déjà été soumis (idempotence)
       const existingReq = await this.prisma.followUpRequest.findUnique({
         where: { appointmentId },
@@ -80,38 +86,15 @@ export class FollowupProcessor {
       
       this.logger.log(`📧 Envoi de l'email de suivi à: ${appt.client.email}`);
 
-      // Envoyer l'email de suivi
-      await this.mail.sendMail({
-        to: appt.client.email,
-        subject: 'Suivi de cicatrisation — Envoyez votre photo',
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-            <h2 style="color: #333;">Bonjour ${appt.client.firstName} ${appt.client.lastName},</h2>
-            
-            <p>Merci pour votre visite chez ${appt.user?.salonName || 'notre salon'} !</p>
-            
-            <p>Votre ${appt.prestation.toLowerCase()} avec ${appt.tatoueur?.name || 'notre tatoueur'} s'est bien déroulé.</p>
-            
-            <p><strong>Pour assurer un suivi optimal de votre cicatrisation, nous aimerions avoir de vos nouvelles :</strong></p>
-            
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${followUrl}" 
-                style="background-color: #007bff; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">
-                📸 Envoyer ma photo et mon avis
-              </a>
-            </div>
-            
-            <p style="color: #666; font-size: 14px;">
-              <strong>Important :</strong> Ce lien est valable pendant 14 jours. 
-              Votre photo nous aidera à vérifier que la cicatrisation se déroule bien.
-            </p>
-            
-            <p style="color: #666; font-size: 12px; margin-top: 30px;">
-              Si vous avez des questions ou des préoccupations, n'hésitez pas à nous contacter directement.
-            </p>
-          </div>
-        `,
-      });
+      // Envoyer l'email de suivi de cicatrisation
+      await this.mail.sendCicatrisationFollowUp(appt.client.email, {
+        cicatrisationFollowUpDetails: {
+          clientName: `${appt.client.firstName} ${appt.client.lastName}`,
+          prestationName: appt.prestation,
+          tatoueurName: appt.tatoueur?.name || 'notre tatoueur',
+          followUpUrl: followUrl
+        }
+      }, appt.user?.salonName || undefined);
 
       // Marquer l'email comme envoyé
       await this.prisma.followUpRequest.update({

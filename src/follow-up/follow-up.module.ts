@@ -1,13 +1,12 @@
-/* eslint-disable prettier/prettier */
 import { Module } from '@nestjs/common';
 import { PrismaModule } from 'src/database/prisma.module';
-import { MailService } from 'src/mailer.service';
+import { MailModule } from 'src/mail.module';
 import { FollowupsController } from './follow-up.controller';
 import { FollowupSchedulerService } from './followup-scheduler.service';
 
 @Module({
-  imports: [PrismaModule],
-  providers: [FollowupSchedulerService, MailService],
+  imports: [PrismaModule, MailModule],
+  providers: [FollowupSchedulerService],
   exports: [FollowupSchedulerService],
   controllers: [FollowupsController],
 })
