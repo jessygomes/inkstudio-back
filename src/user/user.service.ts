@@ -70,6 +70,7 @@ export class UserService {
                 instagram: true,
                 style: true,
                 skills: true,
+                rdvBookingEnabled: true
               },
             },
             salonPhotos: true,
@@ -146,6 +147,7 @@ export class UserService {
               hours: true,
               style: true,
               skills: true,
+              rdvBookingEnabled: true
             }
           },
           salonPhotos: true,
@@ -215,6 +217,7 @@ export class UserService {
             instagram: true,
             style: true,
             skills: true,
+            rdvBookingEnabled: true
           }
         },
         salonPhotos: true,
@@ -297,6 +300,7 @@ export class UserService {
             instagram: true,
             style: true,
             skills: true,
+            rdvBookingEnabled: true
           }
         }
       },

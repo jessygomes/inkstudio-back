@@ -121,6 +121,8 @@ model Tatoueur {
   style       String[]
   skills      String[]
 
+  rdvBookingEnabled Boolean @default(true) // variable pour la prise de rendez-vous par tatoueur
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

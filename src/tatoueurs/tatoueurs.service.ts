@@ -87,6 +87,25 @@ export class TatoueursService {
     }
   }
 
+    //! VOIR TOUS LES TATOUEURS QUI PEUVENT PRENDRE DES RDV PAR USER ID
+  async getTatoueurByUserIdForAppointment(userId: string) {
+    try {
+      const tatoueurs = await this.prisma.tatoueur.findMany({
+        where: {
+          userId,
+          rdvBookingEnabled: true
+        },
+      });
+      return tatoueurs;
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
+
   //! VOIR UN SEUL TATOUEUR
   async getOneTatoueur(id: string) {
     try {
@@ -108,7 +127,7 @@ export class TatoueursService {
   //! MODIFIER UN TATOUEUR
   async updateTatoueur(id: string, tatoueurBody: CreateTatoueurDto) {
     try {
-      const { name, img, description, phone, instagram, hours, style, skills } = tatoueurBody;
+      const { name, img, description, phone, instagram, hours, style, skills, rdvBookingEnabled } = tatoueurBody;
 
       const updatedTatoueur = await this.prisma.tatoueur.update({
         where: {
@@ -123,6 +142,7 @@ export class TatoueursService {
           hours,
           style,
           skills,
+          rdvBookingEnabled
         },
       });
 

@@ -349,7 +349,7 @@ export class AppointmentsService {
       // Récupérer les informations du salon pour vérifier addConfirmationEnabled
       const salon = await this.prisma.user.findUnique({
         where: { id: userId },
-        select: { addConfirmationEnabled: true, salonName: true, email: true },
+        select: { addConfirmationEnabled: true, salonName: true, email: true, appointmentBookingEnabled: true },
       });
 
       if (!salon) {

@@ -77,17 +77,9 @@ export class UserController {
   }
 
   //! 3️⃣ ROUTES AVEC PARAMÈTRES COMPLEXES
-  //! GET USER BY SLUG + LOCALISATION
-  @Get(":nameSlug/:locSlug")
-  getUserBySlugAndLocation(@Param('nameSlug') nameSlug: string, @Param('locSlug') locSlug: string) {
-    return this.userService.getUserBySlugAndLocation({ nameSlug, locSlug });
-  }
-
-  //! 4️⃣ ROUTES AVEC PARAMÈTRES SIMPLES EN DERNIER
   //! RECUPERER LES PHOTOS DU SALON
   @Get(":userId/photos")
   getPhotosSalon(@Param('userId') userId: string) {
-    console.log("userId dans le controller:", userId);
     return this.userService.getPhotosSalon({userId});
   }
 
@@ -103,6 +95,13 @@ export class UserController {
     return this.userService.updateHoursSalon({userId, salonHours: JSON.stringify(salonHours),}); // On appelle la méthode getUserById du service UserService
   }
 
+  //! GET USER BY SLUG + LOCALISATION
+  @Get(":nameSlug/:locSlug")
+  getUserBySlugAndLocation(@Param('nameSlug') nameSlug: string, @Param('locSlug') locSlug: string) {
+    return this.userService.getUserBySlugAndLocation({ nameSlug, locSlug });
+  }
+
+  //! 4️⃣ ROUTES AVEC PARAMÈTRES SIMPLES EN DERNIER
   @Get(":userId") // :userId est un paramètre dynamique qui sera récupéré dans la méthode getUser
   getUser(@Param('userId') userId: string) { // On récupère le paramètre dynamique userId
     return this.userService.getUserById({userId}); // On appelle la méthode getUserById du service UserService

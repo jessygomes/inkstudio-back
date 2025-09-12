@@ -28,6 +28,12 @@ export class TatoueursController {
     return this.tatoueursService.getTatoueurByUserId(id);
   }
 
+    //! VOIR TOUS LES TATOUEURS PAR USER ID ✅
+  @Get('for-appointment/:id')
+  getTatoueurByUserIdForAppointment(@Param('id') id: string) {
+    return this.tatoueursService.getTatoueurByUserIdForAppointment(id);
+  }
+
   //! VOIR UN SEUL TATOUEUR ✅
   @Get(':id')
   getOneTatoueur(@Param('id') id: string) {

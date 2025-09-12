@@ -1,4 +1,10 @@
-import { IsArray, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 
 export class CreateTatoueurDto {
   @IsString()
@@ -30,4 +36,7 @@ export class CreateTatoueurDto {
   @IsArray()
   @IsOptional()
   skills: string[];
+
+  @IsBoolean()
+  rdvBookingEnabled: boolean; // variable pour la prise de rendez-vous par tatoueur
 }
