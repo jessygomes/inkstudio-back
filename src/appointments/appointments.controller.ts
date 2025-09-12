@@ -109,30 +109,30 @@ export class AppointmentsController {
   }
 
   //! PROPOSER UN CRENEAU POUR UNE DEMANDE DE RDV CLIENT
-  @UseGuards(JwtAuthGuard)
-  @Post('appointment-request/propose-slot/:requestId')
-  async proposeSlotForAppointmentRequest(
-    @Param('requestId') requestId: string,
-    @Body() body: { slots: Array<{ from: Date; to: Date; tatoueurId?: string }>, message?: string }
-  ) {
-    // Les dates sont envoyées en string, à convertir en Date
-    const { slots, message } = body;
-    if (!slots || slots.length === 0) {
-      throw new Error('At least one slot is required.');
-    }
+  // @UseGuards(JwtAuthGuard)
+  // @Post('appointment-request/propose-slot/:requestId')
+  // async proposeSlotForAppointmentRequest(
+  //   @Param('requestId') requestId: string,
+  //   @Body() body: { slots: Array<{ from: Date; to: Date; tatoueurId?: string }>, message?: string }
+  // ) {
+  //   // Les dates sont envoyées en string, à convertir en Date
+  //   const { slots, message } = body;
+  //   if (!slots || slots.length === 0) {
+  //     throw new Error('At least one slot is required.');
+  //   }
 
-    const normalized = slots.map(s => ({
-      from: new Date(s.from),
-      to: new Date(s.to),
-      tatoueurId: s.tatoueurId,
-    }));
+  //   const normalized = slots.map(s => ({
+  //     from: new Date(s.from),
+  //     to: new Date(s.to),
+  //     tatoueurId: s.tatoueurId,
+  //   }));
 
-    return await this.appointmentsService.proposeSlotForAppointmentRequest(
-      requestId,
-      normalized,
-      message,
-    );
-  }
+  //   return await this.appointmentsService.proposeSlotForAppointmentRequest(
+  //     requestId,
+  //     normalized,
+  //     message,
+  //   );
+  // }
 
   //! TAUX DE REMPLISSAGE DES CRENEAUX PAR SEMAINE ✅
   @UseGuards(JwtAuthGuard)

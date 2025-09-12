@@ -349,14 +349,7 @@ export class EmailTemplateService {
           ${content}
           <div class="footer">
             <div class="footer-content">
-              <p><strong>${salonName}</strong> - Votre partenaire créatif</p>
-              <div class="divider"></div>
-              <p>Besoin d'aide ? Contactez-nous à <a href="mailto:contact@inkstudio.fr" style="color: #af7e70;">contact@inkstudio.fr</a></p>
-            </div>
-            <div class="social-links">
-              <a href="#" class="social-link">Instagram</a>
-              <a href="#" class="social-link">Facebook</a>
-              <a href="#" class="social-link">TikTok</a>
+              <p><strong>${salonName}</strong></p>
             </div>
           </div>
         </div>
@@ -364,6 +357,19 @@ export class EmailTemplateService {
       </html>
     `;
   }
+
+  // <div class="footer">
+  //           <div class="footer-content">
+  //             <p><strong>${salonName}</strong> - Votre partenaire créatif</p>
+  //             <div class="divider"></div>
+  //             <p>Besoin d'aide ? Contactez-nous à <a href="mailto:contact@inkstudio.fr" style="color: #af7e70;">contact@inkstudio.fr</a></p>
+  //           </div>
+  //           <div class="social-links">
+  //             <a href="#" class="social-link">Instagram</a> 
+  //             <a href="#" class="social-link">Facebook</a>
+  //             <a href="#" class="social-link">TikTok</a>
+  //           </div>
+  //         </div>
 
   /**
    * Template pour confirmation de rendez-vous (client)
@@ -506,13 +512,15 @@ export class EmailTemplateService {
     const content = `
       <div class="content">
         <div class="welcome-section">
-          <span class="emoji-icon">🎉</span>
-          <h2 class="welcome-title">Bienvenue sur ${data.salonName || 'InkStudio'} !</h2>
-          <p class="welcome-subtitle">Bonjour ${data.recipientName || 'cher utilisateur'}</p>
+          <h2 class="welcome-title">Bienvenue sur InkStudio !</h2>
         </div>
+
+        <br/>
         
         <div class="message-box">
-          <p>✨ <strong>Félicitations !</strong> Votre compte ${data.salonName || 'InkStudio'} a été créé avec succès.</p>
+          <p class="welcome-subtitle">Bonjour ${data.recipientName || 'cher utilisateur'},</p>
+          <p><strong>Félicitations !</strong> Votre compte ${data.salonName || 'InkStudio'} a été créé avec succès.</p>
+          <br/>
           <p>Pour commencer à utiliser toutes les fonctionnalités de votre espace de gestion, veuillez confirmer votre adresse email en cliquant sur le bouton ci-dessous :</p>
         </div>
         
@@ -532,25 +540,8 @@ export class EmailTemplateService {
         
         <div class="info-grid">
           <div class="info-item">
-            <div class="info-item-label">Expiration</div>
-            <div class="info-item-value">10 minutes</div>
+            <div class="info-item-label">🔒 Expiration dans 10min | Lien unique</div>
           </div>
-          <div class="info-item">
-            <span class="info-item-icon">🔒</span>
-            <div class="info-item-label">Sécurité</div>
-            <div class="info-item-value">Lien unique</div>
-          </div>
-        </div>
-        
-        <div class="message-box" style="margin-top: 32px;">
-          <p><strong>🚀 Une fois votre email confirmé, vous pourrez :</strong></p>
-          <ul style="margin: 12px 0; padding-left: 20px; color: rgba(255, 255, 255, 0.8);">
-            <li>📅 Gérer vos rendez-vous et votre agenda</li>
-            <li>👥 Créer et organiser vos fiches clients</li>
-            <li>🎨 Gérer votre portfolio et vos réalisations</li>
-            <li>📊 Accéder aux statistiques de votre salon</li>
-            <li>✉️ Système de suivi post-tatouage</li>
-          </ul>
         </div>
         
         <div style="background: rgba(249, 115, 22, 0.1); border: 1px solid rgba(249, 115, 22, 0.2); border-radius: 12px; padding: 16px; margin: 24px 0; text-align: center;">
@@ -560,7 +551,8 @@ export class EmailTemplateService {
         </div>
 
         <div class="message">
-          <p>Si vous n'avez pas créé de compte, vous pouvez ignorer cet email en toute sécurité.</p>
+          <p class="welcome-subtitle">Si vous n'avez pas créé de compte, vous pouvez ignorer cet email en toute sécurité.</p>
+          <br/>
           <p><strong>Merci de nous faire confiance ! ✨</strong></p>
         </div>
       </div>
@@ -573,7 +565,7 @@ export class EmailTemplateService {
    * Template pour réinitialisation de mot de passe
    */
   generatePasswordResetEmail(data: EmailTemplateData): string {
-    const resetUrl = data.resetUrl || `${process.env.FRONTEND_URL || ''}/reset-password?token=${data.resetToken}&email=${data.recipientName}`;
+    // const resetUrl = data.resetUrl || `${process.env.FRONTEND_URL || ''}/reset-password?token=${data.resetToken}&email=${data.recipientName}`;
     
     const content = `
       <div class="content">
@@ -584,7 +576,7 @@ export class EmailTemplateService {
           <p>Cliquez sur le bouton ci-dessous pour créer un nouveau mot de passe :</p>
         </div>
 
-        <a href="${resetUrl}" class="cta-button">
+        <a href="${data.resetUrl}" class="cta-button">
           🔑 Réinitialiser mon mot de passe
         </a>
 
@@ -1215,5 +1207,71 @@ export class EmailTemplateService {
     `;
 
     return this.getBaseTemplate(content, `Comment s'est passé votre ${details.prestationName.toLowerCase()} ? - ${data.salonName || 'InkStudio'}`, data.salonName || 'InkStudio');
+  }
+
+  /**
+   * Template pour confirmation de changement de mot de passe
+   */
+  generatePasswordChangeConfirmationEmail(data: EmailTemplateData): string {
+    const content = `
+      <div class="content">
+        <div class="greeting">Mot de passe modifié 🔐</div>
+        
+        <div class="message">
+          <p>Bonjour ${data.recipientName || 'cher utilisateur'} !</p>
+          <p>Nous vous confirmons que votre mot de passe a été <strong>modifié avec succès</strong> pour votre compte ${data.salonName || 'InkStudio'}.</p>
+        </div>
+
+        <div class="details-card">
+          <div class="details-title">🔒 Informations de sécurité</div>
+          <ul class="details-list">
+            <li>
+              <span class="detail-label">⏰ Date de modification :</span>
+              <span class="detail-value">${new Date().toLocaleDateString('fr-FR', { 
+                day: '2-digit', 
+                month: '2-digit', 
+                year: 'numeric', 
+                hour: '2-digit', 
+                minute: '2-digit' 
+              })}</span>
+            </li>
+            <li>
+              <span class="detail-label">🔐 Action :</span>
+              <span class="detail-value">Changement de mot de passe</span>
+            </li>
+            <li>
+              <span class="detail-label">✅ Statut :</span>
+              <span class="detail-value">Confirmé</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="warning-box">
+          <strong>⚠️ Vous n'êtes pas à l'origine de ce changement ?</strong><br/>
+          Contactez immédiatement notre support pour sécuriser votre compte.
+        </div>
+
+        <div class="message">
+          <p>Votre nouveau mot de passe est maintenant actif. Vous pouvez vous connecter à votre espace de gestion avec vos nouveaux identifiants.</p>
+          <p>Pour votre sécurité, nous vous recommandons de :</p>
+          <ul style="margin: 12px 0; padding-left: 20px; color: #3e2c27;">
+            <li>Ne pas partager votre mot de passe</li>
+            <li>Utiliser un mot de passe unique pour votre compte</li>
+            <li>Vous déconnecter après chaque session</li>
+          </ul>
+        </div>
+
+        <a href="${process.env.FRONTEND_URL || '#'}/login" class="cta-button">
+          🔑 Se connecter à mon espace
+        </a>
+
+        <div class="message">
+          <p>Si vous avez des questions, n'hésitez pas à nous contacter.</p>
+          <p><strong>Merci de votre confiance ! 🌟</strong></p>
+        </div>
+      </div>
+    `;
+
+    return this.getBaseTemplate(content, `Mot de passe modifié - ${data.salonName || 'InkStudio'}`, data.salonName || 'InkStudio');
   }
 }

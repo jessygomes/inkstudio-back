@@ -17,7 +17,7 @@ import { TattooHistoryController } from './tattoo-history/tattoo-history.control
 import { TattooHistoryModule } from './tattoo-history/tattoo-history.module';
 import { AftercareModule } from './aftercare/aftercare.module';
 import { TimeSlotModule } from './time-slot/time-slot.module';
-import { MailModule } from './mail.module';
+import { MailModule } from './email/mail.module';
 import { PortfolioService } from './portfolio/portfolio.service';
 import { PortfolioController } from './portfolio/portfolio.controller';
 import { PortfolioModule } from './portfolio/portfolio.module';

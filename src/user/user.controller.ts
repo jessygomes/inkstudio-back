@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Query, UseGuards, Request } from '@nestjs/common';
 import { UserService } from './user.service';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { UpdateConfirmationSettingDto } from './dto/update-confirmation-setting.dto';
+import { UpdateAppointmentBookingDto, UpdateConfirmationSettingDto } from './dto/update-confirmation-setting.dto';
 import { GetUsersDto } from './dto/get-users.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RequestWithUser } from '../auth/jwt.strategy';
@@ -42,10 +42,29 @@ export class UserController {
   @Patch('confirmation-setting')
   updateConfirmationSetting(@Body() body: UpdateConfirmationSettingDto, @Request() req: RequestWithUser) {
     const userId = req.user.userId;
-    console.log("userId dans le controller:", body, userId);
     return this.userService.updateConfirmationSetting({
       userId,
       addConfirmationEnabled: body.addConfirmationEnabled,
+    });
+  }
+
+  //! RECUPERER LE PARAMÈTRE DE PRISE DES RDV
+  @UseGuards(JwtAuthGuard)
+  @Get('appointment-setting')
+  getAppointmentBooking(@Request() req: RequestWithUser) {
+    const userId = req.user.userId;
+    return this.userService.getAppointmentBooking({ userId });
+  }
+
+  //! MISE À JOUR DU PARAMÈTRE DE PRISE DES RDV
+  @UseGuards(JwtAuthGuard)
+  @Patch('appointment-setting')
+  updateAppointmentBooking(@Body() body: UpdateAppointmentBookingDto, @Request() req: RequestWithUser) {
+    const userId = req.user.userId;
+    console.log("userId dans le controller:", body, userId);
+    return this.userService.updateAppointmentBooking({
+      userId,
+      appointmentBookingEnabled: body.appointmentBookingEnabled,
     });
   }
 

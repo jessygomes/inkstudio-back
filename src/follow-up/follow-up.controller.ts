@@ -3,7 +3,7 @@ import { BadRequestException, Body, Controller, Get, Param, Post, Query, Request
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { RequestWithUser } from 'src/auth/jwt.strategy';
 import { PrismaService } from 'src/database/prisma.service';
-import { MailService } from 'src/mailer.service';
+import { MailService } from 'src/email/mailer.service';
 
 @Controller('follow-up')
 export class FollowupsController {

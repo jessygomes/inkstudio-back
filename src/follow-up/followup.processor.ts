@@ -2,7 +2,7 @@
 import { Processor, Process } from '@nestjs/bull';
 import { Job } from 'bull';
 import { PrismaService } from 'src/database/prisma.service';
-import { MailService } from 'src/mailer.service';
+import { MailService } from 'src/email/mailer.service';
 import { randomUUID } from 'crypto';
 import { addDays } from 'date-fns';
 import { Injectable, Logger } from '@nestjs/common';

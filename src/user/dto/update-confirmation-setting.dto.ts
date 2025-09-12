@@ -4,3 +4,8 @@ export class UpdateConfirmationSettingDto {
   @IsBoolean()
   addConfirmationEnabled: boolean;
 }
+
+export class UpdateAppointmentBookingDto {
+  @IsBoolean()
+  appointmentBookingEnabled: boolean;
+}

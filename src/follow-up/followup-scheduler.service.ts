@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
-import { MailService } from 'src/mailer.service';
+import { MailService } from 'src/email/mailer.service';
 import { randomUUID } from 'crypto';
 
 @Injectable()

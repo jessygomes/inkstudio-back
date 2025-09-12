@@ -56,6 +56,7 @@ model User {
 
   prestations   String[]
   addConfirmationEnabled Boolean   @default(false)
+  appointmentBookingEnabled Boolean   @default(false)   // variable pour la prise de rendez-vous pour le salon ou par tatoueur
 
   saasPlan      SaasPlan  @default(FREE)
   saasPlanUntil DateTime? // Date jusqu'à laquelle le plan est actif
