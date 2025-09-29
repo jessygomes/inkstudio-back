@@ -279,6 +279,7 @@ export class AuthService {
         recipientName: user.salonName || 'Salon',
         salonName: user.salonName || 'InkStudio'
       },
+      user.salonName || undefined
     );
 
     return { message: "Mot de passe changé avec succès." };

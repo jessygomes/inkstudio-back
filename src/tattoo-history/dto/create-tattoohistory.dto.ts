@@ -1,33 +1,45 @@
-/* eslint-disable prettier/prettier */
-import { IsDateString, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class CreateTattooHistoryDto {
   @IsString()
   clientId: string;
 
+  @IsOptional()
+  @IsString()
+  tatoueurId: string;
+
   @IsDateString()
   date: string;
 
   @IsString()
-  description: string;
+  @IsOptional()
+  description?: string;
 
   @IsOptional()
   @IsString()
-  beforeImage: string;
+  photo?: string;
 
   @IsOptional()
   @IsString()
-  afterImage?: string;
+  zone?: string;
 
   @IsOptional()
   @IsString()
-  inkUsed: string;
+  size?: string;
+
+  @IsOptional()
+  @IsNumber()
+  price?: number;
 
   @IsOptional()
   @IsString()
-  healingTime: string;
+  inkUsed?: string;
 
   @IsOptional()
   @IsString()
-  careProducts: string;
+  healingTime?: string;
+
+  @IsOptional()
+  @IsString()
+  careProducts?: string;
 }

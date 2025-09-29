@@ -28,7 +28,8 @@ export class MailService {
 
   async sendAppointmentConfirmation(to: string, data: EmailTemplateData, salonName?: string, salonEmail?: string): Promise<MailgunResponse> {
     const subject = `Confirmation de votre rendez-vous${salonName ? ` chez ${salonName}` : ''}`;
-    const html = this.emailTemplateService.generateAppointmentConfirmationEmail(data);
+    const dataWithSalon = { ...data, salonName: salonName || data.salonName };
+    const html = this.emailTemplateService.generateAppointmentConfirmationEmail(dataWithSalon);
     
     return await this.sendMail(
       to,
@@ -41,35 +42,40 @@ export class MailService {
 
   async sendNewAppointmentNotification(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
     const subject = `Nouveau rendez-vous${salonName ? ` - ${salonName}` : ''}`;
-    const html = this.emailTemplateService.generateNewAppointmentNotificationEmail(data);
+    const dataWithSalon = { ...data, salonName: salonName || data.salonName };
+    const html = this.emailTemplateService.generateNewAppointmentNotificationEmail(dataWithSalon);
     
     return await this.sendMail(to, subject, html, salonName);
   }
 
   async sendEmailVerification(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
     const subject = `Vérification de votre email${salonName ? ` - ${salonName}` : ''}`;
-    const html = this.emailTemplateService.generateEmailVerificationEmail(data);
+    const dataWithSalon = { ...data, salonName: salonName || data.salonName };
+    const html = this.emailTemplateService.generateEmailVerificationEmail(dataWithSalon);
     
     return await this.sendMail(to, subject, html, salonName);
   }
 
   async sendPasswordReset(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
     const subject = `Réinitialisation de votre mot de passe${salonName ? ` - ${salonName}` : ''}`;
-    const html = this.emailTemplateService.generatePasswordResetEmail(data);
+    const dataWithSalon = { ...data, salonName: salonName || data.salonName };
+    const html = this.emailTemplateService.generatePasswordResetEmail(dataWithSalon);
     
     return await this.sendMail(to, subject, html, salonName);
   }
 
   async sendFollowUp(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
     const subject = `Votre suivi post-tatouage${salonName ? ` - ${salonName}` : ''}`;
-    const html = this.emailTemplateService.generateFollowUpEmail(data);
+    const dataWithSalon = { ...data, salonName: salonName || data.salonName };
+    const html = this.emailTemplateService.generateFollowUpEmail(dataWithSalon);
     
     return await this.sendMail(to, subject, html, salonName);
   }
 
   async sendAppointmentModification(to: string, data: EmailTemplateData, salonName?: string, salonEmail?: string): Promise<MailgunResponse> {
     const subject = `Modification de votre rendez-vous${salonName ? ` chez ${salonName}` : ''}`;
-    const html = this.emailTemplateService.generateAppointmentModificationEmail(data);
+    const dataWithSalon = { ...data, salonName: salonName || data.salonName };
+    const html = this.emailTemplateService.generateAppointmentModificationEmail(dataWithSalon);
     
     return await this.sendMail(
       to,
@@ -82,7 +88,8 @@ export class MailService {
 
   async sendAppointmentCancellation(to: string, data: EmailTemplateData, salonName?: string, salonEmail?: string): Promise<MailgunResponse> {
     const subject = `Annulation de votre rendez-vous${salonName ? ` chez ${salonName}` : ''}`;
-    const html = this.emailTemplateService.generateAppointmentCancellationEmail(data);
+    const dataWithSalon = { ...data, salonName: salonName || data.salonName };
+    const html = this.emailTemplateService.generateAppointmentCancellationEmail(dataWithSalon);
     
     return await this.sendMail(
       to,
@@ -94,7 +101,8 @@ export class MailService {
   }
 
   async sendCustomEmail(to: string, subject: string, data: EmailTemplateData, salonName?: string, salonEmail?: string): Promise<MailgunResponse> {
-    const html = this.emailTemplateService.generateCustomEmail(data);
+    const dataWithSalon = { ...data, salonName: salonName || data.salonName };
+    const html = this.emailTemplateService.generateCustomEmail(dataWithSalon);
     
     return await this.sendMail(
       to,
@@ -107,63 +115,72 @@ export class MailService {
 
   async sendPendingAppointmentNotification(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
     const subject = `Rendez-vous en attente de confirmation${salonName ? ` - ${salonName}` : ''}`;
-    const html = this.emailTemplateService.generatePendingAppointmentNotificationEmail(data);
+    const dataWithSalon = { ...data, salonName: salonName || data.salonName };
+    const html = this.emailTemplateService.generatePendingAppointmentNotificationEmail(dataWithSalon);
     
     return await this.sendMail(to, subject, html, salonName);
   }
 
   async sendAutoConfirmedAppointment(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
     const subject = `Rendez-vous confirmé automatiquement${salonName ? ` chez ${salonName}` : ''}`;
-    const html = this.emailTemplateService.generateAutoConfirmedAppointmentEmail(data);
+    const dataWithSalon = { ...data, salonName: salonName || data.salonName };
+    const html = this.emailTemplateService.generateAutoConfirmedAppointmentEmail(dataWithSalon);
     
     return await this.sendMail(to, subject, html, salonName);
   }
 
   async sendRescheduleProposal(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
     const subject = `Proposition de reprogrammation${salonName ? ` - ${salonName}` : ''}`;
-    const html = this.emailTemplateService.generateRescheduleProposalEmail(data);
+    const dataWithSalon = { ...data, salonName: salonName || data.salonName };
+    const html = this.emailTemplateService.generateRescheduleProposalEmail(dataWithSalon);
     
     return await this.sendMail(to, subject, html, salonName);
   }
 
   async sendRescheduleAcceptedNotification(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
     const subject = `Reprogrammation acceptée${salonName ? ` - ${salonName}` : ''}`;
-    const html = this.emailTemplateService.generateRescheduleAcceptedNotificationEmail(data);
+    const dataWithSalon = { ...data, salonName: salonName || data.salonName };
+    const html = this.emailTemplateService.generateRescheduleAcceptedNotificationEmail(dataWithSalon);
     
     return await this.sendMail(to, subject, html, salonName);
   }
 
   async sendRescheduleConfirmation(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
     const subject = `Confirmation de reprogrammation${salonName ? ` chez ${salonName}` : ''}`;
-    const html = this.emailTemplateService.generateRescheduleConfirmationEmail(data);
+    const dataWithSalon = { ...data, salonName: salonName || data.salonName };
+    const html = this.emailTemplateService.generateRescheduleConfirmationEmail(dataWithSalon);
     
     return await this.sendMail(to, subject, html, salonName);
   }
 
   async sendFollowUpResponse(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
     const subject = `Réponse à votre suivi${salonName ? ` - ${salonName}` : ''}`;
-    const html = this.emailTemplateService.generateFollowUpResponseEmail(data);
+    const dataWithSalon = { ...data, salonName: salonName || data.salonName };
+    const html = this.emailTemplateService.generateFollowUpResponseEmail(dataWithSalon);
     
     return await this.sendMail(to, subject, html, salonName);
   }
 
   async sendCicatrisationFollowUp(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
     const subject = `Suivi de cicatrisation${salonName ? ` - ${salonName}` : ''}`;
-    const html = this.emailTemplateService.generateCicatrisationFollowUpEmail(data);
+    const dataWithSalon = { ...data, salonName: salonName || data.salonName };
+    const html = this.emailTemplateService.generateCicatrisationFollowUpEmail(dataWithSalon);
     
     return await this.sendMail(to, subject, html, salonName);
   }
 
   async sendFeedbackRequest(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
     const subject = `Votre avis nous intéresse${salonName ? ` - ${salonName}` : ''}`;
-    const html = this.emailTemplateService.generateFeedbackRequestEmail(data);
+    const dataWithSalon = { ...data, salonName: salonName || data.salonName };
+    const html = this.emailTemplateService.generateFeedbackRequestEmail(dataWithSalon);
     
     return await this.sendMail(to, subject, html, salonName);
   }
 
   async sendPasswordChangeConfirmation(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
     const subject = `Mot de passe modifié${salonName ? ` - ${salonName}` : ''}`;
-    const html = this.emailTemplateService.generatePasswordChangeConfirmationEmail(data);
+    const dataWithSalon = { ...data, salonName: salonName || data.salonName };
+    const html = this.emailTemplateService.generatePasswordChangeConfirmationEmail(dataWithSalon);
     
     return await this.sendMail(to, subject, html, salonName);
   }

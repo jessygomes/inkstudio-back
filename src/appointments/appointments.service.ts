@@ -10,6 +10,7 @@ import { FollowupSchedulerService } from 'src/follow-up/followup-scheduler.servi
 import { SaasService } from 'src/saas/saas.service';
 import * as crypto from 'crypto';
 import { CreateAppointmentRequestDto } from './dto/create-appointment-request.dto';
+import { VideoCallService } from 'src/video-call/video-call.service';
 
 @Injectable()
 export class AppointmentsService {
@@ -17,7 +18,8 @@ export class AppointmentsService {
     private readonly prisma: PrismaService, 
     private readonly mailService: MailService, 
     private readonly followupSchedulerService: FollowupSchedulerService,
-    private readonly saasService: SaasService
+    private readonly saasService: SaasService,
+    private readonly videoCallService: VideoCallService
   ) {}
 
   //! ------------------------------------------------------------------------------
@@ -27,7 +29,7 @@ export class AppointmentsService {
   //! ------------------------------------------------------------------------------
   async create({ userId, rdvBody }: {userId: string, rdvBody: CreateAppointmentDto}) {
     try {
-      const {  title, prestation, start, end, clientFirstname, clientLastname, clientEmail, clientPhone, tatoueurId } = rdvBody;
+      const {  title, prestation, start, end, clientFirstname, clientLastname, clientEmail, clientPhone, tatoueurId, visio, visioRoom } = rdvBody;
 
       // 🔒 VÉRIFIER LES LIMITES SAAS - RENDEZ-VOUS PAR MOIS
       const canCreateAppointment = await this.saasService.canPerformAction(userId, 'appointment');
@@ -105,6 +107,20 @@ export class AppointmentsService {
         });
       }
 
+      // Générer le lien de visioconférence si nécessaire
+      let generatedVisioRoom = visioRoom;
+      if (visio && !visioRoom) {
+        // Récupérer le nom du salon pour personnaliser le lien
+        const salon = await this.prisma.user.findUnique({
+          where: { id: userId },
+          select: { salonName: true }
+        });
+        
+        // Générer un ID temporaire pour créer le lien vidéo
+        const tempAppointmentId = crypto.randomBytes(8).toString('hex');
+        generatedVisioRoom = this.videoCallService.generateVideoCallLink(tempAppointmentId, salon?.salonName || undefined);
+      }
+
       if (prestation === PrestationType.PROJET || prestation === PrestationType.TATTOO || prestation === PrestationType.PIERCING || prestation === PrestationType.RETOUCHE) {
         // Créer le rendez-vous
         const newAppointment = await this.prisma.appointment.create({
@@ -117,6 +133,8 @@ export class AppointmentsService {
             tatoueurId,
             clientId: client.id,
             status: 'CONFIRMED',
+            visio: visio || false,
+            visioRoom: generatedVisioRoom
           },
           include: {
             tatoueur: {
@@ -168,7 +186,9 @@ export class AppointmentsService {
                   minute: '2-digit' 
                 })}`,
                 service: newAppointment.prestation,
-                tatoueur: newAppointment.tatoueur?.name || 'Non assigné'
+                tatoueur: newAppointment.tatoueur?.name || 'Non assigné',
+                visio: visio || false,
+                visioRoom: generatedVisioRoom
               }
             },
             salon?.salonName || undefined // Passer le nom du salon
@@ -198,6 +218,8 @@ export class AppointmentsService {
           end: new Date(end),
           tatoueurId,
           clientId: client.id,
+          visio: visio || false,
+          visioRoom: generatedVisioRoom
         },
         include: {
           tatoueur: {
@@ -234,7 +256,9 @@ export class AppointmentsService {
                 minute: '2-digit' 
               })}`,
               service: newAppointment.prestation,
-              tatoueur: newAppointment.tatoueur?.name || 'Non assigné'
+              tatoueur: newAppointment.tatoueur?.name || 'Non assigné',
+              visio: visio || false,
+              visioRoom: generatedVisioRoom
             }
           },
           salon?.salonName || undefined // Passer le nom du salon
@@ -268,7 +292,7 @@ export class AppointmentsService {
   async createByClient({ userId, rdvBody }: {userId: string, rdvBody: CreateAppointmentDto}) {
     console.log(`🔄 Création d'un nouveau rendez-vous pour l'utilisateur ${userId}`);
     try {
-      const {  title, prestation, start, end, clientFirstname, clientLastname, clientEmail, clientPhone, tatoueurId } = rdvBody;
+      const {  title, prestation, start, end, clientFirstname, clientLastname, clientEmail, clientPhone, tatoueurId, visio, visioRoom } = rdvBody;
 
       // 🔒 VÉRIFIER LES LIMITES SAAS - RENDEZ-VOUS PAR MOIS
       const canCreateAppointment = await this.saasService.canPerformAction(userId, 'appointment');
@@ -362,6 +386,14 @@ export class AppointmentsService {
       // Déterminer le statut du rendez-vous selon addConfirmationEnabled
       const appointmentStatus = salon.addConfirmationEnabled ? 'PENDING' : 'CONFIRMED';
 
+      // Générer le lien de visioconférence si nécessaire
+      let generatedVisioRoom = visioRoom;
+      if (visio && !visioRoom) {
+        // Générer un ID temporaire pour créer le lien vidéo
+        const tempAppointmentId = crypto.randomBytes(8).toString('hex');
+        generatedVisioRoom = this.videoCallService.generateVideoCallLink(tempAppointmentId, salon?.salonName || undefined);
+      }
+
       if (prestation === PrestationType.PROJET || prestation === PrestationType.TATTOO || prestation === PrestationType.PIERCING || prestation === PrestationType.RETOUCHE) {
         const newAppointment = await this.prisma.appointment.create({
           data: {
@@ -373,6 +405,8 @@ export class AppointmentsService {
             tatoueurId,
             clientId: client.id,
             status: appointmentStatus,
+            visio: visio || false,
+            visioRoom: generatedVisioRoom
           },
         });
       
@@ -415,7 +449,9 @@ export class AppointmentsService {
                 service: newAppointment.prestation,
                 title: newAppointment.title,
                 clientEmail: client.email,
-                clientPhone: client.phone
+                clientPhone: client.phone,
+                visio: visio || false,
+                visioRoom: generatedVisioRoom
               }
             },
             salon.salonName || undefined
@@ -443,7 +479,9 @@ export class AppointmentsService {
                 })}`,
                 service: newAppointment.prestation,
                 title: newAppointment.title,
-                tatoueur: artist.name
+                tatoueur: artist.name,
+                visio: visio || false,
+                visioRoom: generatedVisioRoom
               }
             },
             salon.salonName || undefined
@@ -472,7 +510,9 @@ export class AppointmentsService {
                 title: newAppointment.title,
                 tatoueur: artist.name,
                 clientEmail: client.email,
-                clientPhone: client.phone
+                clientPhone: client.phone,
+                visio: visio || false,
+                visioRoom: generatedVisioRoom
               }
             },
             salon.salonName || undefined
@@ -501,6 +541,8 @@ export class AppointmentsService {
           tatoueurId,
           clientId: client.id,
           status: appointmentStatus,
+          visio: visio || false,
+          visioRoom: generatedVisioRoom
         },
       });
 
@@ -528,7 +570,9 @@ export class AppointmentsService {
               service: newAppointment.prestation,
               title: newAppointment.title,
               clientEmail: client.email,
-              clientPhone: client.phone
+              clientPhone: client.phone,
+              visio: visio || false,
+              visioRoom: generatedVisioRoom
             }
           },
           salon.salonName || undefined
@@ -556,7 +600,9 @@ export class AppointmentsService {
               })}`,
               service: newAppointment.prestation,
               title: newAppointment.title,
-              tatoueur: artist.name
+              tatoueur: artist.name,
+              visio: visio || false,
+              visioRoom: generatedVisioRoom
             }
           },
           salon.salonName || undefined
@@ -585,7 +631,9 @@ export class AppointmentsService {
               title: newAppointment.title,
               tatoueur: artist.name,
               clientEmail: client.email,
-              clientPhone: client.phone
+              clientPhone: client.phone,
+              visio: visio || false,
+              visioRoom: generatedVisioRoom
             }
           },
           salon.salonName || undefined
@@ -1049,14 +1097,7 @@ export class AppointmentsService {
       },
       });
 
-      //! Si la prestation est TATTOO, RETOUCHE ou PIERCING, planifier un suivi
-      //! L'email sera envoyé 5 minutes après la fin du RDV (uniquement si confirmé)
-      //! TODO: Rendre ce délai paramétrable (5 jours après la fin du RDV)
-      if (
-          ['TATTOO', 'RETOUCHE', 'PIERCING'].includes(appointment.prestation)
-        ) {
-          await this.followupSchedulerService.scheduleFollowup(appointment.id, appointment.end);
-        }
+
 
       // Envoi d'un mail de confirmation au client (si le client existe)
       if (appointment.client) {
@@ -1226,6 +1267,46 @@ export class AppointmentsService {
           tattooDetail: true,
         },
       });
+
+      // Créer un historique de tatouage si le RDV est COMPLETED et de type TATTOO/PIERCING
+      if (status === 'COMPLETED' && 
+          (appointment.prestation === 'TATTOO' || appointment.prestation === 'PIERCING') &&
+          appointment.client && appointment.tattooDetail) {
+        
+        try {
+          await this.prisma.tattooHistory.create({
+            data: {
+              clientId: appointment.clientId!,
+              tatoueurId: appointment.tatoueurId,
+              date: appointment.start, // Date du RDV
+              description: appointment.tattooDetail.description || appointment.title,
+              zone: appointment.tattooDetail.zone,
+              size: appointment.tattooDetail.size,
+              price: appointment.tattooDetail.price || 0,
+              // Les autres champs sont optionnels et peuvent être renseignés plus tard
+              inkUsed: null,
+              healingTime: null,
+              careProducts: null,
+              photo: null,
+            },
+          });
+          
+          console.log(`✅ Historique de tatouage créé pour le RDV ${id}`);
+        } catch (historyError) {
+          console.error('⚠️ Erreur lors de la création de l\'historique:', historyError);
+          // On ne fait pas échouer la mise à jour du statut si l'historique échoue
+        }
+
+        // Envoyer immédiatement le suivi de cicatrisation pour TATTOO et PIERCING
+        try {
+          await this.followupSchedulerService.sendImmediateFollowup(appointment.id);
+          console.log(`✅ Suivi de cicatrisation envoyé pour le RDV ${id}`);
+        } catch (followupError) {
+          console.error('⚠️ Erreur lors de l\'envoi du suivi:', followupError);
+          // On ne fait pas échouer la mise à jour du statut si le suivi échoue
+        }
+      }
+
       return {
         error: false,
         message: `Statut du rendez-vous mis à jour à ${status}.`,

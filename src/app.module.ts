@@ -27,6 +27,7 @@ import { BullModule } from '@nestjs/bull';
 import { FollowUpModule } from './follow-up/follow-up.module';
 import { SaasModule } from './saas/saas.module';
 import { BlockedTimeSlotsModule } from './blocked-time-slots/blocked-time-slots.module';
+import { VideoCallModule } from './video-call/video-call.module';
 
 @Module({
   imports: [
@@ -57,6 +58,7 @@ import { BlockedTimeSlotsModule } from './blocked-time-slots/blocked-time-slots.
     FollowUpModule,
     SaasModule,
     BlockedTimeSlotsModule,
+    VideoCallModule,
   ],
   controllers: [
     UserController,

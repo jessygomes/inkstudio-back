@@ -104,9 +104,9 @@ export class FollowupSchedulerService {
         return;
       }
 
-      // Vérifier que le RDV est bien confirmé
-      if (appointment.status !== 'CONFIRMED') {
-        this.logger.warn(`⚠️ RDV ${appointmentId} non confirmé (status: ${appointment.status}), pas d'envoi de suivi`);
+      // Vérifier que le RDV est bien confirmé ou terminé
+      if (!['CONFIRMED', 'COMPLETED'].includes(appointment.status)) {
+        this.logger.warn(`⚠️ RDV ${appointmentId} non éligible pour suivi (status: ${appointment.status}), pas d'envoi de suivi`);
         return;
       }
 
@@ -149,13 +149,12 @@ export class FollowupSchedulerService {
       const followupUrl = `${process.env.WEB_URL}/suivi/${token}`;
 
       // Envoyer l'email de demande d'avis
-      await this.mailService.sendFeedbackRequest(appointment.client.email, {
-        feedbackRequestDetails: {
+      await this.mailService.sendCicatrisationFollowUp(appointment.client.email, {
+        cicatrisationFollowUpDetails: {
           clientName: `${appointment.client.firstName} ${appointment.client.lastName}`,
-          appointmentDate: appointment.start.toLocaleDateString('fr-FR'),
-          tatoueurName: appointment.tatoueur?.name || 'Non assigné',
           prestationName: appointment.prestation,
-          followupUrl: followupUrl
+          tatoueurName: appointment.tatoueur?.name || 'Non assigné',
+          followUpUrl: followupUrl
         }
       }, appointment.user?.salonName || undefined);
 
@@ -163,6 +162,25 @@ export class FollowupSchedulerService {
 
     } catch (error) {
       this.logger.error(`❌ Erreur lors de l'envoi de l'email de suivi pour ${appointmentId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Envoie immédiatement un email de suivi pour un RDV terminé
+   * Utilisé quand le salon marque un RDV TATTOO/PIERCING comme COMPLETED
+   * @param appointmentId - ID du rendez-vous
+   */
+  async sendImmediateFollowup(appointmentId: string) {
+    try {
+      this.logger.log(`📧 Envoi immédiat du suivi de cicatrisation pour le RDV ${appointmentId}`);
+      
+      // Utiliser la méthode existante pour envoyer l'email
+      await this.sendFollowupEmail(appointmentId);
+      
+      this.logger.log(`✅ Suivi de cicatrisation envoyé avec succès pour le RDV ${appointmentId}`);
+    } catch (error) {
+      this.logger.error(`❌ Erreur lors de l'envoi immédiat du suivi pour ${appointmentId}:`, error);
       throw error;
     }
   }

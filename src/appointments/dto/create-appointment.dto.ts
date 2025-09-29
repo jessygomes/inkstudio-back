@@ -58,6 +58,13 @@ export class CreateAppointmentDto {
   @IsOptional()
   isPayed?: boolean = false;
 
+  @IsBoolean()
+  visio?: boolean = false; // coche la case ou non
+
+  @IsString()
+  @IsOptional()
+  visioRoom?: string;
+
   // Infos projet (facultatif)
   @IsOptional() @IsString() description?: string;
   @IsOptional() @IsString() zone?: string;

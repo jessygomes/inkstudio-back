@@ -135,6 +135,8 @@ model Tatoueur {
   
   // Demandes de reprogrammation où ce tatoueur est le nouveau tatoueur
   rescheduleRequests RescheduleRequest[]
+
+  TattooHistory TattooHistory[]
 }
 
 //! CRÉNEAUX BLOQUÉS (VACANCES, CONGÉS, ETC.)
@@ -192,6 +194,10 @@ model Appointment {
   allDay     Boolean           @default(false)
   status     AppointmentStatus @default(PENDING)
   isPayed    Boolean           @default(false)
+  
+  // --- Visio ---
+  visio      Boolean           @default(false)  // coche la case ou non
+  visioRoom  String?           // salle unique générée si visio = true
 
   // Relation avec User (nouvelle relation)
   user   User   @relation(fields: [userId], references: [id])
@@ -349,14 +355,18 @@ model TattooHistory {
   id       String @id @default(cuid())
   clientId String
   client   Client @relation(fields: [clientId], references: [id])
+  tatoueurId String?
+  tatoueur   Tatoueur? @relation(fields: [tatoueurId], references: [id])
 
   date         DateTime
-  description  String
-  beforeImage  String? // URL
-  afterImage   String? // URL
-  inkUsed      String?
-  healingTime  String?
-  careProducts String?
+  description  String?
+  photo        String? // URL
+  zone         String?
+  size         String?
+  price        Float?
+  inkUsed      String? // ex: "Black, Red"
+  healingTime  String? // ex: "2 weeks"
+  careProducts String? // ex: "Product A, Product B"
 }
 
 model Aftercare {

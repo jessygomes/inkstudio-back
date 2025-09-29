@@ -13,6 +13,8 @@ export interface EmailTemplateData {
     title?: string;
     clientEmail?: string;
     clientPhone?: string;
+    visio?: boolean;
+    visioRoom?: string;
   };
   rescheduleDetails?: {
     currentDate: string;
@@ -416,6 +418,17 @@ export class EmailTemplateService {
                 <li>
                   <span class="detail-label">💰 Prix :</span>
                   <span class="detail-value price-highlight">${data.appointmentDetails.price}€</span>
+                </li>
+              ` : ''}
+              ${data.appointmentDetails.visio && data.appointmentDetails.visioRoom ? `
+                <li>
+                  <span class="detail-label">🎥 Visioconférence :</span>
+                  <span class="detail-value">
+                    <a href="${data.appointmentDetails.visioRoom}" 
+                       style="background: #059669; color: white; padding: 8px 16px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; margin-top: 8px;">
+                      🎥 Rejoindre la visioconférence
+                    </a>
+                  </span>
                 </li>
               ` : ''}
             </ul>
@@ -1109,6 +1122,7 @@ export class EmailTemplateService {
    * Template de demande de suivi de cicatrisation
    */
   generateCicatrisationFollowUpEmail(data: EmailTemplateData): string {
+    console.log(data);
     const details = data.cicatrisationFollowUpDetails;
     if (!details) {
       throw new Error('cicatrisationFollowUpDetails is required for cicatrisation follow-up email');
