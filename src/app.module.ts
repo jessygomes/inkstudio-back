@@ -23,11 +23,12 @@ import { PortfolioController } from './portfolio/portfolio.controller';
 import { PortfolioModule } from './portfolio/portfolio.module';
 import { ProductSalonController } from './product-salon/product-salon.controller';
 import { ProductSalonModule } from './product-salon/product-salon.module';
-import { BullModule } from '@nestjs/bull';
 import { FollowUpModule } from './follow-up/follow-up.module';
 import { SaasModule } from './saas/saas.module';
 import { BlockedTimeSlotsModule } from './blocked-time-slots/blocked-time-slots.module';
 import { VideoCallModule } from './video-call/video-call.module';
+import { BullModule } from '@nestjs/bull';
+import { CacheModule } from '@nestjs/cache-manager';
 
 @Module({
   imports: [
@@ -43,6 +44,11 @@ import { VideoCallModule } from './video-call/video-call.module';
     MailModule,
     PortfolioModule,
     ProductSalonModule,
+    // Note: Les queues individuelles sont gérées dans leurs modules respectifs
+    FollowUpModule,
+    SaasModule,
+    BlockedTimeSlotsModule,
+    VideoCallModule,
     // 🔴 Configuration Redis globale pour Bull
     BullModule.forRoot({
       redis: {
@@ -54,11 +60,11 @@ import { VideoCallModule } from './video-call/video-call.module';
         lazyConnect: true,
       },
     }),
-    // Note: Les queues individuelles sont gérées dans leurs modules respectifs
-    FollowUpModule,
-    SaasModule,
-    BlockedTimeSlotsModule,
-    VideoCallModule,
+    CacheModule.register({
+      // Configuration par défaut du cache (peut être ajustée selon les besoins)
+      max: 100, // Nombre maximum d'éléments dans le cache
+      ttl: 300, // Temps en secondes avant expiration (5 minutes)
+    }),
   ],
   controllers: [
     UserController,

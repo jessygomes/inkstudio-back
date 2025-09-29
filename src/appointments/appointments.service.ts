@@ -60,6 +60,7 @@ export class AppointmentsService {
       const existingAppointment = await this.prisma.appointment.findFirst({
         where: {
           tatoueurId: tatoueurId,
+          status: { in: ['PENDING', 'CONFIRMED', 'RESCHEDULING'] }, // Exclure les rendez-vous annulés
           OR: [
             {
               start: { lt: new Date(end) },
@@ -188,7 +189,7 @@ export class AppointmentsService {
                 service: newAppointment.prestation,
                 tatoueur: newAppointment.tatoueur?.name || 'Non assigné',
                 visio: visio || false,
-                visioRoom: generatedVisioRoom
+                visioRoom: visio ? `${process.env.FRONTEND_URL || '#'}/meeting/${newAppointment.id}` : generatedVisioRoom
               }
             },
             salon?.salonName || undefined // Passer le nom du salon
@@ -258,7 +259,7 @@ export class AppointmentsService {
               service: newAppointment.prestation,
               tatoueur: newAppointment.tatoueur?.name || 'Non assigné',
               visio: visio || false,
-              visioRoom: generatedVisioRoom
+              visioRoom: visio ? `${process.env.FRONTEND_URL || '#'}/meeting/${newAppointment.id}` : generatedVisioRoom
             }
           },
           salon?.salonName || undefined // Passer le nom du salon
@@ -323,6 +324,7 @@ export class AppointmentsService {
       const existingAppointment = await this.prisma.appointment.findFirst({
         where: {
           tatoueurId: tatoueurId,
+          status: { in: ['PENDING', 'CONFIRMED', 'RESCHEDULING'] }, // Exclure les rendez-vous annulés
           OR: [
             {
               start: { lt: new Date(end) },
@@ -512,7 +514,7 @@ export class AppointmentsService {
                 clientEmail: client.email,
                 clientPhone: client.phone,
                 visio: visio || false,
-                visioRoom: generatedVisioRoom
+                visioRoom: visio ? `${process.env.FRONTEND_URL || '#'}/meeting/${newAppointment.id}` : generatedVisioRoom
               }
             },
             salon.salonName || undefined
@@ -633,7 +635,7 @@ export class AppointmentsService {
               clientEmail: client.email,
               clientPhone: client.phone,
               visio: visio || false,
-              visioRoom: generatedVisioRoom
+              visioRoom: visio ? `${process.env.FRONTEND_URL || '#'}/meeting/${newAppointment.id}` : generatedVisioRoom
             }
           },
           salon.salonName || undefined
@@ -1036,7 +1038,9 @@ export class AppointmentsService {
                 minute: '2-digit' 
               })}`,
               service: updatedAppointment.prestation,
-              tatoueur: artist.name
+              tatoueur: artist.name,
+              visio: updatedAppointment.visio || false,
+              visioRoom: updatedAppointment.visio ? `${process.env.FRONTEND_URL || '#'}/meeting/${updatedAppointment.id}` : updatedAppointment.visioRoom || undefined
             }
           },
           salon?.salonName || undefined
@@ -1127,7 +1131,9 @@ export class AppointmentsService {
               })}`,
               service: appointment.prestation,
               tatoueur: appointment.tatoueur?.name || 'Non assigné',
-              title: appointment.title
+              title: appointment.title,
+              visio: appointment.visio || false,
+              visioRoom: appointment.visio ? `${process.env.FRONTEND_URL || '#'}/meeting/${appointment.id}` : appointment.visioRoom || undefined
             },
             customMessage: message || undefined
           },
@@ -1213,7 +1219,9 @@ export class AppointmentsService {
           })}`,
           service: appointment.prestation,
           tatoueur: appointment.tatoueur?.name || 'Non assigné',
-          title: appointment.title
+          title: appointment.title,
+          visio: appointment.visio || false,
+          visioRoom: appointment.visio ? `${process.env.FRONTEND_URL || '#'}/meeting/${appointment.id}` : appointment.visioRoom || undefined
         },
         customMessage: message || undefined
       },

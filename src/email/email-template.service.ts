@@ -500,6 +500,17 @@ export class EmailTemplateService {
                   <span class="detail-value">${data.appointmentDetails.price}€</span>
                 </li>
               ` : ''}
+              ${data.appointmentDetails.visio && data.appointmentDetails.visioRoom ? `
+                <li>
+                  <span class="detail-label" style="color: #3e2c27;">🎥 Visioconférence :</span>
+                  <span class="detail-value">
+                    <a href="${data.appointmentDetails.visioRoom}" 
+                       style="background: #059669; color: white; padding: 8px 16px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; margin-top: 8px;">
+                      🎥 Rejoindre la visioconférence
+                    </a>
+                  </span>
+                </li>
+              ` : ''}
             </ul>
           </div>
         ` : ''}
@@ -702,6 +713,17 @@ export class EmailTemplateService {
                 <li>
                   <span class="detail-label">👨‍🎨 Artiste :</span>
                   <span class="detail-value">${data.appointmentDetails.tatoueur}</span>
+                </li>
+              ` : ''}
+              ${data.appointmentDetails.visio && data.appointmentDetails.visioRoom ? `
+                <li>
+                  <span class="detail-label">🎥 Visioconférence :</span>
+                  <span class="detail-value">
+                    <a href="${data.appointmentDetails.visioRoom}" 
+                       style="background: #059669; color: white; padding: 8px 16px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; margin-top: 8px;">
+                      🎥 Rejoindre la visioconférence
+                    </a>
+                  </span>
                 </li>
               ` : ''}
             </ul>
