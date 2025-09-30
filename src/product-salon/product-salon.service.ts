@@ -1,10 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CreateProductDto } from './dto/create-product.dto';
+import { CacheService } from 'src/redis/cache.service';
 
 @Injectable()
 export class ProductSalonService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private cacheService: CacheService
+  ) {}
 
   //! CRÉER UN NOUVEAU PRODUIT
   async createProduct(createProductDto: CreateProductDto, userId: string) {
@@ -34,6 +38,9 @@ export class ProductSalonService {
         },
       });
 
+      // Invalider le cache après création
+      await this.cacheService.del(`products:salon:${userId}`);
+
       return {
         error: false,
         message: 'Produit créé avec succès',
@@ -51,10 +58,32 @@ export class ProductSalonService {
   //! RÉCUPÉRER TOUS LES PRODUITS
   async getAllProducts(userId: string) {
     try {
+      const cacheKey = `products:salon:${userId}`;
+
+      // 1. Vérifier dans Redis
+      const cachedProducts = await this.cacheService.get<{
+        id: string;
+        name: string;
+        description: string;
+        price: number;
+        imageUrl: string;
+        [key: string]: any;
+      }[]>(cacheKey);
+      
+      if (cachedProducts) {
+        console.log(`✅ Produits salon pour user ${userId} trouvés dans Redis`);
+        return cachedProducts;
+      }
+
+      // 2. Sinon, aller chercher en DB
       const products = await this.prisma.productSalon.findMany({
         where: { userId },
         orderBy: { createdAt: 'desc' }, // Optionnel : trier par date de création
       });
+
+      // 3. Mettre en cache (TTL 20 minutes pour les produits salon)
+      await this.cacheService.set(cacheKey, products, 1200);
+      console.log(`💾 Produits salon pour user ${userId} mis en cache`);
 
       return products;
     } catch (error: unknown) {
@@ -87,6 +116,9 @@ export class ProductSalonService {
         data: updateData,
       });
 
+      // Invalider le cache après mise à jour
+      await this.cacheService.del(`products:salon:${existingProduct.userId}`);
+
       return {
         error: false,
         message: 'Produit mis à jour avec succès',
@@ -117,6 +149,9 @@ export class ProductSalonService {
       await this.prisma.productSalon.delete({
         where: { id },
       });
+
+      // Invalider le cache après suppression
+      await this.cacheService.del(`products:salon:${existingProduct.userId}`);
 
       return {
         error: false,

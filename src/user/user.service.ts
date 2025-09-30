@@ -1,11 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import {Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
+import { CacheService } from 'src/redis/cache.service';
+import { CachedUser } from 'utils/type';
 // import { User, Prisma } from '@prisma/client';
 
 @Injectable()
 export class UserService {
   // Injecter le service Prisma dans le service User
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, 
+    private cacheService: CacheService) {}
 
   async getUsers(
     query?: string,
@@ -19,6 +22,28 @@ export class UserService {
       const currentPage = Math.max(1, Number(page) || 1);
       const perPage = Math.min(50, Math.max(1, Number(limit) || 12));
       const skip = (currentPage - 1) * perPage;
+
+      // Créer une clé de cache basée sur les paramètres
+      const cacheKey = `users:list:${JSON.stringify({
+        query: query?.trim() || null,
+        city: city?.trim() || null,
+        style: style?.trim() || null,
+        page: currentPage,
+        limit: perPage
+      })}`;
+
+      // 1. Vérifier dans Redis
+      const cachedResult = await this.cacheService.get<{
+        error: boolean;
+        users: any[];
+        pagination: any;
+        filters: any;
+      }>(cacheKey);
+      
+      if (cachedResult) {
+        console.log(`✅ Liste des users trouvée dans Redis pour la page ${currentPage}`);
+        return cachedResult;
+      }
 
       // Build where
       let where: Record<string, any> | undefined = {};
@@ -89,7 +114,7 @@ export class UserService {
       const startIndex = totalUsers === 0 ? 0 : skip + 1;
       const endIndex = Math.min(skip + perPage, totalUsers);
 
-      return {
+      const result = {
         error: false,
         users,
         pagination: {
@@ -104,6 +129,12 @@ export class UserService {
         },
         filters: { query: query ?? null, city: city ?? null },
       };
+
+      // 3. Mettre en cache (TTL 5 minutes pour les listes avec filtres)
+      await this.cacheService.set(cacheKey, result, 300);
+      console.log(`💾 Liste des users mise en cache pour la page ${currentPage}`);
+
+      return result;
     } catch (error) {
       console.error("Error fetching users:", error);
       throw new Error("Unable to fetch users");
@@ -265,6 +296,17 @@ export class UserService {
 
   //! GET USER BY ID
   async getUserById({userId} : {userId: string}) {
+    const cacheKey = `user:${userId}`;
+
+    // 1. Vérifier dans Redis
+    const cachedUser = await this.cacheService.get<CachedUser>(cacheKey);
+    
+    if (cachedUser) {
+      console.log(`✅ User ${userId} trouvé dans Redis`);
+      return cachedUser;
+    }
+
+    // 2. Sinon, aller chercher en DB
     const user = await this.prisma.user.findUnique({
       where: {
         id: userId,
@@ -360,6 +402,12 @@ export class UserService {
         prestations: safePrestations
       },
     });
+
+    // Invalider le cache après update
+    await this.cacheService.del(`user:${userId}`);
+    // Invalider aussi tous les caches de listes d'utilisateurs
+    this.cacheService.delPattern('users:list:*');
+
     return user;
   }
 
@@ -372,7 +420,11 @@ export class UserService {
       data: {
         salonHours: salonHours,
       },
-    }) 
+    });
+
+    // Invalider le cache après update
+    await this.cacheService.del(`user:${userId}`);
+    this.cacheService.delPattern('users:list:*');
 
     return user;
   }
@@ -413,6 +465,11 @@ export class UserService {
         },
       },
     });
+
+    // Invalider le cache après update
+    await this.cacheService.del(`user:${userId}`);
+    this.cacheService.delPattern('users:list:*');
+
     console.log("Salon photos updated:", limitedPhotos);
     return user;
   }
@@ -424,6 +481,20 @@ export class UserService {
   //! ------------------------------------------------------------------------------
   async getConfirmationSetting({userId}: {userId: string}) {
     try {
+      const cacheKey = `user:confirmation:${userId}`;
+
+      // 1. Vérifier dans Redis
+      const cachedSetting = await this.cacheService.get<{addConfirmationEnabled: boolean}>(cacheKey);
+      
+      if (cachedSetting) {
+        console.log(`✅ Confirmation setting pour user ${userId} trouvé dans Redis`);
+        return {
+          error: false,
+          user: cachedSetting,
+        };
+      }
+
+      // 2. Sinon, aller chercher en DB
       const user = await this.prisma.user.findUnique({
         where: {
           id: userId,
@@ -432,6 +503,12 @@ export class UserService {
           addConfirmationEnabled: true,
         },
       });
+
+      // 3. Mettre en cache (TTL 1 heure pour les settings)
+      if (user) {
+        await this.cacheService.set(cacheKey, user, 3600);
+        console.log(`💾 Confirmation setting pour user ${userId} mis en cache`);
+      }
 
       return {
         error: false,
@@ -468,6 +545,11 @@ export class UserService {
         },
       });
 
+
+      // Invalider le cache après update
+      await this.cacheService.del(`user:${userId}`);
+      await this.cacheService.del(`user:confirmation:${userId}`);
+
       return {
         error: false,
         message: addConfirmationEnabled 
@@ -491,6 +573,20 @@ export class UserService {
   //! ------------------------------------------------------------------------------
   async getAppointmentBooking({userId}: {userId: string}) {
     try {
+      const cacheKey = `user:appointment-booking:${userId}`;
+
+      // 1. Vérifier dans Redis
+      const cachedSetting = await this.cacheService.get<{appointmentBookingEnabled: boolean}>(cacheKey);
+      
+      if (cachedSetting) {
+        console.log(`✅ Appointment booking setting pour user ${userId} trouvé dans Redis`);
+        return {
+          error: false,
+          user: cachedSetting,
+        };
+      }
+
+      // 2. Sinon, aller chercher en DB
       const user = await this.prisma.user.findUnique({
         where: {
           id: userId,
@@ -499,6 +595,12 @@ export class UserService {
           appointmentBookingEnabled: true,
         },
       });
+
+      // 3. Mettre en cache (TTL 1 heure pour les settings)
+      if (user) {
+        await this.cacheService.set(cacheKey, user, 3600);
+        console.log(`💾 Appointment booking setting pour user ${userId} mis en cache`);
+      }
 
       return {
         error: false,
@@ -534,6 +636,10 @@ export class UserService {
           salonName: true,
         },
       });
+
+      // Invalider le cache après update
+      await this.cacheService.del(`user:${userId}`);
+      await this.cacheService.del(`user:appointment-booking:${userId}`);
 
       return {
         error: false,

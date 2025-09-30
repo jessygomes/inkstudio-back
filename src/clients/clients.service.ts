@@ -2,12 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CreateClientDto } from './dto/create-client.dto';
 import { SaasService } from 'src/saas/saas.service';
+import { CacheService } from 'src/redis/cache.service';
 
 @Injectable()
 export class ClientsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly saasService: SaasService
+    private readonly saasService: SaasService,
+    private cacheService: CacheService
   ) {}
 
   //! CREER UN CLIENT
@@ -103,6 +105,10 @@ export class ClientsService {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         result.medicalHistory = medicalHistory;
       }
+
+      // Invalider le cache des listes de clients après création
+      this.cacheService.delPattern(`clients:salon:${userId}:*`);
+      this.cacheService.delPattern(`clients:search:${userId}:*`);
   
       // eslint-disable-next-line @typescript-eslint/no-unsafe-return
       return result;
@@ -198,6 +204,23 @@ export class ClientsService {
   //! VOIR UN SEUL CLIENT
   async getClientById(clientId: string) {
     try {
+      const cacheKey = `client:${clientId}`;
+
+      // 1. Vérifier dans Redis
+      const cachedClient = await this.cacheService.get<{
+        id: string;
+        firstName: string;
+        lastName: string;
+        email: string;
+        [key: string]: any;
+      }>(cacheKey);
+      
+      if (cachedClient) {
+        console.log(`✅ Client ${clientId} trouvé dans Redis`);
+        return cachedClient;
+      }
+
+      // 2. Sinon, aller chercher en DB
       const client = await this.prisma.client.findUnique({
         where: { id: clientId },
         include: {
@@ -211,6 +234,10 @@ export class ClientsService {
       if (!client) {
         throw new Error('Client introuvable.');
       }
+
+      // 3. Mettre en cache (TTL 10 minutes pour un client spécifique)
+      await this.cacheService.set(cacheKey, client, 600);
+      console.log(`💾 Client ${clientId} mis en cache`);
 
       return client;
     } catch (error: unknown) {
@@ -226,6 +253,25 @@ export class ClientsService {
   async getClientsBySalon(userId: string, page: number, limit: number, search: string) {
     try {
       const skip = (page - 1) * limit;
+
+      // Créer une clé de cache basée sur les paramètres
+      const cacheKey = `clients:salon:${userId}:${JSON.stringify({
+        page,
+        limit,
+        search: search?.trim() || null
+      })}`;
+
+      // 1. Vérifier dans Redis
+      const cachedResult = await this.cacheService.get<{
+        error: boolean;
+        clients: any[];
+        pagination: any;
+      }>(cacheKey);
+      
+      if (cachedResult) {
+        console.log(`✅ Clients du salon ${userId} trouvés dans Redis pour la page ${page}`);
+        return cachedResult;
+      }
 
           // Construire les conditions de recherche
       const searchConditions = search
@@ -274,7 +320,7 @@ export class ClientsService {
         throw new Error('Aucun client trouvé pour votre salon.');
       }
 
-      return {
+      const result = {
         error : false,
         clients,
         pagination: {
@@ -286,6 +332,12 @@ export class ClientsService {
           hasPreviousPage: page > 1,
         }
       };
+
+      // 3. Mettre en cache (TTL 5 minutes pour les listes de clients)
+      await this.cacheService.set(cacheKey, result, 300);
+      console.log(`💾 Clients du salon ${userId} mis en cache pour la page ${page}`);
+
+      return result;
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       return {
@@ -299,6 +351,20 @@ export class ClientsService {
   async searchClients(query: string, userId: string) {
     try {
       console.log('Searching clients with query:', query, 'for userId:', userId);
+
+      const cacheKey = `clients:search:${userId}:${query?.trim()}`;
+
+      // 1. Vérifier dans Redis
+      const cachedResult = await this.cacheService.get<{
+        error: boolean;
+        message: string;
+        clients: any[];
+      }>(cacheKey);
+      
+      if (cachedResult) {
+        console.log(`✅ Recherche clients "${query}" trouvée dans Redis pour user ${userId}`);
+        return cachedResult;
+      }
 
       const clients = await this.prisma.client.findMany({
         where: {
@@ -316,19 +382,17 @@ export class ClientsService {
         take: 10,
       });
 
-      if (!clients || clients.length === 0) {
-        return {
-          error: false,
-          message: 'Aucun client trouvé.',
-          clients: [],
-        };
-      }
-
-      return {
+      const result = {
         error: false,
-        message: 'Clients trouvés avec succès.',
-        clients,
+        message: clients.length > 0 ? 'Clients trouvés avec succès.' : 'Aucun client trouvé.',
+        clients: clients || [],
       };
+
+      // 3. Mettre en cache (TTL 2 minutes pour les recherches)
+      await this.cacheService.set(cacheKey, result, 120);
+      console.log(`💾 Recherche clients "${query}" mise en cache pour user ${userId}`);
+
+      return result;
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       return {
@@ -425,6 +489,11 @@ export class ClientsService {
         throw new Error('Client introuvable.');
       }
 
+      // Invalider le cache après update
+      await this.cacheService.del(`client:${clientId}`);
+      this.cacheService.delPattern(`clients:salon:${updatedClient.userId}:*`);
+      this.cacheService.delPattern(`clients:search:${updatedClient.userId}:*`);
+
       // eslint-disable-next-line @typescript-eslint/no-unsafe-return
       return result;
     } catch (error: unknown) {
@@ -439,6 +508,16 @@ export class ClientsService {
   //! SUPPRIMER UN CLIENT
   async deleteClient(clientId: string) {
     try {
+      // Récupérer le userId avant suppression pour invalider le cache
+      const clientToDelete = await this.prisma.client.findUnique({
+        where: { id: clientId },
+        select: { userId: true }
+      });
+
+      if (!clientToDelete) {
+        throw new Error('Client introuvable.');
+      }
+
       // Utiliser une transaction pour supprimer toutes les relations liées
       await this.prisma.$transaction(async (prisma) => {
         // 1. Supprimer l'historique médical s'il existe
@@ -477,6 +556,11 @@ export class ClientsService {
           where: { id: clientId },
         });
       });
+
+      // Invalider le cache après suppression
+      await this.cacheService.del(`client:${clientId}`);
+      this.cacheService.delPattern(`clients:salon:${clientToDelete.userId}:*`);
+      this.cacheService.delPattern(`clients:search:${clientToDelete.userId}:*`);
 
       return {
         error: false,

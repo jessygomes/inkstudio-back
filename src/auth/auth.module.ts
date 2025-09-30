@@ -7,6 +7,7 @@ import { JwtStrategy } from './jwt.strategy';
 import { UserService } from 'src/user/user.service';
 import { MailModule } from 'src/email/mail.module';
 import { SaasModule } from 'src/saas/saas.module';
+import { CacheService } from 'src/redis/cache.service';
 
 @Module({
   imports: [
@@ -19,6 +20,12 @@ import { SaasModule } from 'src/saas/saas.module';
     MailModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, PrismaService, UserService, JwtStrategy],
+  providers: [
+    AuthService,
+    PrismaService,
+    UserService,
+    JwtStrategy,
+    CacheService,
+  ],
 })
 export class AuthModule {}

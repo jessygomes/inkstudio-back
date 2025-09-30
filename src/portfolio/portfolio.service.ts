@@ -2,12 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { AddPhotoDto } from './dto/add-photo.dto';
 import { SaasService } from 'src/saas/saas.service';
+import { CacheService } from 'src/redis/cache.service';
 
 @Injectable()
 export class PortfolioService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly saasService: SaasService
+    private readonly saasService: SaasService,
+    private cacheService: CacheService
   ) {}
 
    //! AJOUTER UNE PHOTO AU PORTFOLIO
@@ -49,6 +51,9 @@ export class PortfolioService {
         },
       });
 
+      // Invalider le cache après ajout
+      await this.cacheService.del(`portfolio:photos:${userId}`);
+
       return {
         error: false,
         message: 'Photo ajoutée avec succès au portfolio',
@@ -66,11 +71,31 @@ export class PortfolioService {
   //! VOIR TOUTES LES PHOTOS D'UN PORTFOLIO
   async getPortfolioPhotos(userId: string) {
     try {
-      // Récupérer toutes les photos du portfolio de l'utilisateur
+      const cacheKey = `portfolio:photos:${userId}`;
+
+      // 1. Vérifier dans Redis
+      const cachedPhotos = await this.cacheService.get<{
+        id: string;
+        title: string;
+        imageUrl: string;
+        description: string;
+        [key: string]: any;
+      }[]>(cacheKey);
+      
+      if (cachedPhotos) {
+        console.log(`✅ Photos portfolio pour user ${userId} trouvées dans Redis`);
+        return cachedPhotos;
+      }
+
+      // 2. Sinon, aller chercher en DB
       const photos = await this.prisma.portfolio.findMany({
         where: { userId },
         orderBy: { createdAt: 'desc' }, // Optionnel : trier par date de création
       });
+
+      // 3. Mettre en cache (TTL 15 minutes pour les photos portfolio)
+      await this.cacheService.set(cacheKey, photos, 900);
+      console.log(`💾 Photos portfolio pour user ${userId} mises en cache`);
 
       return photos;
     } catch (error) {
@@ -98,6 +123,9 @@ export class PortfolioService {
         where: { id },
         data: updateData,
       });
+
+      // Invalider le cache après mise à jour
+      await this.cacheService.del(`portfolio:photos:${existingPhoto.userId}`);
 
       return {
         error: false,
@@ -129,6 +157,9 @@ export class PortfolioService {
       await this.prisma.portfolio.delete({
         where: { id },
       });
+
+      // Invalider le cache après suppression
+      await this.cacheService.del(`portfolio:photos:${existingPhoto.userId}`);
 
       return { message: 'Photo supprimée avec succès' };
     } catch (error) {

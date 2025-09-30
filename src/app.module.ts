@@ -28,7 +28,7 @@ import { SaasModule } from './saas/saas.module';
 import { BlockedTimeSlotsModule } from './blocked-time-slots/blocked-time-slots.module';
 import { VideoCallModule } from './video-call/video-call.module';
 import { BullModule } from '@nestjs/bull';
-import { CacheModule } from '@nestjs/cache-manager';
+import { RedisModule } from './redis/redis.module';
 
 @Module({
   imports: [
@@ -60,11 +60,7 @@ import { CacheModule } from '@nestjs/cache-manager';
         lazyConnect: true,
       },
     }),
-    CacheModule.register({
-      // Configuration par défaut du cache (peut être ajustée selon les besoins)
-      max: 100, // Nombre maximum d'éléments dans le cache
-      ttl: 300, // Temps en secondes avant expiration (5 minutes)
-    }),
+    RedisModule,
   ],
   controllers: [
     UserController,

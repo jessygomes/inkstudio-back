@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -13,79 +7,45 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-//! USER
-enum Role {
-  admin
-  user
-}
-
-enum SaasPlan {
-  FREE
-  PRO
-  BUSINESS
-}
-
-enum SaasPlanStatus {
-  ACTIVE
-  EXPIRED
-  CANCELED
-  TRIAL
-}
-
-// Le user est le SALON
 model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
-  emailVerified DateTime?
-  password      String
-  firstName     String?
-  lastName      String?
-  salonName     String?
-  image         String?
-  phone         String?
-  address       String?
-  city          String?
-  postalCode    String?
-  instagram     String?
-  website       String?
-  facebook      String?
-  tiktok        String?
-  description   String?
-  salonHours    String?
-  salonPhotos   String[]
-
-  prestations   String[]
-  addConfirmationEnabled Boolean   @default(false)
-  appointmentBookingEnabled Boolean   @default(false)   // variable pour la prise de rendez-vous pour le salon ou par tatoueur
-
-  saasPlan      SaasPlan  @default(FREE)
-  saasPlanUntil DateTime? // Date jusqu'à laquelle le plan est actif
-
-  role          Role      @default(user)
-
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-
-  appointments Appointment[]
-  Tatoueur     Tatoueur[]
-  Client       Client[]
-
-  TimeSlot TimeSlot[]
-
-  Portfolio Portfolio[]
-
-  ProductSalon ProductSalon[]
-
-  FollowUpRequest    FollowUpRequest[]
-  FollowUpSubmission FollowUpSubmission[]
-  
-  // Créneaux bloqués du salon
-  blockedTimeSlots BlockedTimeSlot[]
-  
-  // Relation avec les détails du plan SaaS
-  saasPlanDetails SaasPlanDetails?
-
-  AppointmentRequest AppointmentRequest[]
+  id                        String               @id @default(cuid())
+  email                     String               @unique
+  emailVerified             DateTime?
+  password                  String
+  firstName                 String?
+  lastName                  String?
+  salonName                 String?
+  image                     String?
+  phone                     String?
+  address                   String?
+  city                      String?
+  postalCode                String?
+  instagram                 String?
+  website                   String?
+  facebook                  String?
+  tiktok                    String?
+  description               String?
+  salonHours                String?
+  salonPhotos               String[]
+  saasPlan                  SaasPlan             @default(FREE)
+  saasPlanUntil             DateTime?
+  role                      Role                 @default(user)
+  createdAt                 DateTime             @default(now())
+  updatedAt                 DateTime             @updatedAt
+  prestations               String[]
+  addConfirmationEnabled    Boolean              @default(false)
+  appointmentBookingEnabled Boolean              @default(false)
+  appointments              Appointment[]
+  AppointmentRequest        AppointmentRequest[]
+  blockedTimeSlots          BlockedTimeSlot[]
+  Client                    Client[]
+  FollowUpRequest           FollowUpRequest[]
+  FollowUpSubmission        FollowUpSubmission[]
+  Portfolio                 Portfolio[]
+  ProductSalon              ProductSalon[]
+  saasPlanDetails           SaasPlanDetails?
+  Tatoueur                  Tatoueur[]
+  TimeSlot                  TimeSlot[]
 }
 
 model VerificationToken {
@@ -106,68 +66,339 @@ model PasswordResetToken {
   @@unique([email, token], name: "email_token")
 }
 
-//! SALON
 model Tatoueur {
-  id          String   @id @default(cuid())
-  name        String
-  hours       String?
-  user        User     @relation(fields: [userId], references: [id])
-  userId      String // salon qui possède ce tatoueur
-  img         String?
-  description String?
-  phone       String?
-  instagram   String?
-
-  style       String[]
-  skills      String[]
-
-  rdvBookingEnabled Boolean @default(true) // variable pour la prise de rendez-vous par tatoueur
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  appointments Appointment[]
-
-  Portfolio Portfolio[]
-  
-  // Créneaux bloqués pour ce tatoueur
-  blockedTimeSlots BlockedTimeSlot[]
-  
-  // Demandes de reprogrammation où ce tatoueur est le nouveau tatoueur
+  id                 String              @id @default(cuid())
+  name               String
+  hours              String?
+  userId             String
+  img                String?
+  description        String?
+  phone              String?
+  instagram          String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  skills             String[]
+  style              String[]
+  rdvBookingEnabled  Boolean             @default(true)
+  appointments       Appointment[]
+  blockedTimeSlots   BlockedTimeSlot[]
+  Portfolio          Portfolio[]
   rescheduleRequests RescheduleRequest[]
-
-  TattooHistory TattooHistory[]
+  user               User                @relation(fields: [userId], references: [id])
+  TattooHistory      TattooHistory[]
 }
 
-//! CRÉNEAUX BLOQUÉS (VACANCES, CONGÉS, ETC.)
 model BlockedTimeSlot {
-  id String @id @default(cuid())
-  
-  // Dates et heures du blocage
-  startDate DateTime
-  endDate   DateTime
-  
-  // Raison du blocage (optionnel)
-  reason String?
-  
-  // Tatoueur concerné (optionnel - si null, bloque pour tous les tatoueurs du salon)
+  id         String    @id @default(cuid())
+  startDate  DateTime
+  endDate    DateTime
+  reason     String?
   tatoueurId String?
+  userId     String
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
   tatoueur   Tatoueur? @relation(fields: [tatoueurId], references: [id], onDelete: Cascade)
-  
-  // Salon propriétaire du blocage
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  // Métadonnées
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([startDate, endDate])
   @@index([tatoueurId])
   @@index([userId])
 }
 
-//! AGENDA ET RDV
+model Appointment {
+  id                 String              @id @default(cuid())
+  title              String
+  prestation         PrestationType
+  start              DateTime
+  end                DateTime
+  allDay             Boolean             @default(false)
+  status             AppointmentStatus   @default(PENDING)
+  isPayed            Boolean             @default(false)
+  userId             String
+  tatoueurId         String?
+  clientId           String?
+  tattooDetailId     String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  visio              Boolean             @default(false)
+  visioRoom          String?
+  client             Client?             @relation(fields: [clientId], references: [id])
+  tatoueur           Tatoueur?           @relation(fields: [tatoueurId], references: [id])
+  user               User                @relation(fields: [userId], references: [id])
+  FollowUpRequest    FollowUpRequest?
+  FollowUpSubmission FollowUpSubmission?
+  rescheduleRequests RescheduleRequest[]
+  tattooDetail       TattooDetail?
+  TimeSlot           TimeSlot[]
+}
+
+model AppointmentRequest {
+  id              String         @id @default(cuid())
+  userId          String
+  prestation      PrestationType
+  clientFirstname String
+  clientLastname  String
+  clientEmail     String
+  clientPhone     String?
+  clientBirthDate DateTime?
+  availability    String
+  details         String?
+  message         String?
+  status          String         @default("PENDING")
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  proposedDate    DateTime?
+  proposedFrom    DateTime?
+  proposedTo      DateTime?
+  tatoueurId      String?
+  token           String?        @unique
+  tokenExpiresAt  DateTime?
+  user            User           @relation(fields: [userId], references: [id])
+  slots           ProposedSlot[]
+}
+
+model ProposedSlot {
+  id                   String             @id @default(cuid())
+  appointmentRequestId String
+  from                 DateTime
+  to                   DateTime
+  tatoueurId           String?
+  status               String             @default("PENDING")
+  selectedAt           DateTime?
+  createdAt            DateTime           @default(now())
+  appointmentRequest   AppointmentRequest @relation(fields: [appointmentRequestId], references: [id])
+
+  @@index([appointmentRequestId])
+}
+
+model TimeSlot {
+  id            String       @id @default(cuid())
+  date          DateTime
+  startTime     DateTime
+  endTime       DateTime
+  isAvailable   Boolean      @default(true)
+  userId        String
+  appointmentId String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
+  user          User         @relation(fields: [userId], references: [id])
+}
+
+model Client {
+  id                 String               @id @default(cuid())
+  userId             String
+  firstName          String
+  lastName           String
+  email              String
+  phone              String
+  birthDate          DateTime?
+  address            String?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  aftercareRecords   Aftercare[]
+  appointments       Appointment[]
+  user               User                 @relation(fields: [userId], references: [id])
+  FollowUpSubmission FollowUpSubmission[]
+  medicalHistory     MedicalHistory?
+  tattooDetails      TattooDetail[]
+  tattooHistory      TattooHistory[]
+
+  @@unique([userId, email])
+}
+
+model TattooDetail {
+  id             String       @id @default(cuid())
+  clientId       String?
+  appointmentId  String?      @unique
+  description    String
+  zone           String?
+  size           String?
+  colorStyle     String?
+  reference      String?
+  sketch         String?
+  estimatedPrice Float?
+  price          Float?
+  isPayed        Boolean      @default(false)
+  appointment    Appointment? @relation(fields: [appointmentId], references: [id])
+  client         Client?      @relation(fields: [clientId], references: [id])
+}
+
+model MedicalHistory {
+  id            String  @id @default(cuid())
+  clientId      String  @unique
+  allergies     String?
+  healthIssues  String?
+  medications   String?
+  pregnancy     Boolean
+  tattooHistory String?
+  client        Client  @relation(fields: [clientId], references: [id])
+}
+
+model TattooHistory {
+  id           String    @id @default(cuid())
+  clientId     String
+  date         DateTime
+  description  String?
+  inkUsed      String?
+  healingTime  String?
+  careProducts String?
+  photo        String?
+  price        Float?
+  size         String?
+  tatoueurId   String?
+  zone         String?
+  client       Client    @relation(fields: [clientId], references: [id])
+  tatoueur     Tatoueur? @relation(fields: [tatoueurId], references: [id])
+}
+
+model Aftercare {
+  id                 String   @id @default(cuid())
+  clientId           String
+  submittedAt        DateTime @default(now())
+  photoUrl           String?
+  comment            String?
+  approved           Boolean  @default(false)
+  visibleInPortfolio Boolean  @default(false)
+  client             Client   @relation(fields: [clientId], references: [id])
+}
+
+model Portfolio {
+  id          String    @id @default(cuid())
+  userId      String
+  title       String
+  description String?
+  imageUrl    String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  tatoueurId  String?
+  tatoueur    Tatoueur? @relation(fields: [tatoueurId], references: [id])
+  user        User      @relation(fields: [userId], references: [id])
+}
+
+model ProductSalon {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  price       Float
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id])
+}
+
+model FollowUpRequest {
+  id            String              @id @default(cuid())
+  appointmentId String              @unique
+  token         String              @unique
+  status        FollowUpStatus      @default(PENDING)
+  sentAt        DateTime?
+  expiresAt     DateTime?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  submissionId  String?             @unique
+  userId        String
+  appointment   Appointment         @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  submission    FollowUpSubmission? @relation(fields: [submissionId], references: [id])
+  user          User                @relation(fields: [userId], references: [id])
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([userId])
+}
+
+model FollowUpSubmission {
+  id              String           @id @default(cuid())
+  appointmentId   String           @unique
+  clientId        String?
+  rating          Int
+  review          String?
+  photoUrl        String
+  isAnswered      Boolean          @default(false)
+  response        String?
+  isPhotoPublic   Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+  userId          String
+  followUpRequest FollowUpRequest?
+  appointment     Appointment      @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  client          Client?          @relation(fields: [clientId], references: [id])
+  user            User             @relation(fields: [userId], references: [id])
+
+  @@index([createdAt])
+  @@index([userId])
+}
+
+model SaasPlanDetails {
+  id                 String         @id @default(cuid())
+  userId             String         @unique
+  currentPlan        SaasPlan       @default(FREE)
+  planStatus         SaasPlanStatus @default(ACTIVE)
+  startDate          DateTime       @default(now())
+  endDate            DateTime?
+  trialEndDate       DateTime?
+  maxAppointments    Int            @default(30)
+  maxClients         Int            @default(50)
+  maxTattooeurs      Int            @default(1)
+  maxPortfolioImages Int            @default(5)
+  hasAdvancedStats   Boolean        @default(false)
+  hasEmailReminders  Boolean        @default(false)
+  hasCustomBranding  Boolean        @default(false)
+  hasApiAccess       Boolean        @default(false)
+  monthlyPrice       Float?
+  yearlyPrice        Float?
+  lastPaymentDate    DateTime?
+  nextPaymentDate    DateTime?
+  paymentMethod      String?
+  stripeCustomerId   String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  user               User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([currentPlan])
+  @@index([planStatus])
+  @@index([endDate])
+}
+
+model RescheduleRequest {
+  id            String           @id @default(cuid())
+  appointmentId String
+  token         String           @unique
+  reason        String?
+  newTatoueurId String?
+  status        RescheduleStatus @default(PENDING)
+  clientMessage String?
+  expiresAt     DateTime
+  processedAt   DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  appointment   Appointment      @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  newTatoueur   Tatoueur?        @relation(fields: [newTatoueurId], references: [id])
+
+  @@index([token])
+  @@index([appointmentId])
+  @@index([status])
+  @@index([expiresAt])
+}
+
+enum Role {
+  admin
+  user
+}
+
+enum SaasPlan {
+  FREE
+  PRO
+  BUSINESS
+}
+
+enum SaasPlanStatus {
+  ACTIVE
+  EXPIRED
+  CANCELED
+  TRIAL
+}
+
 enum PrestationType {
   TATTOO
   PIERCING
@@ -185,365 +416,15 @@ enum AppointmentStatus {
   COMPLETED
 }
 
-model Appointment {
-  id         String            @id @default(cuid())
-  title      String
-  prestation PrestationType
-  start      DateTime
-  end        DateTime
-  allDay     Boolean           @default(false)
-  status     AppointmentStatus @default(PENDING)
-  isPayed    Boolean           @default(false)
-  
-  // --- Visio ---
-  visio      Boolean           @default(false)  // coche la case ou non
-  visioRoom  String?           // salle unique générée si visio = true
-
-  // Relation avec User (nouvelle relation)
-  user   User   @relation(fields: [userId], references: [id])
-  userId String // ID du salon propriétaire du rendez-vous
-
-  tatoueur   Tatoueur? @relation(fields: [tatoueurId], references: [id])
-  tatoueurId String?
-
-  client   Client? @relation(fields: [clientId], references: [id])
-  clientId String?
-
-  //  Lien direct vers un TattooDetail pour les projets
-  tattooDetail   TattooDetail?
-  tattooDetailId String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  TimeSlot TimeSlot[]
-
-  FollowUpRequest FollowUpRequest[]
-
-  FollowUpSubmission FollowUpSubmission[]
-  
-  rescheduleRequests RescheduleRequest[]
-}
-
-model AppointmentRequest {
-  id            String   @id @default(cuid())
-  userId        String   // Salon concerné
-  prestation    PrestationType
-  clientFirstname    String
-  clientLastname    String
-  clientEmail   String
-  clientPhone   String?
-  clientBirthDate DateTime?
-  availability  String   // Texte ou JSON selon ton front
-  details       String?  // Zone, taille, style, etc. (JSON ou texte)
-  message       String?  // Message libre du client
-  status        String   @default("PENDING") // PENDING, PROPOSED, ACCEPTED, DECLINED, CLOTURED
-  
-  proposedDate  DateTime?
-  proposedFrom  DateTime?
-  proposedTo    DateTime?
-  tatoueurId    String?
-
-  token         String?         @unique
-  tokenExpiresAt   DateTime?
-
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  slots            ProposedSlot[] // <-- nouveau : 1-N propositions
-
-  user          User     @relation(fields: [userId], references: [id])
-}
-
-model ProposedSlot {
-  id                   String   @id @default(cuid())
-  appointmentRequestId String
-  from                 DateTime
-  to                   DateTime
-  tatoueurId           String?
-  status               String   @default("PENDING") // PENDING, ACCEPTED, DECLINED, EXPIRED
-  selectedAt           DateTime?
-  createdAt            DateTime @default(now())
-
-  appointmentRequest   AppointmentRequest @relation(fields: [appointmentRequestId], references: [id])
-
-  @@index([appointmentRequestId])
-}
-
-model TimeSlot {
-  id          String   @id @default(cuid())
-  date        DateTime // Date du créneau
-  startTime   DateTime // Heure de début du créneau
-  endTime     DateTime // Heure de fin du créneau
-  isAvailable Boolean  @default(true)
-
-  userId String
-  user   User   @relation(fields: [userId], references: [id])
-
-  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
-  appointmentId String? // Lié si ce créneau a été réservé
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-//! CLIENT & FICHE CLIENT
-model Client {
-  id     String @id @default(cuid())
-  userId String // Salon propriétaire de la fiche client
-  user   User   @relation(fields: [userId], references: [id])
-
-  firstName String
-  lastName  String
-  email     String
-  phone     String
-  birthDate DateTime?
-  address   String?
-
-  // Lien vers les RDV (facultatif)
-  appointments Appointment[] // 👈 Un client peut avoir plusieurs RDV
-
-  // Relations
-  tattooDetails    TattooDetail[] // 👈 Un client peut avoir plusieurs détails de tatouage
-  medicalHistory   MedicalHistory?
-  tattooHistory    TattooHistory[]
-  aftercareRecords Aftercare[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  FollowUpSubmission FollowUpSubmission[]
-
-  @@unique([userId, email])
-}
-
-model TattooDetail {
-  id String @id @default(cuid())
-
-  // Soit lié à un client
-  clientId String?
-  client   Client? @relation(fields: [clientId], references: [id])
-
-  // Soit lié à un rendez-vous
-  appointmentId String?      @unique
-  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
-
-  description    String
-  zone           String?
-  size           String?
-  colorStyle     String? // Noir & gris ou Couleur
-  reference      String? // URL image du client
-  sketch         String? // URL du croquis
-  estimatedPrice Float?
-  price          Float?
-  isPayed        Boolean @default(false)
-}
-
-model MedicalHistory {
-  id       String @id @default(cuid())
-  clientId String @unique
-  client   Client @relation(fields: [clientId], references: [id])
-
-  allergies     String?
-  healthIssues  String?
-  medications   String?
-  pregnancy     Boolean
-  tattooHistory String? // Commentaire sur anciens tatouages
-}
-
-model TattooHistory {
-  id       String @id @default(cuid())
-  clientId String
-  client   Client @relation(fields: [clientId], references: [id])
-  tatoueurId String?
-  tatoueur   Tatoueur? @relation(fields: [tatoueurId], references: [id])
-
-  date         DateTime
-  description  String?
-  photo        String? // URL
-  zone         String?
-  size         String?
-  price        Float?
-  inkUsed      String? // ex: "Black, Red"
-  healingTime  String? // ex: "2 weeks"
-  careProducts String? // ex: "Product A, Product B"
-}
-
-model Aftercare {
-  id       String @id @default(cuid())
-  clientId String
-  client   Client @relation(fields: [clientId], references: [id])
-
-  submittedAt        DateTime @default(now())
-  photoUrl           String?
-  comment            String?
-  approved           Boolean  @default(false)
-  visibleInPortfolio Boolean  @default(false)
-}
-
-//! PORTFOLIO & PRODUITS
-model Portfolio {
-  id     String @id @default(cuid())
-  userId String
-  user   User   @relation(fields: [userId], references: [id])
-
-  title       String
-  description String?
-  imageUrl    String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  // Lien vers les tatoueurs si nécessaire
-  tatoueurId String?
-  tatoueur   Tatoueur? @relation(fields: [tatoueurId], references: [id])
-}
-
-model ProductSalon {
-  id     String @id @default(cuid())
-  userId String
-  user   User   @relation(fields: [userId], references: [id])
-
-  name        String
-  description String?
-  price       Float
-  imageUrl    String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-}
-
-// //! SALON SETTINGS
-// model SalonSettings {
-//   id                      String   @id @default(cuid())
-//   salonName               String
-//   autoConfirmationEnabled Boolean  @default(false)
-//   createdAt               DateTime @default(now())
-// }
-
-// ----------------------
-// SUIVI POST-RDV
-// ----------------------
 enum FollowUpStatus {
   PENDING
   SUBMITTED
   EXPIRED
 }
 
-model FollowUpRequest {
-  id            String         @id @default(cuid())
-  appointmentId String         @unique
-  token         String         @unique
-  status        FollowUpStatus @default(PENDING)
-  sentAt        DateTime?
-  expiresAt     DateTime?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  submissionId  String?        @unique
-  userId        String         // Salon propriétaire
-
-  appointment  Appointment         @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
-  submission   FollowUpSubmission? @relation(fields: [submissionId], references: [id])
-  user         User                @relation(fields: [userId], references: [id])
-
-  @@index([status])
-  @@index([createdAt])
-  @@index([userId])
-}
-
-model FollowUpSubmission {
-  id            String   @id @default(cuid())
-  appointmentId String   @unique
-  clientId      String?
-  rating        Int
-  review        String?
-  photoUrl      String
-  isAnswered    Boolean @default(false)
-  response      String?
-  isPhotoPublic Boolean @default(false)
-  createdAt     DateTime @default(now())
-  userId        String   // Salon propriétaire
-
-  appointment     Appointment      @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
-  client          Client?          @relation(fields: [clientId], references: [id])
-  followUpRequest FollowUpRequest?
-  user            User             @relation(fields: [userId], references: [id])
-
-  @@index([createdAt])
-  @@index([userId])
-}
-
-// ----------------------
-// DÉTAILS PLAN SAAS
-// ----------------------
-model SaasPlanDetails {
-  id     String @id @default(cuid())
-  userId String @unique
-
-  // Plan actuel
-  currentPlan   SaasPlan       @default(FREE)
-  planStatus    SaasPlanStatus @default(ACTIVE)
-  startDate     DateTime       @default(now())
-  endDate       DateTime? // Null = illimité
-  trialEndDate  DateTime? // Date fin d'essai
-  
-  // Limites du plan (FREE par défaut)
-  maxAppointments    Int  @default(30)   // FREE: 30, PRO: 150, BUSINESS: -1 (illimité)
-  maxClients         Int  @default(50)   // FREE: 50, PRO: 300, BUSINESS: -1 (illimité)
-  maxTattooeurs      Int  @default(1)    // FREE: 1, PRO: 5, BUSINESS: -1 (illimité)
-  maxPortfolioImages Int  @default(5)    // FREE: 5, PRO: 50, BUSINESS: -1 (illimité)
-
-  // Fonctionnalités
-  hasAdvancedStats   Boolean @default(false) // Statistiques avancées
-  hasEmailReminders  Boolean @default(false) // Rappels email
-  hasCustomBranding  Boolean @default(false) // Marque personnalisée
-  hasApiAccess       Boolean @default(false) // Accès API
-  
-  // Facturation
-  monthlyPrice       Float?   // Prix mensuel
-  yearlyPrice        Float?   // Prix annuel
-  lastPaymentDate    DateTime?
-  nextPaymentDate    DateTime?
-  paymentMethod      String?  // 'stripe', 'paypal', etc.
-  stripeCustomerId   String?  // ID client Stripe
-  
-  // Métadonnées
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  
-  // Relations
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  @@index([currentPlan])
-  @@index([planStatus])
-  @@index([endDate])
-}
-
-//! RESCHEDULE REQUEST
 enum RescheduleStatus {
   PENDING
   ACCEPTED
   DECLINED
   EXPIRED
-}
-
-model RescheduleRequest {
-  id               String           @id @default(cuid())
-  appointmentId    String
-  token            String           @unique
-  reason           String?
-  newTatoueurId    String?
-  status           RescheduleStatus @default(PENDING)
-  clientMessage    String?
-  expiresAt        DateTime
-  processedAt      DateTime?
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
-
-  // Relations
-  appointment      Appointment      @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
-  newTatoueur      Tatoueur?        @relation(fields: [newTatoueurId], references: [id], onDelete: SetNull)
-
-  @@index([token])
-  @@index([appointmentId])
-  @@index([status])
-  @@index([expiresAt])
 }

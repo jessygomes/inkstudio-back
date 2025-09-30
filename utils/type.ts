@@ -1,0 +1,22 @@
+export type CachedUser = {
+  id: string,
+  saasPlan?: string,
+  email: string,
+  salonName?: string,
+  firstName?: string,
+  lastName?: string,
+  phone?: string,
+  address?: string,
+  city?: string,
+  postalCode?: string,
+  salonHours?: string,
+  instagram?: string,
+  facebook?: string,
+  tiktok?: string,
+  website?: string,
+  description?: string,
+  image?: string,
+  role?: string,
+  prestations?: string[],
+  Tatoueur?: any, // You can further type this if needed
+};

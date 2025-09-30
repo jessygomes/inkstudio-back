@@ -11,6 +11,7 @@ import { SaasService } from 'src/saas/saas.service';
 import * as crypto from 'crypto';
 import { CreateAppointmentRequestDto } from './dto/create-appointment-request.dto';
 import { VideoCallService } from 'src/video-call/video-call.service';
+import { CacheService } from 'src/redis/cache.service';
 
 @Injectable()
 export class AppointmentsService {
@@ -19,8 +20,73 @@ export class AppointmentsService {
     private readonly mailService: MailService, 
     private readonly followupSchedulerService: FollowupSchedulerService,
     private readonly saasService: SaasService,
-    private readonly videoCallService: VideoCallService
+    private readonly videoCallService: VideoCallService,
+     private cacheService: CacheService
   ) {}
+
+  //! ------------------------------------------------------------------------------
+
+  //! GESTION DU CACHE DASHBOARD
+
+  //! ------------------------------------------------------------------------------
+  /**
+   * Invalide tous les caches liés au dashboard pour un salon
+   * À appeler après toute modification d'un rendez-vous
+   * @param userId - ID du salon
+   * @param appointmentData - Données du RDV pour optimiser l'invalidation
+   */
+  private async invalidateDashboardCache(userId: string, appointmentData?: { start?: Date, isPayed?: boolean }) {
+    try {
+      const keysToDelete = [
+        `dashboard:global-cancellation:${userId}`,
+      ];
+
+      // Si on a des infos sur le RDV, optimiser l'invalidation
+      if (appointmentData?.start) {
+        const appointmentDate = new Date(appointmentData.start);
+        const year = appointmentDate.getFullYear();
+        const month = appointmentDate.getMonth() + 1;
+        const dateKey = appointmentDate.toISOString().split('T')[0];
+        
+        keysToDelete.push(
+          `dashboard:today-appointments:${userId}:${dateKey}`,
+          `dashboard:monthly-paid:${userId}:${year}-${month.toString().padStart(2, '0')}`
+        );
+      }
+
+      // Invalider les clés spécifiques
+      for (const key of keysToDelete) {
+        try {
+          await this.cacheService.del(key);
+        } catch (error) {
+          console.warn(`Erreur invalidation cache dashboard clé ${key}:`, error);
+        }
+      }
+
+      // Pour les caches avec patterns complexes (fill-rate), on invalide manuellement les plus probables
+      if (appointmentData?.start) {
+        const appointmentDate = new Date(appointmentData.start);
+        // Invalider les fill-rate des 7 derniers jours autour de la date du RDV
+        for (let i = -3; i <= 3; i++) {
+          const checkDate = new Date(appointmentDate);
+          checkDate.setDate(appointmentDate.getDate() + i);
+          const startWeek = checkDate.toISOString().split('T')[0];
+          const endWeek = new Date(checkDate);
+          endWeek.setDate(checkDate.getDate() + 7);
+          const endWeekStr = endWeek.toISOString().split('T')[0];
+          
+          try {
+            await this.cacheService.del(`dashboard:fill-rate:${userId}:${startWeek}:${endWeekStr}`);
+          } catch {
+            // Ignore les erreurs pour ces clés optionnelles
+          }
+        }
+      }
+
+    } catch (error) {
+      console.warn('Erreur invalidation cache dashboard:', error);
+    }
+  }
 
   //! ------------------------------------------------------------------------------
 
@@ -200,6 +266,10 @@ export class AppointmentsService {
           console.error('💥 ERREUR lors de l\'envoi de l\'email PROJET/TATTOO:', emailError);
           // Ne pas faire échouer la création du RDV si l'email échoue
         }
+
+        // Invalider le cache des listes de RDV après création
+        this.cacheService.delPattern(`appointments:salon:${userId}:*`);
+        this.cacheService.delPattern(`appointments:date-range:${userId}:*`);
       
         return {
           error: false,
@@ -270,6 +340,16 @@ export class AppointmentsService {
         console.error('💥 ERREUR lors de l\'envoi de l\'email:', emailError);
         // Ne pas faire échouer la création du RDV si l'email échoue
       }
+
+      // Invalider le cache des listes de RDV après création
+      this.cacheService.delPattern(`appointments:salon:${userId}:*`);
+      this.cacheService.delPattern(`appointments:date-range:${userId}:*`);
+
+      // Invalider le cache du dashboard
+      await this.invalidateDashboardCache(userId, { 
+        start: newAppointment.start, 
+        isPayed: newAppointment.isPayed 
+      });
 
       return {
         error: false,
@@ -701,6 +781,26 @@ export class AppointmentsService {
       const end = new Date(endDate);
       const skip = (page - 1) * limit;
 
+      // Créer une clé de cache basée sur les paramètres
+      const cacheKey = `appointments:date-range:${userId}:${JSON.stringify({
+        startDate,
+        endDate,
+        page,
+        limit
+      })}`;
+
+      // 1. Vérifier dans Redis
+      const cachedResult = await this.cacheService.get<{
+        error: boolean;
+        appointments: any[];
+        pagination: any;
+      }>(cacheKey);
+      
+      if (cachedResult) {
+        console.log(`✅ RDV par date trouvés dans Redis pour user ${userId}, page ${page}`);
+        return cachedResult;
+      }
+
       // Compter le total des rendez-vous dans la plage de dates
       const totalAppointments = await this.prisma.appointment.count({
         where: {
@@ -746,7 +846,7 @@ export class AppointmentsService {
 
       const totalPages = Math.ceil(totalAppointments / limit);
 
-      return {
+      const result = {
         error: false,
         appointments,
         pagination: {
@@ -758,6 +858,12 @@ export class AppointmentsService {
           hasPreviousPage: page > 1,
         },
       };
+
+      // 3. Mettre en cache (TTL 5 minutes pour les listes par date)
+      await this.cacheService.set(cacheKey, result, 300);
+      console.log(`💾 RDV par date mis en cache pour user ${userId}, page ${page}`);
+
+      return result;
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       return {
@@ -775,6 +881,24 @@ export class AppointmentsService {
   async getAllAppointmentsBySalon(salonId: string, page: number = 1, limit: number = 5) {
     try {
       const skip = (page - 1) * limit;
+
+      // Créer une clé de cache basée sur les paramètres
+      const cacheKey = `appointments:salon:${salonId}:${JSON.stringify({
+        page,
+        limit
+      })}`;
+
+      // 1. Vérifier dans Redis
+      const cachedResult = await this.cacheService.get<{
+        error: boolean;
+        appointments: any[];
+        pagination: any;
+      }>(cacheKey);
+      
+      if (cachedResult) {
+        console.log(`✅ Tous les RDV du salon ${salonId} trouvés dans Redis, page ${page}`);
+        return cachedResult;
+      }
 
       // Compter le total des rendez-vous
       const totalAppointments = await this.prisma.appointment.count({
@@ -814,7 +938,7 @@ export class AppointmentsService {
 
       const totalPages = Math.ceil(totalAppointments / limit);
 
-      return {
+      const result = {
         error: false,
         appointments,
         pagination: {
@@ -826,6 +950,12 @@ export class AppointmentsService {
           hasPreviousPage: page > 1,
         },
       };
+
+      // 3. Mettre en cache (TTL 5 minutes pour la liste complète)
+      await this.cacheService.set(cacheKey, result, 300);
+      console.log(`💾 Tous les RDV du salon ${salonId} mis en cache, page ${page}`);
+
+      return result;
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       return {
@@ -876,6 +1006,23 @@ export class AppointmentsService {
   //! ------------------------------------------------------------------------------
   async getOneAppointment(id: string) {
     try {
+      const cacheKey = `appointment:${id}`;
+
+      // 1. Vérifier dans Redis
+      const cachedAppointment = await this.cacheService.get<{
+        id: string;
+        title: string;
+        start: Date;
+        end: Date;
+        [key: string]: any;
+      }>(cacheKey);
+      
+      if (cachedAppointment) {
+        console.log(`✅ RDV ${id} trouvé dans Redis`);
+        return cachedAppointment;
+      }
+
+      // 2. Sinon, aller chercher en DB
       const appointment = await this.prisma.appointment.findUnique({
         where: {
           id,
@@ -885,6 +1032,13 @@ export class AppointmentsService {
           tattooDetail: true,
         },
       });
+
+      // 3. Mettre en cache si trouvé (TTL 10 minutes pour un RDV spécifique)
+      if (appointment) {
+        await this.cacheService.set(cacheKey, appointment, 600);
+        console.log(`💾 RDV ${id} mis en cache`);
+      }
+
       return appointment;
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
@@ -902,11 +1056,40 @@ export class AppointmentsService {
   //! ------------------------------------------------------------------------------
   async deleteAppointment(id: string) {
     try {
+      // Récupérer le RDV avant suppression pour l'invalidation du cache
+      const appointmentToDelete = await this.prisma.appointment.findUnique({
+        where: { id },
+        select: { 
+          userId: true,
+          start: true,
+          isPayed: true
+        }
+      });
+
+      if (!appointmentToDelete) {
+        return {
+          error: true,
+          message: 'Rendez-vous introuvable.',
+        };
+      }
+
       const appointment = await this.prisma.appointment.delete({
         where: {
           id,
         },
       });
+
+      // Invalider le cache après suppression
+      await this.cacheService.del(`appointment:${id}`);
+      this.cacheService.delPattern(`appointments:salon:${appointmentToDelete.userId}:*`);
+      this.cacheService.delPattern(`appointments:date-range:${appointmentToDelete.userId}:*`);
+
+      // Invalider le cache du dashboard
+      await this.invalidateDashboardCache(appointmentToDelete.userId, { 
+        start: appointmentToDelete.start, 
+        isPayed: appointmentToDelete.isPayed 
+      });
+
       return appointment;
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
@@ -1047,6 +1230,17 @@ export class AppointmentsService {
         );
       }
 
+      // Invalider le cache après update
+      await this.cacheService.del(`appointment:${id}`);
+      this.cacheService.delPattern(`appointments:salon:${existingAppointment.userId}:*`);
+      this.cacheService.delPattern(`appointments:date-range:${existingAppointment.userId}:*`);
+
+      // Invalider le cache du dashboard
+      await this.invalidateDashboardCache(existingAppointment.userId, { 
+        start: updatedAppointment.start, 
+        isPayed: updatedAppointment.isPayed 
+      });
+
       return {
         error: false,
         message: 'Rendez-vous mis à jour avec succès.',
@@ -1142,6 +1336,11 @@ export class AppointmentsService {
         );
     }
 
+      // Invalider le cache après confirmation
+      await this.cacheService.del(`appointment:${id}`);
+      this.cacheService.delPattern(`appointments:salon:${existingAppointment.userId}:*`);
+      this.cacheService.delPattern(`appointments:date-range:${existingAppointment.userId}:*`);
+
       return {
         error: false,
         message: 'Rendez-vous confirmé.',
@@ -1230,6 +1429,17 @@ export class AppointmentsService {
     );
   }
 
+      // Invalider le cache après annulation
+      await this.cacheService.del(`appointment:${id}`);
+      this.cacheService.delPattern(`appointments:salon:${existingAppointment.userId}:*`);
+      this.cacheService.delPattern(`appointments:date-range:${existingAppointment.userId}:*`);
+
+      // Invalider le cache du dashboard (annulation change les stats globales)
+      await this.invalidateDashboardCache(existingAppointment.userId, { 
+        start: existingAppointment.start, 
+        isPayed: existingAppointment.isPayed 
+      });
+
       return {
         error: false,
         message: 'Rendez-vous annulé.',
@@ -1314,6 +1524,11 @@ export class AppointmentsService {
           // On ne fait pas échouer la mise à jour du statut si le suivi échoue
         }
       }
+
+      // Invalider le cache après changement de statut
+      await this.cacheService.del(`appointment:${id}`);
+      this.cacheService.delPattern(`appointments:salon:${appointment.userId}:*`);
+      this.cacheService.delPattern(`appointments:date-range:${appointment.userId}:*`);
 
       return {
         error: false,
@@ -1459,7 +1674,7 @@ export class AppointmentsService {
 
   //! ------------------------------------------------------------------------------
   /**
-   * Récupère les rendez-vous d'une date spécifique pour le dashboard
+   * Récupère les rendez-vous d'une date spécifique pour le dashboard avec cache Redis
    * Si aucune date n'est fournie, utilise la date du jour
    * @param userId - ID du salon/utilisateur
    * @param targetDate - Date cible au format string (ex: "2024-08-07") - optionnel
@@ -1486,11 +1701,24 @@ export class AppointmentsService {
         selectedDate = new Date();
       }
 
-      // ==================== ÉTAPE 2: DÉFINIR LES BORNES DE LA JOURNÉE ====================
       // Début de la journée (00:00:00)
       const startOfDay = new Date(selectedDate);
       startOfDay.setHours(0, 0, 0, 0);
+      const dateKey = startOfDay.toISOString().split('T')[0]; // Format YYYY-MM-DD
+
+      // ==================== CACHE: VÉRIFIER LE CACHE REDIS ====================
+      const cacheKey = `dashboard:today-appointments:${userId}:${dateKey}`;
       
+      try {
+        const cachedData = await this.cacheService.get(cacheKey);
+        if (cachedData) {
+          return cachedData;
+        }
+      } catch (cacheError) {
+        console.warn('Erreur cache Redis pour getTodaysAppointments:', cacheError);
+      }
+
+      // ==================== ÉTAPE 2: DÉFINIR LES BORNES DE LA JOURNÉE ====================
       // Fin de la journée (début du jour suivant)
       const endOfDay = new Date(startOfDay);
       endOfDay.setDate(startOfDay.getDate() + 1);
@@ -1530,14 +1758,40 @@ export class AppointmentsService {
       });
       
       // ==================== ÉTAPE 5: RETOUR DES RÉSULTATS ====================
-      return {
+      const result = {
         error: false,
         appointments,
-        selectedDate: startOfDay.toISOString().split('T')[0], // Format YYYY-MM-DD
+        selectedDate: dateKey,
         formattedDate,
         totalAppointments: appointments.length,
         message: `${appointments.length} rendez-vous trouvé(s) pour le ${formattedDate}`,
       };
+
+      // ==================== CACHE: SAUVEGARDER EN CACHE ====================
+      try {
+        // TTL différencié: 
+        // - Jour actuel: 15 minutes (changements fréquents)
+        // - Jours passés: 4 heures (données historiques plus stables)
+        // - Jours futurs: 30 minutes (planification qui peut changer)
+        const now = new Date();
+        const isToday = dateKey === now.toISOString().split('T')[0];
+        const isPast = startOfDay < now;
+        
+        let ttl: number;
+        if (isToday) {
+          ttl = 15 * 60; // 15 minutes pour le jour actuel
+        } else if (isPast) {
+          ttl = 4 * 60 * 60; // 4 heures pour les jours passés
+        } else {
+          ttl = 30 * 60; // 30 minutes pour les jours futurs
+        }
+        
+        await this.cacheService.set(cacheKey, result, ttl);
+      } catch (cacheError) {
+        console.warn('Erreur sauvegarde cache Redis pour getTodaysAppointments:', cacheError);
+      }
+
+      return result;
       
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
@@ -1555,7 +1809,7 @@ export class AppointmentsService {
 
   //! ------------------------------------------------------------------------------
   /**
-   * Calcule le taux de remplissage des créneaux pour une période donnée
+   * Calcule le taux de remplissage des créneaux pour une période donnée avec cache Redis
    * @param userId - ID du salon/utilisateur
    * @param startDate - Date de début au format string (ex: "2024-08-01")
    * @param endDate - Date de fin au format string (ex: "2024-08-07")
@@ -1593,6 +1847,18 @@ export class AppointmentsService {
         };
       }
 
+      // ==================== CACHE: VÉRIFIER LE CACHE REDIS ====================
+      const cacheKey = `dashboard:fill-rate:${userId}:${startDate}:${endDate}`;
+      
+      try {
+        const cachedData = await this.cacheService.get(cacheKey);
+        if (cachedData) {
+          return cachedData;
+        }
+      } catch (cacheError) {
+        console.warn('Erreur cache Redis pour getWeeklyFillRate:', cacheError);
+      }
+
       // ==================== ÉTAPE 2: RÉCUPÉRATION DES RENDEZ-VOUS ====================
       // Chercher tous les rendez-vous du salon dans la période donnée
       const appointments = await this.prisma.appointment.findMany({
@@ -1621,7 +1887,7 @@ export class AppointmentsService {
         : 0; // Éviter la division par zéro
 
       // ==================== ÉTAPE 5: RETOUR DES RÉSULTATS ====================
-      return {
+      const result = {
         error: false,           // Pas d'erreur
         userId,                 // ID du salon
         startDate,              // Date de début (format original)
@@ -1630,6 +1896,32 @@ export class AppointmentsService {
         filledSlots,            // Nombre de créneaux occupés
         fillRate,               // Taux de remplissage en pourcentage
       };
+
+      // ==================== CACHE: SAUVEGARDER EN CACHE ====================
+      try {
+        // TTL différencié selon la période:
+        // - Périodes passées: 6 heures (données historiques stables)
+        // - Période actuelle: 1 heure (peut changer avec nouveaux RDV)
+        // - Périodes futures: 2 heures (planification qui évolue)
+        const now = new Date();
+        const isPastPeriod = end < now;
+        const isCurrentPeriod = start <= now && end >= now;
+        
+        let ttl: number;
+        if (isPastPeriod) {
+          ttl = 6 * 60 * 60; // 6 heures pour les périodes passées
+        } else if (isCurrentPeriod) {
+          ttl = 60 * 60; // 1 heure pour la période actuelle
+        } else {
+          ttl = 2 * 60 * 60; // 2 heures pour les périodes futures
+        }
+        
+        await this.cacheService.set(cacheKey, result, ttl);
+      } catch (cacheError) {
+        console.warn('Erreur sauvegarde cache Redis pour getWeeklyFillRate:', cacheError);
+      }
+
+      return result;
 
     } catch (error: unknown) {
       // ==================== GESTION D'ERREURS ====================
@@ -1673,12 +1965,24 @@ export class AppointmentsService {
 
   //! ------------------------------------------------------------------------------
   /**
-   * Calcule le taux d'annulation global de tous les rendez-vous du salon
+   * Calcule le taux d'annulation global de tous les rendez-vous du salon avec cache Redis
    * @param userId - ID du salon/utilisateur
    * @returns Objet contenant le taux d'annulation global et les détails
    */
   async getGlobalCancellationRate(userId: string) {
     try {
+      // ==================== CACHE: VÉRIFIER LE CACHE REDIS ====================
+      const cacheKey = `dashboard:global-cancellation:${userId}`;
+      
+      try {
+        const cachedData = await this.cacheService.get(cacheKey);
+        if (cachedData) {
+          return cachedData;
+        }
+      } catch (cacheError) {
+        console.warn('Erreur cache Redis pour getGlobalCancellationRate:', cacheError);
+      }
+
       // ==================== ÉTAPE 1: RÉCUPÉRATION DES STATISTIQUES GLOBALES ====================
       // Compter le nombre total de rendez-vous du salon (depuis le début)
       const totalAppointments = await this.prisma.appointment.count({
@@ -1728,7 +2032,7 @@ export class AppointmentsService {
         : 0;
 
       // ==================== ÉTAPE 4: RETOUR DES RÉSULTATS GLOBAUX ====================
-      return {
+      const result = {
         error: false,                    // Pas d'erreur
         userId,                          // ID du salon
         totalAppointments,               // Nombre total de RDV depuis le début
@@ -1740,6 +2044,19 @@ export class AppointmentsService {
         confirmationRate,                // Taux de confirmation en %
         message: `Statistiques globales du salon calculées avec succès`,
       };
+
+      // ==================== CACHE: SAUVEGARDER EN CACHE ====================
+      try {
+        // TTL de 2 heures pour les statistiques globales
+        // Ces données changent moins fréquemment et sont coûteuses à calculer
+        const ttl = 2 * 60 * 60; // 2 heures
+        
+        await this.cacheService.set(cacheKey, result, ttl);
+      } catch (cacheError) {
+        console.warn('Erreur sauvegarde cache Redis pour getGlobalCancellationRate:', cacheError);
+      }
+
+      return result;
 
     } catch (error: unknown) {
       // ==================== GESTION D'ERREURS ====================
@@ -1757,7 +2074,7 @@ export class AppointmentsService {
 
   //! ------------------------------------------------------------------------------
   /**
-   * Calcule la somme des prix des rendez-vous payés pour un mois donné
+   * Calcule la somme des prix des rendez-vous payés pour un mois donné avec cache Redis
    * Le prix d'un tatouage se trouve dans la table TattooDetails
    * @request userId - ID du salon/utilisateur
    * @param month - Mois (1-12)
@@ -1773,6 +2090,18 @@ export class AppointmentsService {
           error: true,
           message: 'Mois invalide. Veuillez fournir un mois entre 1 et 12.',
         };
+      }
+
+      // ==================== CACHE: VÉRIFIER LE CACHE REDIS ====================
+      const cacheKey = `dashboard:monthly-paid:${userId}:${year}-${month.toString().padStart(2, '0')}`;
+      
+      try {
+        const cachedData = await this.cacheService.get(cacheKey);
+        if (cachedData) {
+          return cachedData;
+        }
+      } catch (cacheError) {
+        console.warn('Erreur cache Redis pour getTotalPaidAppointmentsByMonth:', cacheError);
       }
 
       // ==================== ÉTAPE 2: CALCUL DES DATES DU MOIS ====================
@@ -1859,7 +2188,7 @@ export class AppointmentsService {
       };
 
       // ==================== ÉTAPE 7: RETOUR DES RÉSULTATS ====================
-      return {
+      const result = {
         error: false,
         userId,
         month,
@@ -1871,6 +2200,32 @@ export class AppointmentsService {
         debugInfo: statusCounts,      // Infos de debug
         message: `Total des rendez-vous payés pour ${month}/${year}: ${totalPaid}€`,
       };
+
+      // ==================== CACHE: SAUVEGARDER EN CACHE ====================
+      try {
+        // TTL différencié selon le mois:
+        // - Mois passés: 24 heures (données historiques très stables)
+        // - Mois actuel: 1 heure (peut changer avec nouveaux paiements)
+        // - Mois futurs: 4 heures (paiements anticipés possibles)
+        const now = new Date();
+        const currentMonth = now.getMonth() + 1;
+        const currentYear = now.getFullYear();
+        
+        let ttl: number;
+        if (year < currentYear || (year === currentYear && month < currentMonth)) {
+          ttl = 24 * 60 * 60; // 24 heures pour les mois passés
+        } else if (year === currentYear && month === currentMonth) {
+          ttl = 60 * 60; // 1 heure pour le mois actuel
+        } else {
+          ttl = 4 * 60 * 60; // 4 heures pour les mois futurs
+        }
+        
+        await this.cacheService.set(cacheKey, result, ttl);
+      } catch (cacheError) {
+        console.warn('Erreur sauvegarde cache Redis pour getTotalPaidAppointmentsByMonth:', cacheError);
+      }
+
+      return result;
 
     } catch (error: unknown) {
       // ==================== GESTION D'ERREURS ====================
