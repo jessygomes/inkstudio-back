@@ -215,83 +215,116 @@ export class UserService {
 
   //! GET USER BY SLUG + LOCALISATION
   async getUserBySlugAndLocation({ nameSlug, locSlug }: { nameSlug: string; locSlug: string }) {
-    // On récupère tous les salons dont le slug du nom correspond
-    const users = await this.prisma.user.findMany({
-      where: {
-        salonName: { not: null },
-        city: { not: null },
-        postalCode: { not: null },
-      },
-      select: {
-        id: true,
-        email: true,
-        salonName: true,
-        description: true,
-        image: true,
-        firstName: true,
-        lastName: true,
-        phone: true,
-        address: true,
-        city: true,
-        postalCode: true,
-        salonHours: true,
-        prestations: true,
-        appointmentBookingEnabled: true,
-        Tatoueur: {
-          select: {
-            id: true,
-            name: true,
-            img: true,
-            description: true,
-            phone: true,
-            hours: true,
-            instagram: true,
-            style: true,
-            skills: true,
-            rdvBookingEnabled: true
-          }
+    try {
+      // Créer une clé de cache basée sur les slugs
+      const cacheKey = `user:slug:${nameSlug}:${locSlug}`;
+
+      // 1. Vérifier dans Redis
+      try {
+        const cachedUser = await this.cacheService.get(cacheKey);
+        if (cachedUser) {
+          console.log(`✅ User avec slug ${nameSlug}/${locSlug} trouvé dans Redis`);
+          return cachedUser;
+        }
+      } catch (cacheError) {
+        console.warn('Erreur cache Redis pour getUserBySlugAndLocation:', cacheError);
+        // Continue sans cache si Redis est indisponible
+      }
+
+      // 2. Sinon, aller chercher en DB - On récupère tous les salons dont le slug du nom correspond
+      const users = await this.prisma.user.findMany({
+        where: {
+          salonName: { not: null },
+          city: { not: null },
+          postalCode: { not: null },
         },
-        salonPhotos: true,
-        instagram: true,
-        facebook: true,
-        tiktok: true,
-        website: true,
-        Portfolio: {
-          select: {
-            id: true,
-            title: true,
-            description: true,
-            imageUrl: true,
-            tatoueurId: true,
-            createdAt: true,
-            updatedAt: true,
-          }
+        select: {
+          id: true,
+          email: true,
+          salonName: true,
+          description: true,
+          image: true,
+          firstName: true,
+          lastName: true,
+          phone: true,
+          address: true,
+          city: true,
+          postalCode: true,
+          salonHours: true,
+          prestations: true,
+          appointmentBookingEnabled: true,
+          Tatoueur: {
+            select: {
+              id: true,
+              name: true,
+              img: true,
+              description: true,
+              phone: true,
+              hours: true,
+              instagram: true,
+              style: true,
+              skills: true,
+              rdvBookingEnabled: true
+            }
+          },
+          salonPhotos: true,
+          instagram: true,
+          facebook: true,
+          tiktok: true,
+          website: true,
+          Portfolio: {
+            select: {
+              id: true,
+              title: true,
+              description: true,
+              imageUrl: true,
+              tatoueurId: true,
+              createdAt: true,
+              updatedAt: true,
+            }
+          },
+          ProductSalon: {
+            select: {
+              id: true,
+              name: true,
+              description: true,
+              price: true,
+              imageUrl: true,
+              createdAt: true,
+              updatedAt: true,
+            }
+          },
         },
-        ProductSalon: {
-          select: {
-            id: true,
-            name: true,
-            description: true,
-            price: true,
-            imageUrl: true,
-            createdAt: true,
-            updatedAt: true,
-          }
-        },
-      },
-    });
-    // On filtre côté JS pour matcher les deux slugs
-    const toSlug = (str: string) => str
-      .normalize('NFD').replace(/\p{Diacritic}/gu, '')
-      .toLowerCase().replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '');
-    const found = users.find(u => {
-      const name = toSlug(u.salonName || '');
-      const locSource = [u.city, u.postalCode].filter(v => typeof v === 'string' && v.trim() !== '').join('-');
-      const loc = toSlug(locSource) || 'localisation';
-      return name === nameSlug && loc === locSlug;
-    });
-    return found || null;
+      });
+
+      // On filtre côté JS pour matcher les deux slugs
+      const toSlug = (str: string) => str
+        .normalize('NFD').replace(/\p{Diacritic}/gu, '')
+        .toLowerCase().replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)/g, '');
+      
+      const found = users.find(u => {
+        const name = toSlug(u.salonName || '');
+        const locSource = [u.city, u.postalCode].filter(v => typeof v === 'string' && v.trim() !== '').join('-');
+        const loc = toSlug(locSource) || 'localisation';
+        return name === nameSlug && loc === locSlug;
+      });
+
+      // 3. Mettre en cache le résultat (TTL 2 heures - les données salon changent peu)
+      try {
+        const ttl = 2 * 60 * 60; // 2 heures
+        await this.cacheService.set(cacheKey, found, ttl);
+        console.log(`💾 User avec slug ${nameSlug}/${locSlug} mis en cache`);
+      } catch (cacheError) {
+        console.warn('Erreur sauvegarde cache Redis pour getUserBySlugAndLocation:', cacheError);
+        // Continue même si la mise en cache échoue
+      }
+
+      return found || null;
+    } catch (error) {
+      console.error('Erreur dans getUserBySlugAndLocation:', error);
+      throw error;
+    }
   }
 
   //! GET USER BY ID
@@ -407,6 +440,8 @@ export class UserService {
     await this.cacheService.del(`user:${userId}`);
     // Invalider aussi tous les caches de listes d'utilisateurs
     this.cacheService.delPattern('users:list:*');
+    // Invalider les caches de slug qui pourraient être affectés
+    this.cacheService.delPattern('user:slug:*');
 
     return user;
   }
@@ -425,6 +460,8 @@ export class UserService {
     // Invalider le cache après update
     await this.cacheService.del(`user:${userId}`);
     this.cacheService.delPattern('users:list:*');
+    // Invalider les caches de slug car les horaires peuvent affecter l'affichage
+    this.cacheService.delPattern('user:slug:*');
 
     return user;
   }
@@ -469,6 +506,8 @@ export class UserService {
     // Invalider le cache après update
     await this.cacheService.del(`user:${userId}`);
     this.cacheService.delPattern('users:list:*');
+    // Invalider les caches de slug car les photos peuvent affecter l'affichage
+    this.cacheService.delPattern('user:slug:*');
 
     console.log("Salon photos updated:", limitedPhotos);
     return user;
