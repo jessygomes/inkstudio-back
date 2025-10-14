@@ -98,6 +98,7 @@ export class UserController {
   //! GET USER BY SLUG + LOCALISATION
   @Get(":nameSlug/:locSlug")
   getUserBySlugAndLocation(@Param('nameSlug') nameSlug: string, @Param('locSlug') locSlug: string) {
+    console.log("nameSlug et locSlug dans le controller:", nameSlug, locSlug);
     return this.userService.getUserBySlugAndLocation({ nameSlug, locSlug });
   }
 

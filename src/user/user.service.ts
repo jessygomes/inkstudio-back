@@ -386,22 +386,55 @@ export class UserService {
 
     //! GET PHOTOS SALON
   async getPhotosSalon({userId} : {userId: string}) {
-    const user = await this.prisma.user.findUnique({
-      where: {
-        id: userId,
-      },
-      select: {
-        salonPhotos: true,
-      },
-    });
+    try {
+      // Créer une clé de cache spécifique pour les photos salon
+      const cacheKey = `user:photos:${userId}`;
 
-    if (!user) {
-      throw new Error('Utilisateur introuvable');
+      // 1. Vérifier dans Redis
+      try {
+        const cachedPhotos = await this.cacheService.get<{salonPhotos: string[]}>(cacheKey);
+        if (cachedPhotos) {
+          console.log(`✅ Photos salon pour user ${userId} trouvées dans Redis`);
+          return cachedPhotos;
+        }
+      } catch (cacheError) {
+        console.warn('Erreur cache Redis pour getPhotosSalon:', cacheError);
+        // Continue sans cache si Redis est indisponible
+      }
+
+      // 2. Sinon, aller chercher en DB
+      const user = await this.prisma.user.findUnique({
+        where: {
+          id: userId,
+        },
+        select: {
+          salonPhotos: true,
+        },
+      });
+
+      if (!user) {
+        throw new Error('Utilisateur introuvable');
+      }
+
+      const result = {
+        salonPhotos: (user.salonPhotos as string[] | undefined) ?? [],
+      };
+
+      // 3. Mettre en cache (TTL 1 heure - les photos changent peu souvent)
+      try {
+        const ttl = 60 * 60; // 1 heure
+        await this.cacheService.set(cacheKey, result, ttl);
+        console.log(`💾 Photos salon pour user ${userId} mises en cache`);
+      } catch (cacheError) {
+        console.warn('Erreur sauvegarde cache Redis pour getPhotosSalon:', cacheError);
+        // Continue même si la mise en cache échoue
+      }
+
+      return result;
+    } catch (error) {
+      console.error('Erreur dans getPhotosSalon:', error);
+      throw error;
     }
-
-    return {
-      salonPhotos: (user.salonPhotos as string[] | undefined) ?? [],
-    };
   }
 
   //! UPDATE USER
@@ -505,6 +538,7 @@ export class UserService {
 
     // Invalider le cache après update
     await this.cacheService.del(`user:${userId}`);
+    await this.cacheService.del(`user:photos:${userId}`); // Invalider spécifiquement le cache des photos
     this.cacheService.delPattern('users:list:*');
     // Invalider les caches de slug car les photos peuvent affecter l'affichage
     this.cacheService.delPattern('user:slug:*');
