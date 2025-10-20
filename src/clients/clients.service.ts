@@ -273,7 +273,7 @@ export class ClientsService {
         return cachedResult;
       }
 
-          // Construire les conditions de recherche
+      // Construire les conditions de recherche
       const searchConditions = search
         ? {
             OR: [

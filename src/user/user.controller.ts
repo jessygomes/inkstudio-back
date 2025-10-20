@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Patch, Query, UseGuards, Request } from '
 import { UserService } from './user.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateAppointmentBookingDto, UpdateConfirmationSettingDto } from './dto/update-confirmation-setting.dto';
+import { UpdateColorProfileDto } from './dto/update-color-profile.dto';
 import { GetUsersDto } from './dto/get-users.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RequestWithUser } from '../auth/jwt.strategy';
@@ -56,6 +57,14 @@ export class UserController {
     return this.userService.getAppointmentBooking({ userId });
   }
 
+  //! RECUPERER LES COULEURS DU PROFIL
+  @UseGuards(JwtAuthGuard)
+  @Get('color-profile')
+  getColorProfile(@Request() req: RequestWithUser) {
+    const userId = req.user.userId;
+    return this.userService.getColorProfile({ userId });
+  }
+
   //! MISE À JOUR DU PARAMÈTRE DE PRISE DES RDV
   @UseGuards(JwtAuthGuard)
   @Patch('appointment-setting')
@@ -65,6 +74,18 @@ export class UserController {
     return this.userService.updateAppointmentBooking({
       userId,
       appointmentBookingEnabled: body.appointmentBookingEnabled,
+    });
+  }
+
+  //! MISE À JOUR DES COULEURS DU PROFIL
+  @UseGuards(JwtAuthGuard)
+  @Patch('color-profile')
+  updateColorProfile(@Body() body: UpdateColorProfileDto, @Request() req: RequestWithUser) {
+    const userId = req.user.userId;
+    return this.userService.updateColorProfile({
+      userId,
+      colorProfile: body.colorProfile,
+      colorProfileBis: body.colorProfileBis,
     });
   }
 

@@ -729,4 +729,114 @@ export class UserService {
       };
     }
   }
+
+  //! ------------------------------------------------------------------------------
+
+  //! RECUPERER LES COULEURS DU PROFIL
+
+  //! ------------------------------------------------------------------------------
+  async getColorProfile({userId}: {userId: string}) {
+    try {
+      const cacheKey = `user:color-profile:${userId}`;
+
+      // 1. Vérifier dans Redis
+      const cachedColorProfile = await this.cacheService.get<{colorProfile: string | null, colorProfileBis: string | null}>(cacheKey);
+      
+      if (cachedColorProfile) {
+        console.log(`✅ Color profile pour user ${userId} trouvé dans Redis`);
+        return {
+          error: false,
+          user: cachedColorProfile,
+        };
+      }
+
+      // 2. Sinon, aller chercher en DB
+      const user = await this.prisma.user.findUnique({
+        where: {
+          id: userId,
+        },
+        select: {
+          colorProfile: true,
+          colorProfileBis: true,
+        },
+      });
+
+      // 3. Mettre en cache (TTL 1 heure pour les couleurs)
+      if (user) {
+        await this.cacheService.set(cacheKey, user, 3600);
+        console.log(`💾 Color profile pour user ${userId} mis en cache`);
+      }
+
+      return {
+        error: false,
+        user,
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
+
+  //! ------------------------------------------------------------------------------
+
+  //! METTRE À JOUR LES COULEURS DU PROFIL
+
+  //! ------------------------------------------------------------------------------
+  async updateColorProfile({userId, colorProfile, colorProfileBis}: {userId: string, colorProfile?: string, colorProfileBis?: string}) {
+    try {
+      // Préparer les données à mettre à jour (seulement les champs fournis)
+      const updateData: { colorProfile?: string; colorProfileBis?: string } = {};
+      
+      if (colorProfile !== undefined) {
+        updateData.colorProfile = colorProfile;
+      }
+      
+      if (colorProfileBis !== undefined) {
+        updateData.colorProfileBis = colorProfileBis;
+      }
+
+      // Vérifier qu'au moins un champ est fourni
+      if (Object.keys(updateData).length === 0) {
+        return {
+          error: true,
+          message: 'Aucune couleur de profil fournie pour la mise à jour.',
+        };
+      }
+
+      const user = await this.prisma.user.update({
+        where: {
+          id: userId,
+        },
+        data: updateData,
+        select: {
+          id: true,
+          colorProfile: true,
+          colorProfileBis: true,
+          salonName: true,
+        },
+      });
+
+      // Invalider le cache après update
+      await this.cacheService.del(`user:${userId}`);
+      await this.cacheService.del(`user:color-profile:${userId}`);
+      // Invalider les caches de listes et de slug car les couleurs peuvent affecter l'affichage
+      this.cacheService.delPattern('users:list:*');
+      this.cacheService.delPattern('user:slug:*');
+
+      return {
+        error: false,
+        message: 'Couleurs du profil mises à jour avec succès.',
+        user,
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
 }

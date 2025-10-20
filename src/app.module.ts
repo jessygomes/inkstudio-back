@@ -29,6 +29,9 @@ import { BlockedTimeSlotsModule } from './blocked-time-slots/blocked-time-slots.
 import { VideoCallModule } from './video-call/video-call.module';
 import { BullModule } from '@nestjs/bull';
 import { RedisModule } from './redis/redis.module';
+import { StocksModule } from './stocks/stocks.module';
+import { StocksController } from './stocks/stocks.controller';
+import { StocksService } from './stocks/stocks.service';
 
 @Module({
   imports: [
@@ -49,6 +52,7 @@ import { RedisModule } from './redis/redis.module';
     SaasModule,
     BlockedTimeSlotsModule,
     VideoCallModule,
+    StocksModule,
     // 🔴 Configuration Redis globale pour Bull
     BullModule.forRoot({
       redis: {
@@ -66,6 +70,7 @@ import { RedisModule } from './redis/redis.module';
     UserController,
     AppointmentsController,
     ClientsController,
+    StocksController,
     TattooHistoryController,
     PortfolioController,
     ProductSalonController,
@@ -75,6 +80,7 @@ import { RedisModule } from './redis/redis.module';
     PrismaService,
     AppointmentsService,
     ClientsService,
+    StocksService,
     TattooHistoryService,
     PortfolioService,
   ],
