@@ -14,7 +14,12 @@ async function bootstrap() {
   );
 
   app.enableCors({
-    origin: [process.env.FRONTEND_URL, process.env.FRONTEND_URL_BIS],
+    origin: [
+      process.env.FRONTEND_URL,
+      process.env.FRONTEND_URL_BIS,
+      process.env.FRONTEND_URL_FR,
+      process.env.FRONTEND_URL_FR_BIS,
+    ],
     credentials: true, // Permet d'envoyer des cookies
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
