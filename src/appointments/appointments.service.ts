@@ -95,7 +95,10 @@ export class AppointmentsService {
   //! ------------------------------------------------------------------------------
   async create({ userId, rdvBody }: {userId: string, rdvBody: CreateAppointmentDto}) {
     try {
-      const {  title, prestation, start, end, clientFirstname, clientLastname, clientEmail, clientPhone, tatoueurId, visio, visioRoom } = rdvBody;
+      const {  title, prestation, start, end, clientFirstname, clientLastname, clientEmail, clientPhone, clientBirthdate, tatoueurId, visio, visioRoom } = rdvBody;
+
+      // Convertir la date de naissance en objet Date si elle est fournie
+      const parsedBirthdate = clientBirthdate ? new Date(clientBirthdate) : null;
 
       // 🔒 VÉRIFIER LES LIMITES SAAS - RENDEZ-VOUS PAR MOIS
       const canCreateAppointment = await this.saasService.canPerformAction(userId, 'appointment');
@@ -169,6 +172,7 @@ export class AppointmentsService {
             lastName: clientLastname,
             email: clientEmail,
             phone: clientPhone || "",
+            birthDate: parsedBirthdate,
             userId,
           },
         });
@@ -373,7 +377,10 @@ export class AppointmentsService {
   async createByClient({ userId, rdvBody }: {userId: string, rdvBody: CreateAppointmentDto}) {
     console.log(`🔄 Création d'un nouveau rendez-vous pour l'utilisateur ${userId}`);
     try {
-      const {  title, prestation, start, end, clientFirstname, clientLastname, clientEmail, clientPhone, tatoueurId, visio, visioRoom } = rdvBody;
+      const {  title, prestation, start, end, clientFirstname, clientLastname, clientEmail, clientPhone, clientBirthdate, tatoueurId, visio, visioRoom } = rdvBody;
+
+      // Convertir la date de naissance en objet Date si elle est fournie
+      const parsedBirthdate = clientBirthdate ? new Date(clientBirthdate) : null;
 
       // 🔒 VÉRIFIER LES LIMITES SAAS - RENDEZ-VOUS PAR MOIS
       const canCreateAppointment = await this.saasService.canPerformAction(userId, 'appointment');
@@ -447,6 +454,7 @@ export class AppointmentsService {
             lastName: clientLastname,
             email: clientEmail,
             phone: clientPhone || "",
+            birthDate: parsedBirthdate,
             userId,
           },
         });
