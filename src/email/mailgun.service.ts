@@ -29,9 +29,9 @@ export class MailgunService {
 
   constructor() {
     this.config = {
-      apiKey: process.env.MAILGUN_API_KEY || '',
+      apiKey: process.env.MAILGUN_API_KEY || process.env.SENDING_KEY || '',
       domain: process.env.MAILGUN_DOMAIN || '',
-      baseUrl: process.env.MAILGUN_BASE_URL || 'https://api.mailgun.net',
+      baseUrl: process.env.MAILGUN_BASE_URL || 'https://api.eu.mailgun.net', // URL EU par défaut
     };
 
     if (!this.config.apiKey || !this.config.domain) {
@@ -142,5 +142,44 @@ export class MailgunService {
       isConfigured: this.isConfigured(),
       apiKeyConfigured: !!this.config.apiKey,
     };
+  }
+
+  /**
+   * Test d'envoi d'email de production (selon l'exemple Mailgun)
+   * @param testEmail - Email de test à envoyer
+   * @returns Promise<MailgunResponse>
+   */
+  async sendProductionTestEmail(testEmail: string): Promise<MailgunResponse> {
+    try {
+      this.logger.log('🧪 Test d\'envoi email production Mailgun...');
+
+      const testOptions: EmailOptions = {
+        from: `INKERA <postmaster@${this.config.domain}>`,
+        to: testEmail,
+        subject: "Test Production - INKERA STUDIO",
+        html: `
+          <h2>🎉 Test de Production Réussi !</h2>
+          <p>Félicitations ! Votre configuration Mailgun fonctionne parfaitement en production.</p>
+          <p><strong>Domaine :</strong> ${this.config.domain}</p>
+          <p><strong>Base URL :</strong> ${this.config.baseUrl}</p>
+          <p>Vous pouvez maintenant envoyer des emails depuis votre application INKERA STUDIO !</p>
+          <br>
+          <p><em>Envoyé via Mailgun API</em></p>
+        `
+      };
+
+      const result = await this.sendEmail(testOptions);
+      
+      this.logger.log('✅ Email de test production envoyé avec succès !', {
+        messageId: result.id,
+        to: testEmail
+      });
+
+      return result;
+    } catch (error) {
+      this.logger.error('❌ Échec du test email production:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
+      throw new Error(`Test production échoué: ${errorMessage}`);
+    }
   }
 }

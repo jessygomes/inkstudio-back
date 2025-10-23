@@ -11,12 +11,15 @@ export class MailService {
 
   async sendMail(to: string, subject: string, html: string, fromName?: string, replyTo?: string): Promise<MailgunResponse> {
     try {
+      // Utiliser le domaine configuré dans les variables d'environnement
+      const domain = process.env.MAILGUN_DOMAIN || 'inkera-studio.com';
+      
       const emailOptions = {
         to,
         subject,
         html,
-        from: fromName ? `${fromName} <mailgun@sandbox113edeea125e451dbe4bfc41ff511387.mailgun.org>` : 'Tattoo Studio <mailgun@sandbox113edeea125e451dbe4bfc41ff511387.mailgun.org>',
-        'h:Reply-To': replyTo || 'mailgun@sandbox113edeea125e451dbe4bfc41ff511387.mailgun.org'
+        from: fromName ? `${fromName} <noreply@${domain}>` : `Tattoo Studio <noreply@${domain}>`,
+        'h:Reply-To': replyTo || `noreply@${domain}`
       };
 
       return await this.mailgunService.sendEmail(emailOptions);

@@ -129,8 +129,10 @@ export class UserController {
     return this.userService.getUserById({userId}); // On appelle la méthode getUserById du service UserService
   }
   
+  @UseGuards(JwtAuthGuard)
   @Patch(":userId") // :userId est un paramètre dynamique qui sera récupéré dans la méthode getUser
-  updateUser(@Param('userId') userId: string, @Body() userBody: UpdateUserDto) { // On récupère le paramètre dynamique userId
+  updateUser(@Request() req: RequestWithUser, @Body() userBody: UpdateUserDto) { // On récupère le paramètre dynamique userId
+    const userId = req.params.userId;
     return this.userService.updateUser({userId, userBody}); // On appelle la méthode getUserById du service UserService
   }
 }

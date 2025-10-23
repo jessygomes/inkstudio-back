@@ -1579,6 +1579,8 @@ export class AppointmentsService {
         };
       }
 
+      console.log(`✉️ Envoi d'un email personnalisé au client ${appointment.client.email} pour le RDV ${appointmentId}`);
+
       // Envoyer l'email personnalisé avec le template et le nom du salon
       await this.mailService.sendCustomEmail(
         appointment.client.email,

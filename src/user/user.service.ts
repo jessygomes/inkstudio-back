@@ -253,6 +253,8 @@ export class UserService {
           salonHours: true,
           prestations: true,
           appointmentBookingEnabled: true,
+          colorProfile: true,
+          colorProfileBis: true,
           Tatoueur: {
             select: {
               id: true,
@@ -478,6 +480,8 @@ export class UserService {
 
     return user;
   }
+
+  
 
   //! UPDATE HOURS SALON
   async updateHoursSalon({userId, salonHours} : {userId: string; salonHours: string}) {
