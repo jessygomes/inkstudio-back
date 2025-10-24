@@ -140,7 +140,7 @@ export class AuthService {
           email,
           {
             recipientName: createdUser.salonName || 'Salon',
-            salonName: createdUser.salonName || 'InkStudio',
+            salonName: createdUser.salonName || 'Inkera Studio',
             verificationUrl: confirmationUrl,
           },
           createdUser.salonName || undefined

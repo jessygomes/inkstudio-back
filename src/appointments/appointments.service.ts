@@ -101,15 +101,15 @@ export class AppointmentsService {
       const parsedBirthdate = clientBirthdate ? new Date(clientBirthdate) : null;
 
       // 🔒 VÉRIFIER LES LIMITES SAAS - RENDEZ-VOUS PAR MOIS
-      const canCreateAppointment = await this.saasService.canPerformAction(userId, 'appointment');
+      // const canCreateAppointment = await this.saasService.canPerformAction(userId, 'appointment');
       
-      if (!canCreateAppointment) {
-        const limits = await this.saasService.checkLimits(userId);
-        return {
-          error: true,
-          message: `Limite de rendez-vous par mois atteinte (${limits.limits.appointments}). Passez au plan PRO ou BUSINESS pour continuer.`,
-        };
-      }
+      // if (!canCreateAppointment) {
+      //   const limits = await this.saasService.checkLimits(userId);
+      //   return {
+      //     error: true,
+      //     message: `Limite de rendez-vous par mois atteinte (${limits.limits.appointments}). Passez au plan PRO ou BUSINESS pour continuer.`,
+      //   };
+      // }
 
         // Vérifier si le tatoueur existe
         const artist = await this.prisma.tatoueur.findUnique({
@@ -155,15 +155,15 @@ export class AppointmentsService {
 
       if (!client) {
         // 🔒 VÉRIFIER LES LIMITES SAAS - CLIENTS (seulement si on crée un nouveau client)
-        const canCreateClient = await this.saasService.canPerformAction(userId, 'client');
+        // const canCreateClient = await this.saasService.canPerformAction(userId, 'client');
         
-        if (!canCreateClient) {
-          const limits = await this.saasService.checkLimits(userId);
-          return {
-            error: true,
-            message: `Limite de fiches clients atteinte (${limits.limits.clients}). Passez au plan PRO ou BUSINESS pour continuer.`,
-          };
-        }
+        // if (!canCreateClient) {
+        //   const limits = await this.saasService.checkLimits(userId);
+        //   return {
+        //     error: true,
+        //     message: `Limite de fiches clients atteinte (${limits.limits.clients}). Passez au plan PRO ou BUSINESS pour continuer.`,
+        //   };
+        // }
 
         // Étape 2 : Créer le client s'il n'existe pas
         client = await this.prisma.client.create({
@@ -375,7 +375,6 @@ export class AppointmentsService {
 
   //! ------------------------------------------------------------------------------
   async createByClient({ userId, rdvBody }: {userId: string, rdvBody: CreateAppointmentDto}) {
-    console.log(`🔄 Création d'un nouveau rendez-vous pour l'utilisateur ${userId}`);
     try {
       const {  title, prestation, start, end, clientFirstname, clientLastname, clientEmail, clientPhone, clientBirthdate, tatoueurId, visio, visioRoom } = rdvBody;
 

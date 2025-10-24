@@ -1,6 +1,5 @@
 import {
   IsBoolean,
-  IsDate,
   IsEmail,
   IsEnum,
   IsNotEmpty,
@@ -51,9 +50,9 @@ export class CreateAppointmentDto {
   @IsNotEmpty()
   clientPhone: string;
 
-  @IsDate()
+  @IsString()
   @IsNotEmpty()
-  clientBirthdate: Date;
+  clientBirthdate: string;
 
   @IsString()
   @IsNotEmpty()

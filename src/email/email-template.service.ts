@@ -582,7 +582,7 @@ export class EmailTemplateService {
       </div>
     `;
 
-    return this.getBaseTemplate(content, `Vérification d'email - ${data.salonName || 'InkStudio'}`, data.salonName || 'InkStudio');
+    return this.getBaseTemplate(content, `Vérification d'email - ${data.salonName || 'Inkera Studio'}`, data.salonName || 'Inkera Studio');
   }
 
   /**
@@ -615,7 +615,7 @@ export class EmailTemplateService {
       </div>
     `;
 
-    return this.getBaseTemplate(content, `Réinitialisation de mot de passe - ${data.salonName || 'InkStudio'}`, data.salonName || 'InkStudio');
+    return this.getBaseTemplate(content, `Réinitialisation de mot de passe - ${data.salonName || 'Inkera Studio'}`, data.salonName || 'Inkera Studio');
   }
 
   /**
@@ -628,7 +628,7 @@ export class EmailTemplateService {
         
         <div class="message">
           <p>Bonjour ${data.recipientName || 'cher client'} !</p>
-          <p>Cela fait ${data.followUpDetails?.daysSince || 'quelques'} jours depuis votre passage chez ${data.salonName || 'InkStudio'}.</p>
+          <p>Cela fait ${data.followUpDetails?.daysSince || 'quelques'} jours depuis votre passage chez ${data.salonName || 'Inkera Studio'}.</p>
           <p>Nous espérons que vous êtes ravi(e) de votre nouveau tatouage ! ✨</p>
         </div>
 
@@ -676,7 +676,7 @@ export class EmailTemplateService {
       </div>
     `;
 
-    return this.getBaseTemplate(content, `Suivi de votre tatouage - ${data.salonName || 'InkStudio'}`, data.salonName || 'InkStudio');
+    return this.getBaseTemplate(content, `Suivi de votre tatouage - ${data.salonName || 'Inkera Studio'}`, data.salonName || 'Inkera Studio');
   }
 
   /**
