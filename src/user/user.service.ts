@@ -84,6 +84,7 @@ export class UserService {
             postalCode: true,
             salonHours: true,
             prestations: true,
+            appointmentBookingEnabled: true,
             Tatoueur: {
               select: {
                 id: true,

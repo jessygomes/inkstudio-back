@@ -985,6 +985,9 @@ export class AppointmentsService {
       const appointments = await this.prisma.appointment.findMany({
         where: {
           tatoueurId,
+          status: {
+            not: 'CANCELED' // Exclure les rendez-vous annulés
+          },
           start: {
             gte: start,
             lt: end,
