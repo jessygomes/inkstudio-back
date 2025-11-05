@@ -3,6 +3,9 @@ import { Injectable } from '@nestjs/common';
 export interface EmailTemplateData {
   recipientName?: string;
   salonName?: string;
+  // Couleurs du profil utilisateur
+  colorProfile?: string;
+  colorProfileBis?: string;
   appointmentDetails?: {
     date: string;
     time: string;
@@ -77,9 +80,135 @@ export interface EmailTemplateData {
 export class EmailTemplateService {
   
   /**
+   * Définit le schéma de couleurs selon le profil utilisateur
+   */
+  private getColorScheme(colorProfile: string = 'default', colorProfileBis: string = 'default') {
+    const colorSchemes = {
+      default: {
+        primary: '#ff5500',
+        secondary: '#ff9d00',
+        accent: '#af7e70',
+        accentSecondary: '#c79f8b',
+        primaryRgba: 'rgba(175, 126, 112, 0.1)',
+        secondaryRgba: 'rgba(199, 159, 139, 0.1)',
+        lightBackground: 'rgba(199, 159, 139, 0.1)',
+        lightBackgroundSecondary: 'rgba(175, 126, 112, 0.1)',
+        buttonShadow: 'rgba(175, 126, 112, 0.3)',
+        buttonHoverShadow: 'rgba(255, 85, 0, 0.4)',
+      },
+      blue: {
+        primary: '#3b82f6',
+        secondary: '#1d4ed8',
+        accent: '#60a5fa',
+        accentSecondary: '#93c5fd',
+        primaryRgba: 'rgba(59, 130, 246, 0.1)',
+        secondaryRgba: 'rgba(29, 78, 216, 0.1)',
+        lightBackground: 'rgba(96, 165, 250, 0.1)',
+        lightBackgroundSecondary: 'rgba(147, 197, 253, 0.1)',
+        buttonShadow: 'rgba(59, 130, 246, 0.3)',
+        buttonHoverShadow: 'rgba(29, 78, 216, 0.4)',
+      },
+      green: {
+        primary: '#10b981',
+        secondary: '#059669',
+        accent: '#34d399',
+        accentSecondary: '#6ee7b7',
+        primaryRgba: 'rgba(16, 185, 129, 0.1)',
+        secondaryRgba: 'rgba(5, 150, 105, 0.1)',
+        lightBackground: 'rgba(52, 211, 153, 0.1)',
+        lightBackgroundSecondary: 'rgba(110, 231, 183, 0.1)',
+        buttonShadow: 'rgba(16, 185, 129, 0.3)',
+        buttonHoverShadow: 'rgba(5, 150, 105, 0.4)',
+      },
+      purple: {
+        primary: '#8b5cf6',
+        secondary: '#7c3aed',
+        accent: '#a78bfa',
+        accentSecondary: '#c4b5fd',
+        primaryRgba: 'rgba(139, 92, 246, 0.1)',
+        secondaryRgba: 'rgba(124, 58, 237, 0.1)',
+        lightBackground: 'rgba(167, 139, 250, 0.1)',
+        lightBackgroundSecondary: 'rgba(196, 181, 253, 0.1)',
+        buttonShadow: 'rgba(139, 92, 246, 0.3)',
+        buttonHoverShadow: 'rgba(124, 58, 237, 0.4)',
+      },
+      red: {
+        primary: '#ef4444',
+        secondary: '#dc2626',
+        accent: '#f87171',
+        accentSecondary: '#fca5a5',
+        primaryRgba: 'rgba(239, 68, 68, 0.1)',
+        secondaryRgba: 'rgba(220, 38, 38, 0.1)',
+        lightBackground: 'rgba(248, 113, 113, 0.1)',
+        lightBackgroundSecondary: 'rgba(252, 165, 165, 0.1)',
+        buttonShadow: 'rgba(239, 68, 68, 0.3)',
+        buttonHoverShadow: 'rgba(220, 38, 38, 0.4)',
+      },
+      pink: {
+        primary: '#ec4899',
+        secondary: '#db2777',
+        accent: '#f472b6',
+        accentSecondary: '#f9a8d4',
+        primaryRgba: 'rgba(236, 72, 153, 0.1)',
+        secondaryRgba: 'rgba(219, 39, 119, 0.1)',
+        lightBackground: 'rgba(244, 114, 182, 0.1)',
+        lightBackgroundSecondary: 'rgba(249, 168, 212, 0.1)',
+        buttonShadow: 'rgba(236, 72, 153, 0.3)',
+        buttonHoverShadow: 'rgba(219, 39, 119, 0.4)',
+      },
+      yellow: {
+        primary: '#f59e0b',
+        secondary: '#d97706',
+        accent: '#fbbf24',
+        accentSecondary: '#fcd34d',
+        primaryRgba: 'rgba(245, 158, 11, 0.1)',
+        secondaryRgba: 'rgba(217, 119, 6, 0.1)',
+        lightBackground: 'rgba(251, 191, 36, 0.1)',
+        lightBackgroundSecondary: 'rgba(252, 211, 77, 0.1)',
+        buttonShadow: 'rgba(245, 158, 11, 0.3)',
+        buttonHoverShadow: 'rgba(217, 119, 6, 0.4)',
+      },
+      teal: {
+        primary: '#14b8a6',
+        secondary: '#0d9488',
+        accent: '#2dd4bf',
+        accentSecondary: '#5eead4',
+        primaryRgba: 'rgba(20, 184, 166, 0.1)',
+        secondaryRgba: 'rgba(13, 148, 136, 0.1)',
+        lightBackground: 'rgba(45, 212, 191, 0.1)',
+        lightBackgroundSecondary: 'rgba(94, 234, 212, 0.1)',
+        buttonShadow: 'rgba(20, 184, 166, 0.3)',
+        buttonHoverShadow: 'rgba(13, 148, 136, 0.4)',
+      },
+    };
+
+    // Utiliser la couleur principale ou par défaut
+    const primaryScheme = colorSchemes[colorProfile as keyof typeof colorSchemes] || colorSchemes.default;
+    
+    // Si une couleur secondaire est définie et différente, on peut l'utiliser pour certains éléments
+    if (colorProfileBis && colorProfileBis !== 'default' && colorProfileBis !== colorProfile) {
+      const secondaryScheme = colorSchemes[colorProfileBis as keyof typeof colorSchemes];
+      if (secondaryScheme) {
+        // Mélanger les deux schémas pour créer un thème hybride
+        return {
+          ...primaryScheme,
+          secondary: secondaryScheme.primary,
+          accentSecondary: secondaryScheme.accent,
+          lightBackgroundSecondary: secondaryScheme.primaryRgba,
+        };
+      }
+    }
+
+    return primaryScheme;
+  }
+
+  /**
    * Template de base avec le design cohérent du site
    */
-  private getBaseTemplate(content: string, title: string = 'InkStudio', salonName: string = 'InkStudio'): string {
+  private getBaseTemplate(content: string, title: string = 'InkStudio', salonName: string = 'InkStudio', colorProfile: string = 'default', colorProfileBis: string = 'default'): string {
+    // Définir les couleurs selon le profil
+    const colors = this.getColorScheme(colorProfile, colorProfileBis);
+    
     return `
       <!DOCTYPE html>
       <html lang="fr">
@@ -96,7 +225,7 @@ export class EmailTemplateService {
           }
           
           body {
-            font-family: 'Exo 2', sans-serif;
+            font-family: 'Didact Gothic', sans-serif;
             background-color: #ffffff;
             color: #171717;
             line-height: 1.6;
@@ -114,7 +243,7 @@ export class EmailTemplateService {
           }
           
           .header {
-            background: linear-gradient(90deg, #ff5500, #ff9d00);
+            background: linear-gradient(90deg, ${colors.primary}, ${colors.secondary});
             padding: 30px 40px;
             text-align: center;
             position: relative;
@@ -127,7 +256,7 @@ export class EmailTemplateService {
             left: 0;
             right: 0;
             bottom: 0;
-            background: linear-gradient(135deg, rgba(175, 126, 112, 0.1), rgba(199, 159, 139, 0.1));
+            background: linear-gradient(135deg, ${colors.primaryRgba}, ${colors.secondaryRgba});
             pointer-events: none;
           }
           
@@ -170,12 +299,12 @@ export class EmailTemplateService {
           }
           
           .details-card {
-            background: linear-gradient(135deg, #3e2c27, #2d1f1a);
+            background: linear-gradient(135deg, #131313, #1a1a1a);
             color: #ffffff;
             padding: 25px;
             border-radius: 15px;
             margin: 25px 0;
-            border-left: 5px solid #af7e70;
+            border-left: 5px solid ${colors.accent};
           }
           
           .details-title {
@@ -183,7 +312,7 @@ export class EmailTemplateService {
             font-size: 18px;
             font-weight: 600;
             margin-bottom: 15px;
-            color: #c79f8b;
+            color: #ffffff;
           }
           
           .details-list {
@@ -193,7 +322,7 @@ export class EmailTemplateService {
           
           .details-list li {
             padding: 8px 0;
-            border-bottom: 1px solid rgba(175, 126, 112, 0.2);
+            border-bottom: 1px solid #9f9f9fff;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -205,7 +334,7 @@ export class EmailTemplateService {
           
           .detail-label {
             font-weight: 500;
-            color: #c79f8b;
+            color: #9f9f9fff;
           }
           
           .detail-value {
@@ -215,7 +344,7 @@ export class EmailTemplateService {
           
           .cta-button {
             display: inline-block;
-            background: linear-gradient(90deg, #af7e70, #c79f8b);
+            background: linear-gradient(90deg, ${colors.accent}, ${colors.accentSecondary});
             color: #ffffff;
             text-decoration: none;
             padding: 15px 30px;
@@ -226,17 +355,17 @@ export class EmailTemplateService {
             text-align: center;
             margin: 20px 0;
             transition: all 0.3s ease;
-            box-shadow: 0 5px 15px rgba(175, 126, 112, 0.3);
+            box-shadow: 0 5px 15px ${colors.buttonShadow};
           }
           
           .cta-button:hover {
-            background: linear-gradient(90deg, #ff5500, #ff9d00);
+            background: linear-gradient(90deg, ${colors.primary}, ${colors.secondary});
             transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(255, 85, 0, 0.4);
+            box-shadow: 0 8px 25px ${colors.buttonHoverShadow};
           }
           
           .warning-box {
-            background: linear-gradient(135deg, #ff5500, #ff9d00);
+            background: linear-gradient(135deg, ${colors.primary}, ${colors.secondary});
             color: #ffffff;
             padding: 20px;
             border-radius: 10px;
@@ -268,25 +397,25 @@ export class EmailTemplateService {
           .social-link {
             display: inline-block;
             margin: 0 10px;
-            color: #af7e70;
+            color: ${colors.accent};
             text-decoration: none;
             font-weight: 500;
             transition: color 0.3s ease;
           }
           
           .social-link:hover {
-            color: #ff5500;
+            color: ${colors.primary};
           }
           
           .divider {
             height: 2px;
-            background: linear-gradient(90deg, #af7e70, #c79f8b);
+            background: linear-gradient(90deg, ${colors.accent}, ${colors.accentSecondary});
             margin: 20px 0;
             border-radius: 1px;
           }
           
           .token-display {
-            background: linear-gradient(135deg, #af7e70, #c79f8b);
+            background: linear-gradient(135deg, ${colors.accent}, ${colors.accentSecondary});
             color: #ffffff;
             padding: 20px;
             border-radius: 15px;
@@ -296,26 +425,26 @@ export class EmailTemplateService {
             font-size: 24px;
             font-weight: 700;
             letter-spacing: 3px;
-            box-shadow: 0 5px 15px rgba(175, 126, 112, 0.3);
+            box-shadow: 0 5px 15px ${colors.buttonShadow};
           }
           
           .appointment-summary {
-            background: linear-gradient(135deg, rgba(199, 159, 139, 0.1), rgba(175, 126, 112, 0.1));
-            border: 2px solid #c79f8b;
+            background: linear-gradient(135deg, ${colors.lightBackground}, ${colors.lightBackgroundSecondary});
+            border: 2px solid ${colors.accentSecondary};
             padding: 25px;
             border-radius: 15px;
             margin: 25px 0;
           }
           
           .price-highlight {
-            background: linear-gradient(90deg, #ff5500, #ff9d00);
+            background: linear-gradient(90deg, ${colors.primary}, ${colors.secondary});
             color: #ffffff;
             padding: 10px 20px;
             border-radius: 20px;
             font-weight: 700;
             font-size: 18px;
             display: inline-block;
-            box-shadow: 0 3px 10px rgba(255, 85, 0, 0.3);
+            box-shadow: 0 3px 10px ${colors.buttonHoverShadow};
           }
           
           @media (max-width: 600px) {
@@ -374,7 +503,7 @@ export class EmailTemplateService {
   //         </div>
 
   /**
-   * Template pour confirmation de rendez-vous (client)
+   *! Template pour confirmation de rendez-vous (client)
    */
   generateAppointmentConfirmationEmail(data: EmailTemplateData): string {
     const content = `
@@ -391,16 +520,16 @@ export class EmailTemplateService {
             <div class="details-title">📅 Détails de votre rendez-vous</div>
             <ul class="details-list">
               <li>
-                <span class="detail-label">📅 Date :</span>
+                <span class="detail-label">📅 Date : </span>
                 <span class="detail-value">${data.appointmentDetails.date}</span>
               </li>
               <li>
-                <span class="detail-label">⏰ Heure :</span>
+                <span class="detail-label">⏰ Heure : </span>
                 <span class="detail-value">${data.appointmentDetails.time}</span>
               </li>
               ${data.appointmentDetails.duration ? `
                 <li>
-                  <span class="detail-label">⏱️ Durée :</span>
+                  <span class="detail-label">⏱️ Durée : </span>
                   <span class="detail-value">${data.appointmentDetails.duration}</span>
                 </li>
               ` : ''}
@@ -410,13 +539,13 @@ export class EmailTemplateService {
               </li>
               ${data.appointmentDetails.tatoueur ? `
                 <li>
-                  <span class="detail-label">👨‍🎨 Artiste :</span>
+                  <span class="detail-label">👨‍🎨 Artiste : </span>
                   <span class="detail-value">${data.appointmentDetails.tatoueur}</span>
                 </li>
               ` : ''}
               ${data.appointmentDetails.price ? `
                 <li>
-                  <span class="detail-label">💰 Prix :</span>
+                  <span class="detail-label">💰 Prix : </span>
                   <span class="detail-value price-highlight">${data.appointmentDetails.price}€</span>
                 </li>
               ` : ''}
@@ -425,7 +554,7 @@ export class EmailTemplateService {
                   <span class="detail-label">🎥 Visioconférence :</span>
                   <span class="detail-value">
                     <a href="${data.appointmentDetails.visioRoom}" 
-                       style="background: #059669; color: white; padding: 8px 16px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; margin-top: 8px;">
+                      style="background: #059669; color: white; padding: 8px 16px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; margin-top: 8px;">
                       🎥 Rejoindre la visioconférence
                     </a>
                   </span>
@@ -435,7 +564,7 @@ export class EmailTemplateService {
           </div>
         ` : ''}
 
-         ${data.customMessage ? `
+        ${data.customMessage ? `
           <div style="background: rgba(245, 158, 11, 0.1); border-left: 4px solid #f59e0b; padding: 20px; border-radius: 8px; margin: 24px 0;">
             <p style="margin: 0 0 8px 0; color: #f59e0b; font-weight: 600;">💬 Message du salon :</p>
             <p style="margin: 0; color: #1e1e1fff; font-style: italic;">"${data.customMessage}"</p>
@@ -453,11 +582,17 @@ export class EmailTemplateService {
       </div>
     `;
 
-    return this.getBaseTemplate(content, `Confirmation de rendez-vous - ${data.salonName || 'InkStudio'}`, data.salonName || 'InkStudio');
+    return this.getBaseTemplate(
+      content, 
+      `Confirmation de rendez-vous - ${data.salonName || 'InkStudio'}`, 
+      data.salonName || 'InkStudio',
+      data.colorProfile || 'default',
+      data.colorProfileBis || 'default'
+    );
   }
 
   /**
-   * Template pour notification de nouveau rendez-vous (salon)
+   *! Template pour notification de nouveau rendez-vous (salon)
    */
   generateNewAppointmentNotificationEmail(data: EmailTemplateData): string {
     const content = `
@@ -526,11 +661,17 @@ export class EmailTemplateService {
       </div>
     `;
 
-    return this.getBaseTemplate(content, `Nouveau rendez-vous - ${data.salonName || 'InkStudio'}`, data.salonName || 'InkStudio');
+    return this.getBaseTemplate(
+      content, 
+      `Nouveau rendez-vous - ${data.salonName || 'InkStudio'}`, 
+      data.salonName || 'InkStudio',
+      data.colorProfile || 'default',
+      data.colorProfileBis || 'default'
+    );
   }
 
   /**
-   * Template pour vérification d'email
+   *! Template pour vérification d'email
    */
   generateEmailVerificationEmail(data: EmailTemplateData): string {
     const content = `
@@ -582,11 +723,17 @@ export class EmailTemplateService {
       </div>
     `;
 
-    return this.getBaseTemplate(content, `Vérification d'email - ${data.salonName || 'Inkera Studio'}`, data.salonName || 'Inkera Studio');
+    return this.getBaseTemplate(
+      content, 
+      `Vérification d'email - ${data.salonName || 'Inkera Studio'}`, 
+      data.salonName || 'Inkera Studio',
+      data.colorProfile || 'default',
+      data.colorProfileBis || 'default'
+    );
   }
 
   /**
-   * Template pour réinitialisation de mot de passe
+   *! Template pour réinitialisation de mot de passe
    */
   generatePasswordResetEmail(data: EmailTemplateData): string {
     // const resetUrl = data.resetUrl || `${process.env.FRONTEND_URL || ''}/reset-password?token=${data.resetToken}&email=${data.recipientName}`;
@@ -615,11 +762,17 @@ export class EmailTemplateService {
       </div>
     `;
 
-    return this.getBaseTemplate(content, `Réinitialisation de mot de passe - ${data.salonName || 'Inkera Studio'}`, data.salonName || 'Inkera Studio');
+    return this.getBaseTemplate(
+      content, 
+      `Réinitialisation de mot de passe - ${data.salonName || 'Inkera Studio'}`, 
+      data.salonName || 'Inkera Studio',
+      data.colorProfile || 'default',
+      data.colorProfileBis || 'default'
+    );
   }
 
   /**
-   * Template pour suivi post-tatouage
+   *! Template pour suivi post-tatouage
    */
   generateFollowUpEmail(data: EmailTemplateData): string {
     const content = `
@@ -676,11 +829,17 @@ export class EmailTemplateService {
       </div>
     `;
 
-    return this.getBaseTemplate(content, `Suivi de votre tatouage - ${data.salonName || 'Inkera Studio'}`, data.salonName || 'Inkera Studio');
+    return this.getBaseTemplate(
+      content, 
+      `Suivi de votre tatouage - ${data.salonName || 'Inkera Studio'}`, 
+      data.salonName || 'Inkera Studio',
+      data.colorProfile || 'default',
+      data.colorProfileBis || 'default'
+    );
   }
 
   /**
-   * Template pour modification de rendez-vous
+   *! Template pour modification de rendez-vous
    */
   generateAppointmentModificationEmail(data: EmailTemplateData): string {
     const content = `
@@ -741,11 +900,17 @@ export class EmailTemplateService {
       </div>
     `;
 
-    return this.getBaseTemplate(content, `Modification de rendez-vous - ${data.salonName || 'InkStudio'}`, data.salonName || 'InkStudio');
+    return this.getBaseTemplate(
+      content, 
+      `Modification de rendez-vous - ${data.salonName || 'InkStudio'}`, 
+      data.salonName || 'InkStudio',
+      data.colorProfile || 'default',
+      data.colorProfileBis || 'default'
+    );
   }
 
   /**
-   * Template pour annulation de rendez-vous
+   *! Template pour annulation de rendez-vous
    */
   generateAppointmentCancellationEmail(data: EmailTemplateData): string {
     const content = `
@@ -799,11 +964,17 @@ export class EmailTemplateService {
       </div>
     `;
 
-    return this.getBaseTemplate(content, `Annulation de rendez-vous - ${data.salonName || 'InkStudio'}`, data.salonName || 'InkStudio');
+    return this.getBaseTemplate(
+      content, 
+      `Annulation de rendez-vous - ${data.salonName || 'InkStudio'}`, 
+      data.salonName || 'InkStudio',
+      data.colorProfile || 'default',
+      data.colorProfileBis || 'default'
+    );
   }
 
   /**
-   * Template générique pour messages personnalisés
+   *! Template générique pour messages personnalisés
    */
   generateCustomEmail(data: EmailTemplateData, subject: string = `Message de ${data.salonName || 'InkStudio'}`): string {
     const content = `
@@ -821,11 +992,17 @@ export class EmailTemplateService {
       </div>
     `;
 
-    return this.getBaseTemplate(content, subject, data.salonName || 'InkStudio');
+    return this.getBaseTemplate(
+      content, 
+      subject, 
+      data.salonName || 'InkStudio',
+      data.colorProfile || 'default',
+      data.colorProfileBis || 'default'
+    );
   }
 
   /**
-   * Template pour notification de rendez-vous en attente (salon)
+   *! Template pour notification de rendez-vous en attente (salon)
    */
   generatePendingAppointmentNotificationEmail(data: EmailTemplateData): string {
     const content = `
@@ -883,11 +1060,17 @@ export class EmailTemplateService {
       </div>
     `;
 
-    return this.getBaseTemplate(content, `Nouveau rendez-vous en attente - ${data.salonName || 'InkStudio'}`, data.salonName || 'InkStudio');
+    return this.getBaseTemplate(
+      content, 
+      `Nouveau rendez-vous en attente - ${data.salonName || 'InkStudio'}`, 
+      data.salonName || 'InkStudio',
+      data.colorProfile || 'default',
+      data.colorProfileBis || 'default'
+    );
   }
 
   /**
-   * Template pour confirmation automatique de rendez-vous (client)
+   *! Template pour confirmation automatique de rendez-vous (client)
    */
   generateAutoConfirmedAppointmentEmail(data: EmailTemplateData): string {
     const content = `
@@ -941,7 +1124,13 @@ export class EmailTemplateService {
       </div>
     `;
 
-    return this.getBaseTemplate(content, `Rendez-vous confirmé - ${data.salonName || 'InkStudio'}`, data.salonName || 'InkStudio');
+    return this.getBaseTemplate(
+      content, 
+      `Rendez-vous confirmé - ${data.salonName || 'InkStudio'}`, 
+      data.salonName || 'InkStudio',
+      data.colorProfile || 'default',
+      data.colorProfileBis || 'default'
+    );
   }
 
   /**
@@ -995,11 +1184,17 @@ export class EmailTemplateService {
       </div>
     `;
 
-    return this.getBaseTemplate(content, `Reprogrammation nécessaire - ${data.salonName || 'InkStudio'}`, data.salonName || 'InkStudio');
+    return this.getBaseTemplate(
+      content, 
+      `Reprogrammation nécessaire - ${data.salonName || 'InkStudio'}`, 
+      data.salonName || 'InkStudio',
+      data.colorProfile || 'default',
+      data.colorProfileBis || 'default'
+    );
   }
 
   /**
-   * Template pour notification d'acceptation de reprogrammation (pour le salon)
+   *! Template pour notification d'acceptation de reprogrammation (pour le salon)
    */
   generateRescheduleAcceptedNotificationEmail(data: EmailTemplateData): string {
     const reschedule = data.rescheduleAcceptedDetails;
@@ -1049,11 +1244,17 @@ export class EmailTemplateService {
       </div>
     `;
 
-    return this.getBaseTemplate(content, `Reprogrammation acceptée - ${data.salonName || 'InkStudio'}`, data.salonName || 'InkStudio');
+    return this.getBaseTemplate(
+      content, 
+      `Reprogrammation acceptée - ${data.salonName || 'InkStudio'}`, 
+      data.salonName || 'InkStudio',
+      data.colorProfile || 'default',
+      data.colorProfileBis || 'default'
+    );
   }
 
   /**
-   * Template pour confirmation de reprogrammation (pour le client)
+   *! Template pour confirmation de reprogrammation (pour le client)
    */
   generateRescheduleConfirmationEmail(data: EmailTemplateData): string {
     const reschedule = data.rescheduleConfirmationDetails;
@@ -1098,11 +1299,17 @@ export class EmailTemplateService {
       </div>
     `;
 
-    return this.getBaseTemplate(content, `Rendez-vous reprogrammé - ${data.salonName || 'InkStudio'}`, data.salonName || 'InkStudio');
+    return this.getBaseTemplate(
+      content, 
+      `Rendez-vous reprogrammé - ${data.salonName || 'InkStudio'}`, 
+      data.salonName || 'InkStudio',
+      data.colorProfile || 'default',
+      data.colorProfileBis || 'default'
+    );
   }
 
   /**
-   * Template de réponse au follow-up du client
+   *! Template de réponse au follow-up du client
    */
   generateFollowUpResponseEmail(data: EmailTemplateData): string {
     const details = data.followUpResponseDetails;
@@ -1137,11 +1344,17 @@ export class EmailTemplateService {
       </div>
     `;
 
-    return this.getBaseTemplate(content, `Réponse à votre suivi - ${data.salonName || 'InkStudio'}`, data.salonName || 'InkStudio');
+    return this.getBaseTemplate(
+      content, 
+      `Réponse à votre suivi - ${data.salonName || 'InkStudio'}`, 
+      data.salonName || 'InkStudio',
+      data.colorProfile || 'default',
+      data.colorProfileBis || 'default'
+    );
   }
 
   /**
-   * Template de demande de suivi de cicatrisation
+   *! Template de demande de suivi de cicatrisation
    */
   generateCicatrisationFollowUpEmail(data: EmailTemplateData): string {
     console.log(data);
@@ -1182,11 +1395,17 @@ export class EmailTemplateService {
       </div>
     `;
 
-    return this.getBaseTemplate(content, `Suivi de cicatrisation - ${data.salonName || 'InkStudio'}`, data.salonName || 'InkStudio');
+    return this.getBaseTemplate(
+      content, 
+      `Suivi de cicatrisation - ${data.salonName || 'InkStudio'}`, 
+      data.salonName || 'InkStudio',
+      data.colorProfile || 'default',
+      data.colorProfileBis || 'default'
+    );
   }
 
   /**
-   * Template de demande d'avis client
+   * ! Template de demande d'avis client
    */
   generateFeedbackRequestEmail(data: EmailTemplateData): string {
     const details = data.feedbackRequestDetails;
@@ -1242,11 +1461,17 @@ export class EmailTemplateService {
       </div>
     `;
 
-    return this.getBaseTemplate(content, `Comment s'est passé votre ${details.prestationName.toLowerCase()} ? - ${data.salonName || 'InkStudio'}`, data.salonName || 'InkStudio');
+    return this.getBaseTemplate(
+      content, 
+      `Comment s'est passé votre ${details.prestationName.toLowerCase()} ? - ${data.salonName || 'InkStudio'}`, 
+      data.salonName || 'InkStudio',
+      data.colorProfile || 'default',
+      data.colorProfileBis || 'default'
+    );
   }
 
   /**
-   * Template pour confirmation de changement de mot de passe
+   * ! Template pour confirmation de changement de mot de passe
    */
   generatePasswordChangeConfirmationEmail(data: EmailTemplateData): string {
     const content = `
@@ -1308,6 +1533,12 @@ export class EmailTemplateService {
       </div>
     `;
 
-    return this.getBaseTemplate(content, `Mot de passe modifié - ${data.salonName || 'InkStudio'}`, data.salonName || 'InkStudio');
+    return this.getBaseTemplate(
+      content, 
+      `Mot de passe modifié - ${data.salonName || 'InkStudio'}`, 
+      data.salonName || 'InkStudio',
+      data.colorProfile || 'default',
+      data.colorProfileBis || 'default'
+    );
   }
 }

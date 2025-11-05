@@ -146,7 +146,7 @@ export class FollowupSchedulerService {
       }
 
       // URL de suivi (à adapter selon votre frontend)
-      const followupUrl = `${process.env.WEB_URL}/suivi/${token}`;
+      const followupUrl = `${process.env.FRONTEND_URL}/suivi/${token}`;
 
       // Envoyer l'email de demande d'avis
       await this.mailService.sendCicatrisationFollowUp(appointment.client.email, {

@@ -262,7 +262,9 @@ export class AppointmentsService {
                 visioRoom: visio ? `${process.env.FRONTEND_URL || '#'}/meeting/${newAppointment.id}` : generatedVisioRoom
               }
             },
-            salon?.salonName || undefined // Passer le nom du salon
+            salon?.salonName || undefined, // Passer le nom du salon
+            undefined, // salonEmail
+            userId // Passer l'ID utilisateur pour les couleurs
           );
           
           console.log('🎯 Email de confirmation PROJET/TATTOO envoyé avec succès !');

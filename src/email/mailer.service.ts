@@ -1,13 +1,38 @@
 import { Injectable } from '@nestjs/common';
 import { MailgunService, MailgunResponse } from './mailgun.service';
 import { EmailTemplateService, EmailTemplateData } from './email-template.service';
+import { PrismaService } from '../database/prisma.service';
 
 @Injectable()
 export class MailService {
   constructor(
     private readonly mailgunService: MailgunService,
-    private readonly emailTemplateService: EmailTemplateService
+    private readonly emailTemplateService: EmailTemplateService,
+    private readonly prisma: PrismaService
   ) {}
+
+  /**
+   * Récupère les couleurs du profil d'un salon
+   */
+  private async getSalonColors(userId: string): Promise<{ colorProfile: string; colorProfileBis: string }> {
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { colorProfile: true, colorProfileBis: true }
+      });
+
+      return {
+        colorProfile: user?.colorProfile || 'default',
+        colorProfileBis: user?.colorProfileBis || 'default'
+      };
+    } catch (error) {
+      console.error('Erreur lors de la récupération des couleurs du salon:', error);
+      return {
+        colorProfile: 'default',
+        colorProfileBis: 'default'
+      };
+    }
+  }
 
   async sendMail(to: string, subject: string, html: string, fromName?: string, replyTo?: string): Promise<MailgunResponse> {
     try {
@@ -29,10 +54,21 @@ export class MailService {
     }
   }
 
-  async sendAppointmentConfirmation(to: string, data: EmailTemplateData, salonName?: string, salonEmail?: string): Promise<MailgunResponse> {
+  async sendAppointmentConfirmation(to: string, data: EmailTemplateData, salonName?: string, salonEmail?: string, userId?: string): Promise<MailgunResponse> {
     const subject = `Confirmation de votre rendez-vous${salonName ? ` chez ${salonName}` : ''}`;
-    const dataWithSalon = { ...data, salonName: salonName || data.salonName };
-    const html = this.emailTemplateService.generateAppointmentConfirmationEmail(dataWithSalon);
+    
+    // Récupérer les couleurs du salon si userId est fourni
+    let dataWithColors = { ...data, salonName: salonName || data.salonName };
+    if (userId) {
+      const salonColors = await this.getSalonColors(userId);
+      dataWithColors = {
+        ...dataWithColors,
+        colorProfile: salonColors.colorProfile,
+        colorProfileBis: salonColors.colorProfileBis
+      };
+    }
+    
+    const html = this.emailTemplateService.generateAppointmentConfirmationEmail(dataWithColors);
     
     return await this.sendMail(
       to,
@@ -43,10 +79,21 @@ export class MailService {
     );
   }
 
-  async sendNewAppointmentNotification(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
+  async sendNewAppointmentNotification(to: string, data: EmailTemplateData, salonName?: string, userId?: string): Promise<MailgunResponse> {
     const subject = `Nouveau rendez-vous${salonName ? ` - ${salonName}` : ''}`;
-    const dataWithSalon = { ...data, salonName: salonName || data.salonName };
-    const html = this.emailTemplateService.generateNewAppointmentNotificationEmail(dataWithSalon);
+    
+    // Récupérer les couleurs du salon si userId est fourni
+    let dataWithColors = { ...data, salonName: salonName || data.salonName };
+    if (userId) {
+      const salonColors = await this.getSalonColors(userId);
+      dataWithColors = {
+        ...dataWithColors,
+        colorProfile: salonColors.colorProfile,
+        colorProfileBis: salonColors.colorProfileBis
+      };
+    }
+    
+    const html = this.emailTemplateService.generateNewAppointmentNotificationEmail(dataWithColors);
     
     return await this.sendMail(to, subject, html, salonName);
   }
@@ -75,10 +122,21 @@ export class MailService {
     return await this.sendMail(to, subject, html, salonName);
   }
 
-  async sendAppointmentModification(to: string, data: EmailTemplateData, salonName?: string, salonEmail?: string): Promise<MailgunResponse> {
+  async sendAppointmentModification(to: string, data: EmailTemplateData, salonName?: string, salonEmail?: string, userId?: string): Promise<MailgunResponse> {
     const subject = `Modification de votre rendez-vous${salonName ? ` chez ${salonName}` : ''}`;
-    const dataWithSalon = { ...data, salonName: salonName || data.salonName };
-    const html = this.emailTemplateService.generateAppointmentModificationEmail(dataWithSalon);
+    
+    // Récupérer les couleurs du salon si userId est fourni
+    let dataWithColors = { ...data, salonName: salonName || data.salonName };
+    if (userId) {
+      const salonColors = await this.getSalonColors(userId);
+      dataWithColors = {
+        ...dataWithColors,
+        colorProfile: salonColors.colorProfile,
+        colorProfileBis: salonColors.colorProfileBis
+      };
+    }
+    
+    const html = this.emailTemplateService.generateAppointmentModificationEmail(dataWithColors);
     
     return await this.sendMail(
       to,
@@ -89,10 +147,21 @@ export class MailService {
     );
   }
 
-  async sendAppointmentCancellation(to: string, data: EmailTemplateData, salonName?: string, salonEmail?: string): Promise<MailgunResponse> {
+  async sendAppointmentCancellation(to: string, data: EmailTemplateData, salonName?: string, salonEmail?: string, userId?: string): Promise<MailgunResponse> {
     const subject = `Annulation de votre rendez-vous${salonName ? ` chez ${salonName}` : ''}`;
-    const dataWithSalon = { ...data, salonName: salonName || data.salonName };
-    const html = this.emailTemplateService.generateAppointmentCancellationEmail(dataWithSalon);
+    
+    // Récupérer les couleurs du salon si userId est fourni
+    let dataWithColors = { ...data, salonName: salonName || data.salonName };
+    if (userId) {
+      const salonColors = await this.getSalonColors(userId);
+      dataWithColors = {
+        ...dataWithColors,
+        colorProfile: salonColors.colorProfile,
+        colorProfileBis: salonColors.colorProfileBis
+      };
+    }
+    
+    const html = this.emailTemplateService.generateAppointmentCancellationEmail(dataWithColors);
     
     return await this.sendMail(
       to,
