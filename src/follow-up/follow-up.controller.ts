@@ -226,8 +226,10 @@ export class FollowupsController {
   @Post('reply/:id')
   async replyToFollowUp(
     @Param('id') id: string,
-    @Body() body: { response: string }
+    @Body() body: { reply?: string; response?: string }
   ) {
+    const responseText: string = body.reply || body.response || '';
+    
     // Vérifier si le suivi existe
     const followUp = await this.prisma.followUpSubmission.findUnique({
       where: { id },
@@ -245,6 +247,7 @@ export class FollowupsController {
         }
       },
     });
+
     
     if (!followUp) {
       throw new BadRequestException('Suivi non trouvé');
@@ -258,12 +261,17 @@ export class FollowupsController {
     if (!followUp.appointment.client) {
       throw new BadRequestException('Client associé introuvable');
     }
-
+    
+    // Validation de la réponse
+    if (!responseText || responseText.trim() === '') {
+      throw new BadRequestException('La réponse ne peut pas être vide');
+    }
+    
     // Mettre à jour le suivi avec la réponse du salon
     const updatedFollowUp = await this.prisma.followUpSubmission.update({
       where: { id },
       data: {
-        response: body.response,
+        response: responseText,
         isAnswered: true, // Marquer comme répondu
       },
     });
@@ -278,7 +286,7 @@ export class FollowupsController {
         clientName: `${client.firstName} ${client.lastName}`,
         tatoueurName: tatoueur,
         prestationName: followUp.appointment.prestation,
-        response: body.response
+        response: responseText
       }
     }, salon);
 

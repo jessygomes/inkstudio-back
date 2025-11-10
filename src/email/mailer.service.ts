@@ -12,7 +12,7 @@ export class MailService {
   ) {}
 
   /**
-   * Récupère les couleurs du profil d'un salon
+   *! Récupère les couleurs du profil d'un salon
    */
   private async getSalonColors(userId: string): Promise<{ colorProfile: string; colorProfileBis: string }> {
     try {
@@ -54,6 +54,7 @@ export class MailService {
     }
   }
 
+  //! MAIL DE CONFIRMATION DE RDV
   async sendAppointmentConfirmation(to: string, data: EmailTemplateData, salonName?: string, salonEmail?: string, userId?: string): Promise<MailgunResponse> {
     const subject = `Confirmation de votre rendez-vous${salonName ? ` chez ${salonName}` : ''}`;
     
@@ -79,6 +80,7 @@ export class MailService {
     );
   }
 
+  //! MAIL DE NOUVEAU RDV (SALON)
   async sendNewAppointmentNotification(to: string, data: EmailTemplateData, salonName?: string, userId?: string): Promise<MailgunResponse> {
     const subject = `Nouveau rendez-vous${salonName ? ` - ${salonName}` : ''}`;
     
@@ -98,6 +100,7 @@ export class MailService {
     return await this.sendMail(to, subject, html, salonName);
   }
 
+  //! MAIL DE VERIFICATION D'EMAIL
   async sendEmailVerification(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
     const subject = `Vérification de votre email${salonName ? ` - ${salonName}` : ''}`;
     const dataWithSalon = { ...data, salonName: salonName || data.salonName };
@@ -106,6 +109,7 @@ export class MailService {
     return await this.sendMail(to, subject, html, salonName);
   }
 
+  //! MAIL DE REINITIALISATION DE MOT DE PASSE
   async sendPasswordReset(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
     const subject = `Réinitialisation de votre mot de passe${salonName ? ` - ${salonName}` : ''}`;
     const dataWithSalon = { ...data, salonName: salonName || data.salonName };
@@ -114,6 +118,16 @@ export class MailService {
     return await this.sendMail(to, subject, html, salonName);
   }
 
+  //! MAIL DE CONFIRMATION DE CHANGEMENT DE MOT DE PASSE
+  async sendPasswordChangeConfirmation(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
+    const subject = `Mot de passe modifié${salonName ? ` - ${salonName}` : ''}`;
+    const dataWithSalon = { ...data, salonName: salonName || data.salonName };
+    const html = this.emailTemplateService.generatePasswordChangeConfirmationEmail(dataWithSalon);
+    
+    return await this.sendMail(to, subject, html, salonName);
+  }
+
+  //! MAIL DE SUIVI POST-TATOUAGE
   async sendFollowUp(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
     const subject = `Votre suivi post-tatouage${salonName ? ` - ${salonName}` : ''}`;
     const dataWithSalon = { ...data, salonName: salonName || data.salonName };
@@ -122,6 +136,43 @@ export class MailService {
     return await this.sendMail(to, subject, html, salonName);
   }
 
+  //! MAIL DE SUIVI POST-TATOUAGE
+  async sendFollowUpResponse(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
+    const subject = `Réponse à votre suivi${salonName ? ` - ${salonName}` : ''}`;
+    const dataWithSalon = { ...data, salonName: salonName || data.salonName };
+    const html = this.emailTemplateService.generateFollowUpResponseEmail(dataWithSalon);
+    
+    return await this.sendMail(to, subject, html, salonName);
+  }
+
+  //! MAIL DE SUIVI POST-TATOUAGE
+  async sendCicatrisationFollowUp(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
+    const subject = `Suivi de cicatrisation${salonName ? ` - ${salonName}` : ''}`;
+    const dataWithSalon = { ...data, salonName: salonName || data.salonName };
+    const html = this.emailTemplateService.generateCicatrisationFollowUpEmail(dataWithSalon);
+    
+    return await this.sendMail(to, subject, html, salonName);
+  }
+
+  //! MAIL DE RAPPEL RETOUCHES (1 mois après tatouage)
+  async sendRetouchesReminder(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
+    const subject = `Retouches gratuites disponibles${salonName ? ` - ${salonName}` : ''}`;
+    const dataWithSalon = { ...data, salonName: salonName || data.salonName };
+    const html = this.emailTemplateService.generateRetouchesReminderEmail(dataWithSalon);
+    
+    return await this.sendMail(to, subject, html, salonName);
+  }
+
+  //! MAIL DE DEMANDE DE RETOUR D'EXPERIENCE
+  async sendFeedbackRequest(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
+    const subject = `Votre avis nous intéresse${salonName ? ` - ${salonName}` : ''}`;
+    const dataWithSalon = { ...data, salonName: salonName || data.salonName };
+    const html = this.emailTemplateService.generateFeedbackRequestEmail(dataWithSalon);
+    
+    return await this.sendMail(to, subject, html, salonName);
+  }
+
+  //! MAIL DE MODIFICATION DE RDV
   async sendAppointmentModification(to: string, data: EmailTemplateData, salonName?: string, salonEmail?: string, userId?: string): Promise<MailgunResponse> {
     const subject = `Modification de votre rendez-vous${salonName ? ` chez ${salonName}` : ''}`;
     
@@ -147,6 +198,7 @@ export class MailService {
     );
   }
 
+  //! MAIL D'ANNULATION DE RDV
   async sendAppointmentCancellation(to: string, data: EmailTemplateData, salonName?: string, salonEmail?: string, userId?: string): Promise<MailgunResponse> {
     const subject = `Annulation de votre rendez-vous${salonName ? ` chez ${salonName}` : ''}`;
     
@@ -172,6 +224,7 @@ export class MailService {
     );
   }
 
+  //! MAIL PERSONNALISE
   async sendCustomEmail(to: string, subject: string, data: EmailTemplateData, salonName?: string, salonEmail?: string): Promise<MailgunResponse> {
     const dataWithSalon = { ...data, salonName: salonName || data.salonName };
     const html = this.emailTemplateService.generateCustomEmail(dataWithSalon);
@@ -185,6 +238,7 @@ export class MailService {
     );
   }
 
+  //! MAIL DE NOTIFICATION DE RDV EN ATTENTE
   async sendPendingAppointmentNotification(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
     const subject = `Rendez-vous en attente de confirmation${salonName ? ` - ${salonName}` : ''}`;
     const dataWithSalon = { ...data, salonName: salonName || data.salonName };
@@ -193,6 +247,7 @@ export class MailService {
     return await this.sendMail(to, subject, html, salonName);
   }
 
+  //! MAIL DE CONFIRMATION DE RDV
   async sendAutoConfirmedAppointment(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
     const subject = `Rendez-vous confirmé automatiquement${salonName ? ` chez ${salonName}` : ''}`;
     const dataWithSalon = { ...data, salonName: salonName || data.salonName };
@@ -201,6 +256,7 @@ export class MailService {
     return await this.sendMail(to, subject, html, salonName);
   }
 
+  //! MAIL DE PROPOSITION DE REPROGRAMMATION
   async sendRescheduleProposal(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
     const subject = `Proposition de reprogrammation${salonName ? ` - ${salonName}` : ''}`;
     const dataWithSalon = { ...data, salonName: salonName || data.salonName };
@@ -209,6 +265,7 @@ export class MailService {
     return await this.sendMail(to, subject, html, salonName);
   }
 
+  //! MAIL DE NOTIFICATION DE REPROGRAMMATION
   async sendRescheduleAcceptedNotification(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
     const subject = `Reprogrammation acceptée${salonName ? ` - ${salonName}` : ''}`;
     const dataWithSalon = { ...data, salonName: salonName || data.salonName };
@@ -217,42 +274,11 @@ export class MailService {
     return await this.sendMail(to, subject, html, salonName);
   }
 
+  //! MAIL DE CONFIRMATION DE REPROGRAMMATION
   async sendRescheduleConfirmation(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
     const subject = `Confirmation de reprogrammation${salonName ? ` chez ${salonName}` : ''}`;
     const dataWithSalon = { ...data, salonName: salonName || data.salonName };
     const html = this.emailTemplateService.generateRescheduleConfirmationEmail(dataWithSalon);
-    
-    return await this.sendMail(to, subject, html, salonName);
-  }
-
-  async sendFollowUpResponse(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
-    const subject = `Réponse à votre suivi${salonName ? ` - ${salonName}` : ''}`;
-    const dataWithSalon = { ...data, salonName: salonName || data.salonName };
-    const html = this.emailTemplateService.generateFollowUpResponseEmail(dataWithSalon);
-    
-    return await this.sendMail(to, subject, html, salonName);
-  }
-
-  async sendCicatrisationFollowUp(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
-    const subject = `Suivi de cicatrisation${salonName ? ` - ${salonName}` : ''}`;
-    const dataWithSalon = { ...data, salonName: salonName || data.salonName };
-    const html = this.emailTemplateService.generateCicatrisationFollowUpEmail(dataWithSalon);
-    
-    return await this.sendMail(to, subject, html, salonName);
-  }
-
-  async sendFeedbackRequest(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
-    const subject = `Votre avis nous intéresse${salonName ? ` - ${salonName}` : ''}`;
-    const dataWithSalon = { ...data, salonName: salonName || data.salonName };
-    const html = this.emailTemplateService.generateFeedbackRequestEmail(dataWithSalon);
-    
-    return await this.sendMail(to, subject, html, salonName);
-  }
-
-  async sendPasswordChangeConfirmation(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
-    const subject = `Mot de passe modifié${salonName ? ` - ${salonName}` : ''}`;
-    const dataWithSalon = { ...data, salonName: salonName || data.salonName };
-    const html = this.emailTemplateService.generatePasswordChangeConfirmationEmail(dataWithSalon);
     
     return await this.sendMail(to, subject, html, salonName);
   }

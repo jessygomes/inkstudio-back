@@ -1527,12 +1527,22 @@ export class AppointmentsService {
           // On ne fait pas échouer la mise à jour du statut si l'historique échoue
         }
 
-        // Envoyer immédiatement le suivi de cicatrisation pour TATTOO et PIERCING
+        // Système de suivi automatique selon le type de prestation
+        // Les délais sont calculés à partir du moment où le RDV est marqué COMPLETED
         try {
-          await this.followupSchedulerService.sendImmediateFollowup(appointment.id);
-          console.log(`✅ Suivi de cicatrisation envoyé pour le RDV ${id}`);
+          const completedTime = new Date(); // Moment actuel = quand le RDV est marqué terminé
+          
+          // 1. Programmer le suivi de cicatrisation pour TATTOO et PIERCING
+          await this.followupSchedulerService.scheduleFollowupFromCompletion(appointment.id, completedTime);
+          console.log(`✅ Suivi de cicatrisation programmé pour le RDV ${id}`);
+          
+          // 2. Programmer le rappel retouches uniquement pour les TATTOO
+          if (appointment.prestation === 'TATTOO') {
+            this.followupSchedulerService.scheduleRetouchesReminderFromCompletion(appointment.id, completedTime);
+            console.log(`✅ Rappel retouches programmé pour le RDV ${id}`);
+          }
         } catch (followupError) {
-          console.error('⚠️ Erreur lors de l\'envoi du suivi:', followupError);
+          console.error('⚠️ Erreur lors de la programmation des suivis:', followupError);
           // On ne fait pas échouer la mise à jour du statut si le suivi échoue
         }
       }

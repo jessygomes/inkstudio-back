@@ -64,6 +64,14 @@ export interface EmailTemplateData {
     followupUrl: string;
   };
   
+  // Rappel retouches
+  retouchesReminderDetails?: {
+    clientName: string;
+    appointmentDate: string;
+    tatoueurName: string;
+    salonName: string;
+  };
+  
   verificationToken?: string;
   verificationUrl?: string;
   resetToken?: string;
@@ -79,135 +87,12 @@ export interface EmailTemplateData {
 @Injectable()
 export class EmailTemplateService {
   
-  /**
-   * Définit le schéma de couleurs selon le profil utilisateur
-   */
-  private getColorScheme(colorProfile: string = 'default', colorProfileBis: string = 'default') {
-    const colorSchemes = {
-      default: {
-        primary: '#ff5500',
-        secondary: '#ff9d00',
-        accent: '#af7e70',
-        accentSecondary: '#c79f8b',
-        primaryRgba: 'rgba(175, 126, 112, 0.1)',
-        secondaryRgba: 'rgba(199, 159, 139, 0.1)',
-        lightBackground: 'rgba(199, 159, 139, 0.1)',
-        lightBackgroundSecondary: 'rgba(175, 126, 112, 0.1)',
-        buttonShadow: 'rgba(175, 126, 112, 0.3)',
-        buttonHoverShadow: 'rgba(255, 85, 0, 0.4)',
-      },
-      blue: {
-        primary: '#3b82f6',
-        secondary: '#1d4ed8',
-        accent: '#60a5fa',
-        accentSecondary: '#93c5fd',
-        primaryRgba: 'rgba(59, 130, 246, 0.1)',
-        secondaryRgba: 'rgba(29, 78, 216, 0.1)',
-        lightBackground: 'rgba(96, 165, 250, 0.1)',
-        lightBackgroundSecondary: 'rgba(147, 197, 253, 0.1)',
-        buttonShadow: 'rgba(59, 130, 246, 0.3)',
-        buttonHoverShadow: 'rgba(29, 78, 216, 0.4)',
-      },
-      green: {
-        primary: '#10b981',
-        secondary: '#059669',
-        accent: '#34d399',
-        accentSecondary: '#6ee7b7',
-        primaryRgba: 'rgba(16, 185, 129, 0.1)',
-        secondaryRgba: 'rgba(5, 150, 105, 0.1)',
-        lightBackground: 'rgba(52, 211, 153, 0.1)',
-        lightBackgroundSecondary: 'rgba(110, 231, 183, 0.1)',
-        buttonShadow: 'rgba(16, 185, 129, 0.3)',
-        buttonHoverShadow: 'rgba(5, 150, 105, 0.4)',
-      },
-      purple: {
-        primary: '#8b5cf6',
-        secondary: '#7c3aed',
-        accent: '#a78bfa',
-        accentSecondary: '#c4b5fd',
-        primaryRgba: 'rgba(139, 92, 246, 0.1)',
-        secondaryRgba: 'rgba(124, 58, 237, 0.1)',
-        lightBackground: 'rgba(167, 139, 250, 0.1)',
-        lightBackgroundSecondary: 'rgba(196, 181, 253, 0.1)',
-        buttonShadow: 'rgba(139, 92, 246, 0.3)',
-        buttonHoverShadow: 'rgba(124, 58, 237, 0.4)',
-      },
-      red: {
-        primary: '#ef4444',
-        secondary: '#dc2626',
-        accent: '#f87171',
-        accentSecondary: '#fca5a5',
-        primaryRgba: 'rgba(239, 68, 68, 0.1)',
-        secondaryRgba: 'rgba(220, 38, 38, 0.1)',
-        lightBackground: 'rgba(248, 113, 113, 0.1)',
-        lightBackgroundSecondary: 'rgba(252, 165, 165, 0.1)',
-        buttonShadow: 'rgba(239, 68, 68, 0.3)',
-        buttonHoverShadow: 'rgba(220, 38, 38, 0.4)',
-      },
-      pink: {
-        primary: '#ec4899',
-        secondary: '#db2777',
-        accent: '#f472b6',
-        accentSecondary: '#f9a8d4',
-        primaryRgba: 'rgba(236, 72, 153, 0.1)',
-        secondaryRgba: 'rgba(219, 39, 119, 0.1)',
-        lightBackground: 'rgba(244, 114, 182, 0.1)',
-        lightBackgroundSecondary: 'rgba(249, 168, 212, 0.1)',
-        buttonShadow: 'rgba(236, 72, 153, 0.3)',
-        buttonHoverShadow: 'rgba(219, 39, 119, 0.4)',
-      },
-      yellow: {
-        primary: '#f59e0b',
-        secondary: '#d97706',
-        accent: '#fbbf24',
-        accentSecondary: '#fcd34d',
-        primaryRgba: 'rgba(245, 158, 11, 0.1)',
-        secondaryRgba: 'rgba(217, 119, 6, 0.1)',
-        lightBackground: 'rgba(251, 191, 36, 0.1)',
-        lightBackgroundSecondary: 'rgba(252, 211, 77, 0.1)',
-        buttonShadow: 'rgba(245, 158, 11, 0.3)',
-        buttonHoverShadow: 'rgba(217, 119, 6, 0.4)',
-      },
-      teal: {
-        primary: '#14b8a6',
-        secondary: '#0d9488',
-        accent: '#2dd4bf',
-        accentSecondary: '#5eead4',
-        primaryRgba: 'rgba(20, 184, 166, 0.1)',
-        secondaryRgba: 'rgba(13, 148, 136, 0.1)',
-        lightBackground: 'rgba(45, 212, 191, 0.1)',
-        lightBackgroundSecondary: 'rgba(94, 234, 212, 0.1)',
-        buttonShadow: 'rgba(20, 184, 166, 0.3)',
-        buttonHoverShadow: 'rgba(13, 148, 136, 0.4)',
-      },
-    };
-
-    // Utiliser la couleur principale ou par défaut
-    const primaryScheme = colorSchemes[colorProfile as keyof typeof colorSchemes] || colorSchemes.default;
-    
-    // Si une couleur secondaire est définie et différente, on peut l'utiliser pour certains éléments
-    if (colorProfileBis && colorProfileBis !== 'default' && colorProfileBis !== colorProfile) {
-      const secondaryScheme = colorSchemes[colorProfileBis as keyof typeof colorSchemes];
-      if (secondaryScheme) {
-        // Mélanger les deux schémas pour créer un thème hybride
-        return {
-          ...primaryScheme,
-          secondary: secondaryScheme.primary,
-          accentSecondary: secondaryScheme.accent,
-          lightBackgroundSecondary: secondaryScheme.primaryRgba,
-        };
-      }
-    }
-
-    return primaryScheme;
-  }
+  
 
   /**
    * Template de base avec le design cohérent du site
    */
-  private getBaseTemplate(content: string, title: string = 'InkStudio', salonName: string = 'InkStudio', colorProfile: string = 'default', colorProfileBis: string = 'default'): string {
-    // Définir les couleurs selon le profil
-    const colors = this.getColorScheme(colorProfile, colorProfileBis);
+  private getBaseTemplate(content: string, title: string = 'InkStudio', salonName: string = 'InkStudio'): string {
     
     return `
       <!DOCTYPE html>
@@ -243,10 +128,11 @@ export class EmailTemplateService {
           }
           
           .header {
-            background: linear-gradient(90deg, ${colors.primary}, ${colors.secondary});
+            background: linear-gradient(135deg, #131313 0%, #1a1a1a 100%);
             padding: 30px 40px;
             text-align: center;
             position: relative;
+            font-family: 'Exo 2', sans-serif;
           }
           
           .header::before {
@@ -256,7 +142,7 @@ export class EmailTemplateService {
             left: 0;
             right: 0;
             bottom: 0;
-            background: linear-gradient(135deg, ${colors.primaryRgba}, ${colors.secondaryRgba});
+            background: linear-gradient(135deg, #131313 0%, #1a1a1a 100%);
             pointer-events: none;
           }
           
@@ -296,15 +182,17 @@ export class EmailTemplateService {
             font-size: 16px;
             margin-bottom: 30px;
             color: #3e2c27;
+            font-family: 'Exo 2', sans-serif;
           }
           
           .details-card {
-            background: linear-gradient(135deg, #131313, #1a1a1a);
-            color: #ffffff;
+            background: linear-gradient(135deg, #c79f8b, #af7e70);
+            color: #fff;
+            font-family: 'Exo 2', sans-serif;
+            font-size: 16px;
             padding: 25px;
             border-radius: 15px;
             margin: 25px 0;
-            border-left: 5px solid ${colors.accent};
           }
           
           .details-title {
@@ -312,7 +200,7 @@ export class EmailTemplateService {
             font-size: 18px;
             font-weight: 600;
             margin-bottom: 15px;
-            color: #ffffff;
+            color: #fff;
           }
           
           .details-list {
@@ -344,7 +232,7 @@ export class EmailTemplateService {
           
           .cta-button {
             display: inline-block;
-            background: linear-gradient(90deg, ${colors.accent}, ${colors.accentSecondary});
+            background: linear-gradient(90deg, #ff9d00, #ff5500);
             color: #ffffff;
             text-decoration: none;
             padding: 15px 30px;
@@ -354,23 +242,16 @@ export class EmailTemplateService {
             font-size: 16px;
             text-align: center;
             margin: 20px 0;
-            transition: all 0.3s ease;
-            box-shadow: 0 5px 15px ${colors.buttonShadow};
-          }
-          
-          .cta-button:hover {
-            background: linear-gradient(90deg, ${colors.primary}, ${colors.secondary});
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px ${colors.buttonHoverShadow};
           }
           
           .warning-box {
-            background: linear-gradient(135deg, ${colors.primary}, ${colors.secondary});
+            background: linear-gradient(135deg, #131313 0%, #1a1a1a 100%);
             color: #ffffff;
             padding: 20px;
             border-radius: 10px;
             margin: 20px 0;
             text-align: center;
+            font-family: 'Exo 2', sans-serif;
           }
           
           .warning-box strong {
@@ -382,6 +263,7 @@ export class EmailTemplateService {
             padding: 30px 40px;
             text-align: center;
             color: #ffffff;
+            font-family: 'Exo 2', sans-serif;
           }
           
           .footer-content {
@@ -397,25 +279,25 @@ export class EmailTemplateService {
           .social-link {
             display: inline-block;
             margin: 0 10px;
-            color: ${colors.accent};
+            color: #ff9d00;
             text-decoration: none;
             font-weight: 500;
             transition: color 0.3s ease;
           }
           
           .social-link:hover {
-            color: ${colors.primary};
+            color: #ff5500;
           }
           
           .divider {
             height: 2px;
-            background: linear-gradient(90deg, ${colors.accent}, ${colors.accentSecondary});
+            background: linear-gradient(90deg, #ff9d00, #ff5500);
             margin: 20px 0;
             border-radius: 1px;
           }
           
           .token-display {
-            background: linear-gradient(135deg, ${colors.accent}, ${colors.accentSecondary});
+            background: linear-gradient(135deg, #ff9d00, #ff5500);
             color: #ffffff;
             padding: 20px;
             border-radius: 15px;
@@ -425,26 +307,26 @@ export class EmailTemplateService {
             font-size: 24px;
             font-weight: 700;
             letter-spacing: 3px;
-            box-shadow: 0 5px 15px ${colors.buttonShadow};
+            box-shadow: 0 5px 15px #fff1e4;
           }
           
           .appointment-summary {
-            background: linear-gradient(135deg, ${colors.lightBackground}, ${colors.lightBackgroundSecondary});
-            border: 2px solid ${colors.accentSecondary};
+            background: linear-gradient(135deg, #131313 0%, #1a1a1a 100%);
+            border: 2px solid #ff5500;
             padding: 25px;
             border-radius: 15px;
             margin: 25px 0;
           }
           
           .price-highlight {
-            background: linear-gradient(90deg, ${colors.primary}, ${colors.secondary});
+            background: linear-gradient(90deg, #ff9d00, #ff5500);
             color: #ffffff;
             padding: 10px 20px;
             border-radius: 20px;
             font-weight: 700;
             font-size: 18px;
             display: inline-block;
-            box-shadow: 0 3px 10px ${colors.buttonHoverShadow};
+            box-shadow: 0 3px 10px #1a1a1a;
           }
           
           @media (max-width: 600px) {
@@ -586,8 +468,7 @@ export class EmailTemplateService {
       content, 
       `Confirmation de rendez-vous - ${data.salonName || 'InkStudio'}`, 
       data.salonName || 'InkStudio',
-      data.colorProfile || 'default',
-      data.colorProfileBis || 'default'
+      
     );
   }
 
@@ -640,7 +521,7 @@ export class EmailTemplateService {
                   <span class="detail-label" style="color: #3e2c27;">🎥 Visioconférence :</span>
                   <span class="detail-value">
                     <a href="${data.appointmentDetails.visioRoom}" 
-                       style="background: #059669; color: white; padding: 8px 16px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; margin-top: 8px;">
+                      style="background: #059669; color: white; padding: 8px 16px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; margin-top: 8px;">
                       🎥 Rejoindre la visioconférence
                     </a>
                   </span>
@@ -663,10 +544,8 @@ export class EmailTemplateService {
 
     return this.getBaseTemplate(
       content, 
-      `Nouveau rendez-vous - ${data.salonName || 'InkStudio'}`, 
-      data.salonName || 'InkStudio',
-      data.colorProfile || 'default',
-      data.colorProfileBis || 'default'
+      `Nouveau rendez-vous - ${data.salonName || 'Inkera Studio'}`, 
+      data.salonName || 'Inkera Studio',
     );
   }
 
@@ -727,8 +606,7 @@ export class EmailTemplateService {
       content, 
       `Vérification d'email - ${data.salonName || 'Inkera Studio'}`, 
       data.salonName || 'Inkera Studio',
-      data.colorProfile || 'default',
-      data.colorProfileBis || 'default'
+    
     );
   }
 
@@ -765,9 +643,7 @@ export class EmailTemplateService {
     return this.getBaseTemplate(
       content, 
       `Réinitialisation de mot de passe - ${data.salonName || 'Inkera Studio'}`, 
-      data.salonName || 'Inkera Studio',
-      data.colorProfile || 'default',
-      data.colorProfileBis || 'default'
+      data.salonName || 'Inkera Studio'
     );
   }
 
@@ -781,7 +657,6 @@ export class EmailTemplateService {
         
         <div class="message">
           <p>Bonjour ${data.recipientName || 'cher client'} !</p>
-          <p>Cela fait ${data.followUpDetails?.daysSince || 'quelques'} jours depuis votre passage chez ${data.salonName || 'Inkera Studio'}.</p>
           <p>Nous espérons que vous êtes ravi(e) de votre nouveau tatouage ! ✨</p>
         </div>
 
@@ -832,9 +707,7 @@ export class EmailTemplateService {
     return this.getBaseTemplate(
       content, 
       `Suivi de votre tatouage - ${data.salonName || 'Inkera Studio'}`, 
-      data.salonName || 'Inkera Studio',
-      data.colorProfile || 'default',
-      data.colorProfileBis || 'default'
+      data.salonName || 'Inkera Studio'
     );
   }
 
@@ -903,9 +776,7 @@ export class EmailTemplateService {
     return this.getBaseTemplate(
       content, 
       `Modification de rendez-vous - ${data.salonName || 'InkStudio'}`, 
-      data.salonName || 'InkStudio',
-      data.colorProfile || 'default',
-      data.colorProfileBis || 'default'
+      data.salonName || 'InkStudio'
     );
   }
 
@@ -967,9 +838,7 @@ export class EmailTemplateService {
     return this.getBaseTemplate(
       content, 
       `Annulation de rendez-vous - ${data.salonName || 'InkStudio'}`, 
-      data.salonName || 'InkStudio',
-      data.colorProfile || 'default',
-      data.colorProfileBis || 'default'
+      data.salonName || 'InkStudio'
     );
   }
 
@@ -995,9 +864,7 @@ export class EmailTemplateService {
     return this.getBaseTemplate(
       content, 
       subject, 
-      data.salonName || 'InkStudio',
-      data.colorProfile || 'default',
-      data.colorProfileBis || 'default'
+      data.salonName || 'InkStudio'
     );
   }
 
@@ -1063,9 +930,7 @@ export class EmailTemplateService {
     return this.getBaseTemplate(
       content, 
       `Nouveau rendez-vous en attente - ${data.salonName || 'InkStudio'}`, 
-      data.salonName || 'InkStudio',
-      data.colorProfile || 'default',
-      data.colorProfileBis || 'default'
+      data.salonName || 'InkStudio'
     );
   }
 
@@ -1127,9 +992,7 @@ export class EmailTemplateService {
     return this.getBaseTemplate(
       content, 
       `Rendez-vous confirmé - ${data.salonName || 'InkStudio'}`, 
-      data.salonName || 'InkStudio',
-      data.colorProfile || 'default',
-      data.colorProfileBis || 'default'
+      data.salonName || 'InkStudio'
     );
   }
 
@@ -1187,9 +1050,7 @@ export class EmailTemplateService {
     return this.getBaseTemplate(
       content, 
       `Reprogrammation nécessaire - ${data.salonName || 'InkStudio'}`, 
-      data.salonName || 'InkStudio',
-      data.colorProfile || 'default',
-      data.colorProfileBis || 'default'
+      data.salonName || 'InkStudio'
     );
   }
 
@@ -1247,9 +1108,7 @@ export class EmailTemplateService {
     return this.getBaseTemplate(
       content, 
       `Reprogrammation acceptée - ${data.salonName || 'InkStudio'}`, 
-      data.salonName || 'InkStudio',
-      data.colorProfile || 'default',
-      data.colorProfileBis || 'default'
+      data.salonName || 'InkStudio'
     );
   }
 
@@ -1302,9 +1161,7 @@ export class EmailTemplateService {
     return this.getBaseTemplate(
       content, 
       `Rendez-vous reprogrammé - ${data.salonName || 'InkStudio'}`, 
-      data.salonName || 'InkStudio',
-      data.colorProfile || 'default',
-      data.colorProfileBis || 'default'
+      data.salonName || 'InkStudio'
     );
   }
 
@@ -1346,10 +1203,8 @@ export class EmailTemplateService {
 
     return this.getBaseTemplate(
       content, 
-      `Réponse à votre suivi - ${data.salonName || 'InkStudio'}`, 
-      data.salonName || 'InkStudio',
-      data.colorProfile || 'default',
-      data.colorProfileBis || 'default'
+      `Réponse à votre suivi - ${data.salonName || 'Inkera Studio'}`, 
+      data.salonName || 'Inkera Studio'
     );
   }
 
@@ -1369,7 +1224,7 @@ export class EmailTemplateService {
         
         <div class="message">
           <p>Bonjour <strong>${details.clientName}</strong>,</p>
-          <p>Merci pour votre visite chez ${data.salonName || 'InkStudio'} !</p>
+          <p>Merci pour votre visite chez ${data.salonName || 'Inkera Studio'} !</p>
           <p>Votre ${details.prestationName.toLowerCase()} avec ${details.tatoueurName} s'est bien déroulé.</p>
         </div>
 
@@ -1380,7 +1235,7 @@ export class EmailTemplateService {
 
         <div style="text-align: center; margin: 32px 0;">
           <a href="${details.followUpUrl}" class="cta-button">
-            📸 Envoyer ma photo et mon avis
+            Envoyer ma photo et mon avis
           </a>
         </div>
 
@@ -1390,17 +1245,15 @@ export class EmailTemplateService {
 
         <div class="message">
           <p>Si vous avez des questions ou des préoccupations, n'hésitez pas à nous contacter directement.</p>
-          <p><strong>L'équipe de ${data.salonName || 'InkStudio'}</strong></p>
+          <p><strong>${data.salonName || 'Inkera Studio'}</strong></p>
         </div>
       </div>
     `;
 
     return this.getBaseTemplate(
       content, 
-      `Suivi de cicatrisation - ${data.salonName || 'InkStudio'}`, 
-      data.salonName || 'InkStudio',
-      data.colorProfile || 'default',
-      data.colorProfileBis || 'default'
+      `Suivi de cicatrisation - ${data.salonName || 'Inkera Studio'}`, 
+      data.salonName || 'Inkera Studio'
     );
   }
 
@@ -1464,9 +1317,7 @@ export class EmailTemplateService {
     return this.getBaseTemplate(
       content, 
       `Comment s'est passé votre ${details.prestationName.toLowerCase()} ? - ${data.salonName || 'InkStudio'}`, 
-      data.salonName || 'InkStudio',
-      data.colorProfile || 'default',
-      data.colorProfileBis || 'default'
+      data.salonName || 'InkStudio'
     );
   }
 
@@ -1536,9 +1387,85 @@ export class EmailTemplateService {
     return this.getBaseTemplate(
       content, 
       `Mot de passe modifié - ${data.salonName || 'InkStudio'}`, 
-      data.salonName || 'InkStudio',
-      data.colorProfile || 'default',
-      data.colorProfileBis || 'default'
+      data.salonName || 'InkStudio'
+    );
+  }
+
+  /**
+   * ! Template de rappel pour retouches tatouage (1 mois après)
+   */
+  generateRetouchesReminderEmail(data: EmailTemplateData): string {
+    const content = `
+      <div class="content">
+        <div class="greeting">Comment va votre tatouage ? ✨</div>
+        
+        <div class="message">
+          <p>Bonjour ${data.retouchesReminderDetails?.clientName || data.recipientName || 'cher client'} !</p>
+          <p>Cela fait maintenant <strong>un mois</strong> depuis votre séance de tatouage chez ${data.retouchesReminderDetails?.salonName || data.salonName || 'notre salon'}.</p>
+          <p>Nous espérons que vous êtes totalement ravi(e) du résultat ! 🎨</p>
+        </div>
+
+        ${data.retouchesReminderDetails ? `
+          <div class="details-card">
+            <div class="details-title">📅 Votre séance de tatouage</div>
+            <ul class="details-list">
+              <li>
+                <span class="detail-label">📅 Date :</span>
+                <span class="detail-value">${data.retouchesReminderDetails.appointmentDate}</span>
+              </li>
+              <li>
+                <span class="detail-label">👨‍🎨 Artiste :</span>
+                <span class="detail-value">${data.retouchesReminderDetails.tatoueurName}</span>
+              </li>
+            </ul>
+          </div>
+        ` : ''}
+
+        <div class="appointment-summary">
+          <div class="details-title">🔧 Retouches gratuites disponibles</div>
+          <div class="message" style="color: #3e2c27; margin: 15px 0;">
+            <p style="margin-bottom: 12px;">Si vous constatez que votre tatouage a besoin d'une petite retouche (zones moins pigmentées, traits à reprendre...), nous proposons <strong>des retouches gratuites pendant les 3 premiers mois</strong> suivant votre tatouage.</p>
+            
+            <p style="margin-bottom: 12px;"><strong>Les retouches peuvent être nécessaires dans les cas suivants :</strong></p>
+            <ul style="margin: 8px 0; padding-left: 20px; color: #3e2c27;">
+              <li>Zones où l'encre n'a pas bien tenu</li>
+              <li>Traits qui ont légèrement bavé pendant la cicatrisation</li>
+              <li>Petites imperfections de cicatrisation</li>
+              <li>Zones où la couleur paraît moins intense</li>
+            </ul>
+          </div>
+        </div>
+
+        <div style="background: rgba(34, 197, 94, 0.1); border-left: 4px solid #22c55e; padding: 20px; border-radius: 8px; margin: 24px 0;">
+          <p style="margin: 0 0 8px 0; color: #22c55e; font-weight: 600;">✅ Service inclus :</p>
+          <p style="margin: 0; color: #1e1e1fff; font-weight: 600;">Les retouches sont entièrement gratuites pendant 3 mois !</p>
+        </div>
+
+        <div class="message">
+          <p>Si vous souhaitez programmer une retouche ou si vous avez des questions concernant votre tatouage, n'hésitez pas à nous contacter.</p>
+          <p>Nous serons ravis de vous accueillir à nouveau pour parfaire votre œuvre d'art ! 🎯</p>
+        </div>
+
+        <a href="${process.env.FRONTEND_URL || '#'}/contact" class="cta-button">
+          📞 Nous contacter pour une retouche
+        </a>
+
+        <div class="warning-box">
+          <strong>⏰ Important :</strong> Les retouches gratuites sont disponibles uniquement pendant les 3 premiers mois suivant votre tatouage.
+        </div>
+
+        <div class="message">
+          <p><strong>Merci de nous faire confiance pour vos créations artistiques ! ✨</strong></p>
+          <p><em>L'équipe ${data.retouchesReminderDetails?.salonName || data.salonName || 'InkStudio'}</em></p>
+        </div>
+      </div>
+    `;
+
+    return this.getBaseTemplate(
+      content, 
+      `Retouches gratuites disponibles - ${data.retouchesReminderDetails?.salonName || data.salonName || 'InkStudio'}`, 
+      data.retouchesReminderDetails?.salonName || data.salonName || 'InkStudio'
     );
   }
 }
+
