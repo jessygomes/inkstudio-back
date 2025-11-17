@@ -256,6 +256,7 @@ export class UserService {
           appointmentBookingEnabled: true,
           colorProfile: true,
           colorProfileBis: true,
+          saasPlan: true,
           Tatoueur: {
             select: {
               id: true,
