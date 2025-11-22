@@ -17,6 +17,17 @@ export class CreateUserDto {
   @IsNotEmpty({ message: 'Le nom du salon est requis' })
   salonName: string;
 
+  @IsString({ message: 'Vous devez fournir un prénom' })
+  @IsNotEmpty({ message: 'Le prénom est requis' })
+  firstName: string;
+
+  @IsString({ message: 'Vous devez fournir un nom de famille' })
+  @IsNotEmpty({ message: 'Le nom de famille est requis' })
+  lastName: string;
+
+  @IsString()
+  phone: string;
+
   @IsEnum(SaasPlan, { message: 'Vous devez fournir un plan SaaS valide' })
   saasPlan: SaasPlan;
 

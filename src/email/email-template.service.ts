@@ -82,6 +82,17 @@ export interface EmailTemplateData {
     instructions?: string;
   };
   customMessage?: string;
+
+  // Notification admin nouvel utilisateur
+  newUserDetails?: {
+    userEmail: string;
+    salonName: string;
+    saasPlan: string;
+    registrationDate: string;
+    firstName?: string;
+    lastName?: string;
+    phone?: string;
+  } | null;
 }
 
 @Injectable()
@@ -210,7 +221,7 @@ export class EmailTemplateService {
           
           .details-list li {
             padding: 8px 0;
-            border-bottom: 1px solid #9f9f9fff;
+            border-bottom: 1px solid #ffffffbb;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -222,7 +233,7 @@ export class EmailTemplateService {
           
           .detail-label {
             font-weight: 500;
-            color: #9f9f9fff;
+            color: #ffffffbb;
           }
           
           .detail-value {
@@ -1161,7 +1172,7 @@ export class EmailTemplateService {
     return this.getBaseTemplate(
       content, 
       `Rendez-vous reprogrammé - ${data.salonName || 'InkStudio'}`, 
-      data.salonName || 'InkStudio'
+      data.salonName || 'Inkera Studio'
     );
   }
 
@@ -1465,6 +1476,93 @@ export class EmailTemplateService {
       content, 
       `Retouches gratuites disponibles - ${data.retouchesReminderDetails?.salonName || data.salonName || 'InkStudio'}`, 
       data.retouchesReminderDetails?.salonName || data.salonName || 'InkStudio'
+    );
+  }
+
+  /**
+   *! Template pour notification d'inscription à l'administrateur
+   */
+  generateAdminNewUserNotificationEmail(data: EmailTemplateData): string {
+    const newUser = data.newUserDetails;
+    if (!newUser) {
+      throw new Error('newUserDetails are required for admin new user notification email');
+    }
+
+    const content = `
+      <div class="content">
+        <div class="greeting" style="background: linear-gradient(135deg, #131313 0%, #1a1a1a 100%); color: white; padding: 20px; border-radius: 12px; margin-bottom: 24px;">
+          🎉 Nouvelle Inscription !
+        </div>
+        
+        <div class="message">
+          <p>Bonjour <strong>Admin</strong>,</p>
+          <p>Une nouvelle inscription vient d'avoir lieu sur la plateforme Inkera Studio ! 🚀</p>
+        </div>
+
+        <div class="details-card">
+          <div class="details-title">👤 Informations du nouveau salon</div>
+          <ul class="details-list">
+            <li>
+              <span class="detail-label">Nom du salon : </span>
+              <span class="detail-value">${newUser.salonName}</span>
+            </li>
+            <li>
+              <span class="detail-label">Email : </span>
+              <span class="detail-value">${newUser.userEmail}</span>
+            </li>
+            <li>
+              <span class="detail-label">Plan SaaS : </span>
+              <span class="detail-value">${newUser.saasPlan}</span>
+            </li>
+            <li>
+              <span class="detail-label">Date d'inscription : </span>
+              <span class="detail-value">${newUser.registrationDate}</span>
+            </li>
+            ${newUser.firstName && newUser.lastName ? `
+              <li>
+                <span class="detail-label">Nom complet : </span>
+                <span class="detail-value">${newUser.firstName} ${newUser.lastName}</span>
+              </li>
+            ` : ''}
+            ${newUser.phone ? `
+              <li>
+                <span class="detail-label">Téléphone : </span>
+                <span class="detail-value">${newUser.phone}</span>
+              </li>
+            ` : ''}
+          </ul>
+        </div>
+
+        <div style="background: #ff9d0046; border: 1px solid #ff55008d; border-radius: 12px; padding: 16px; margin: 24px 0; text-align: center;">
+          <p style="margin: 0; color: #1a1a1a; font-size: 16px; font-weight: 600;">
+            <strong>Action recommandée :</strong> Surveiller l'activation et l'utilisation du nouveau compte
+          </p>
+        </div>
+
+        <div class="appointment-summary">
+          <div class="details-title">📋 Actions à effectuer</div>
+          <ul style="color: #fff; margin: 15px 0; padding-left: 20px;">
+            <li>Vérifier que l'email de vérification a été envoyé</li>
+            <li>Surveiller l'activation du compte</li>
+            <li>Confirmer la création du plan SaaS (${newUser.saasPlan})</li>
+            <li>Éventuellement contacter le salon pour l'accompagnement</li>
+          </ul>
+        </div>
+
+        <a href="${process.env.FRONTEND_URL || '#'}/admin/users" class="cta-button">
+          Voir dans l'admin
+        </a>
+
+        <div class="warning-box">
+          <strong>📝 Note :</strong> Ce salon devra vérifier son email avant de pouvoir accéder à son espace de gestion.
+        </div>
+      </div>
+    `;
+
+    return this.getBaseTemplate(
+      content, 
+      `Nouvelle inscription - ${newUser.salonName}`, 
+      'Inkera Studio - Admin'
     );
   }
 }

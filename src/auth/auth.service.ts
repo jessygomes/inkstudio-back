@@ -90,16 +90,20 @@ export class AuthService {
 
   //! INSCRIPTION
   async register({ registerBody }: { registerBody: CreateUserDto }) {
-    console.log("📝 Payload reçu :", registerBody);
     try {
-      const { email, salonName, saasPlan, password } = registerBody;
+      const { email, salonName, saasPlan, password, firstName, lastName, phone } = registerBody;
+
+      console.log("Données d'inscription reçues :", { email, salonName, saasPlan, firstName, lastName, phone });
+
+      // Convertir TESTEUR en FREE
+      // const finalSaasPlan = saasPlan === "TESTEUR" ? "FREE" : saasPlan;
 
       const existingUser = await this.prisma.user.findUnique({
         where: {
           email,
         },
       });
-  
+      
       if (existingUser) {
         throw new Error("Un compte existe déjà avec cet email.");
       }
@@ -112,13 +116,30 @@ export class AuthService {
         data: {
           email,
           salonName,
+          firstName,
+          lastName,
+          phone,
           saasPlan,
           password: hashedPassword,
         },
       });
 
-      // Créer le plan SaaS détaillé immédiatement après la création de l'utilisateur
-      await this.saasService.createUserPlanOnRegistration(createdUser.id, saasPlan);
+      // Envoi d'un mail à l'administrateur pour l'informer de la nouvelle inscription
+      await this.mailService.sendAdminNewUserNotification({
+        userEmail: createdUser.email,
+        salonName: createdUser.salonName ?? 'Salon',
+        saasPlan: createdUser.saasPlan || 'Salon',
+        firstName: createdUser.firstName,
+        lastName: createdUser.lastName,
+        phone: createdUser.phone,
+        registrationDate: new Date().toLocaleDateString('fr-FR', { 
+          day: '2-digit', 
+          month: '2-digit', 
+          year: 'numeric', 
+          hour: '2-digit', 
+          minute: '2-digit' 
+        })
+      });
 
       // Génération du token de vérification de l'adresse mail
       const token = Math.floor(100000 + Math.random() * 900000).toString(); // Génère un nombre à 6 chiffres
@@ -133,8 +154,6 @@ export class AuthService {
       });
 
       const confirmationUrl = `${process.env.FRONTEND_URL}/verifier-email?token=${token}&email=${email}`;
-
-      console.log("🔗 Lien de confirmation d'email :", confirmationUrl);
 
       await this.mailService.sendEmailVerification(
           email,

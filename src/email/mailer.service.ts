@@ -54,6 +54,40 @@ export class MailService {
     }
   }
 
+  //! MAIL ADMIN - NOUVELLE INSCRIPTION
+  async sendAdminNewUserNotification(newUserData: {
+    userEmail: string;
+    salonName: string;
+    saasPlan: string;
+    registrationDate: string;
+    firstName?: string | null;
+    lastName?: string | null;
+    phone?: string | null;
+  }): Promise<MailgunResponse> {
+    const adminEmail = process.env.ADMIN_EMAIL || 'contact.inkera@gmail.com';
+    const subject = `Nouvelle inscription - ${newUserData.salonName}`;
+    
+    const emailData: EmailTemplateData = {
+      recipientName: 'Admin',
+      salonName: 'Inkera Studio - Admin',
+      newUserDetails: {
+        ...newUserData,
+        firstName: newUserData.firstName || undefined,
+        lastName: newUserData.lastName || undefined,
+        phone: newUserData.phone || undefined,
+      }
+    };
+    
+    const html = this.emailTemplateService.generateAdminNewUserNotificationEmail(emailData);
+    
+    return await this.sendMail(
+      adminEmail,
+      subject,
+      html,
+      'Inkera Studio - Notifications'
+    );
+  }
+
   //! MAIL DE CONFIRMATION DE RDV
   async sendAppointmentConfirmation(to: string, data: EmailTemplateData, salonName?: string, salonEmail?: string, userId?: string): Promise<MailgunResponse> {
     const subject = `Confirmation de votre rendez-vous${salonName ? ` chez ${salonName}` : ''}`;
