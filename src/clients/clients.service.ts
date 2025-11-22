@@ -41,7 +41,6 @@ export class ClientsService {
       
       if (!canCreateClient) {
         const limits = await this.saasService.checkLimits(userId);
-        console.log(`Limites actuelles pour l'utilisateur ${userId}:`, limits);
         return {
           error: true,
           message: `Limite de fiches clients atteinte (${limits.limits.clients}). Passez au plan PRO ou BUSINESS pour continuer.`,
@@ -216,7 +215,6 @@ export class ClientsService {
       }>(cacheKey);
       
       if (cachedClient) {
-        console.log(`✅ Client ${clientId} trouvé dans Redis`);
         return cachedClient;
       }
 
@@ -237,7 +235,6 @@ export class ClientsService {
 
       // 3. Mettre en cache (TTL 10 minutes pour un client spécifique)
       await this.cacheService.set(cacheKey, client, 600);
-      console.log(`💾 Client ${clientId} mis en cache`);
 
       return client;
     } catch (error: unknown) {
@@ -269,7 +266,6 @@ export class ClientsService {
       }>(cacheKey);
       
       if (cachedResult) {
-        console.log(`✅ Clients du salon ${userId} trouvés dans Redis pour la page ${page}`);
         return cachedResult;
       }
 
@@ -335,7 +331,6 @@ export class ClientsService {
 
       // 3. Mettre en cache (TTL 5 minutes pour les listes de clients)
       await this.cacheService.set(cacheKey, result, 300);
-      console.log(`💾 Clients du salon ${userId} mis en cache pour la page ${page}`);
 
       return result;
     } catch (error: unknown) {
@@ -350,8 +345,6 @@ export class ClientsService {
     //! SEARCH CLIENTS BY NAME OR EMAIL (for reservation form)
   async searchClients(query: string, userId: string) {
     try {
-      console.log('Searching clients with query:', query, 'for userId:', userId);
-
       const cacheKey = `clients:search:${userId}:${query?.trim()}`;
 
       // 1. Vérifier dans Redis
@@ -362,7 +355,6 @@ export class ClientsService {
       }>(cacheKey);
       
       if (cachedResult) {
-        console.log(`✅ Recherche clients "${query}" trouvée dans Redis pour user ${userId}`);
         return cachedResult;
       }
 
@@ -390,7 +382,6 @@ export class ClientsService {
 
       // 3. Mettre en cache (TTL 2 minutes pour les recherches)
       await this.cacheService.set(cacheKey, result, 120);
-      console.log(`💾 Recherche clients "${query}" mise en cache pour user ${userId}`);
 
       return result;
     } catch (error: unknown) {

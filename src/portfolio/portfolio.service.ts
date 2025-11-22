@@ -83,7 +83,6 @@ export class PortfolioService {
       }[]>(cacheKey);
       
       if (cachedPhotos) {
-        console.log(`✅ Photos portfolio pour user ${userId} trouvées dans Redis`);
         return cachedPhotos;
       }
 
@@ -95,7 +94,6 @@ export class PortfolioService {
 
       // 3. Mettre en cache (TTL 15 minutes pour les photos portfolio)
       await this.cacheService.set(cacheKey, photos, 900);
-      console.log(`💾 Photos portfolio pour user ${userId} mises en cache`);
 
       return photos;
     } catch (error) {

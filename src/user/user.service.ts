@@ -41,7 +41,6 @@ export class UserService {
       }>(cacheKey);
       
       if (cachedResult) {
-        console.log(`✅ Liste des users trouvée dans Redis pour la page ${currentPage}`);
         return cachedResult;
       }
 
@@ -133,7 +132,6 @@ export class UserService {
 
       // 3. Mettre en cache (TTL 5 minutes pour les listes avec filtres)
       await this.cacheService.set(cacheKey, result, 300);
-      console.log(`💾 Liste des users mise en cache pour la page ${currentPage}`);
 
       return result;
     } catch (error) {
@@ -224,7 +222,6 @@ export class UserService {
       try {
         const cachedUser = await this.cacheService.get(cacheKey);
         if (cachedUser) {
-          console.log(`✅ User avec slug ${nameSlug}/${locSlug} trouvé dans Redis`);
           return cachedUser;
         }
       } catch (cacheError) {
@@ -318,7 +315,6 @@ export class UserService {
       try {
         const ttl = 2 * 60 * 60; // 2 heures
         await this.cacheService.set(cacheKey, found, ttl);
-        console.log(`💾 User avec slug ${nameSlug}/${locSlug} mis en cache`);
       } catch (cacheError) {
         console.warn('Erreur sauvegarde cache Redis pour getUserBySlugAndLocation:', cacheError);
         // Continue même si la mise en cache échoue
@@ -339,7 +335,6 @@ export class UserService {
     const cachedUser = await this.cacheService.get<CachedUser>(cacheKey);
     
     if (cachedUser) {
-      console.log(`✅ User ${userId} trouvé dans Redis`);
       return cachedUser;
     }
 
@@ -398,7 +393,6 @@ export class UserService {
       try {
         const cachedPhotos = await this.cacheService.get<{salonPhotos: string[]}>(cacheKey);
         if (cachedPhotos) {
-          console.log(`✅ Photos salon pour user ${userId} trouvées dans Redis`);
           return cachedPhotos;
         }
       } catch (cacheError) {
@@ -428,7 +422,6 @@ export class UserService {
       try {
         const ttl = 60 * 60; // 1 heure
         await this.cacheService.set(cacheKey, result, ttl);
-        console.log(`💾 Photos salon pour user ${userId} mises en cache`);
       } catch (cacheError) {
         console.warn('Erreur sauvegarde cache Redis pour getPhotosSalon:', cacheError);
         // Continue même si la mise en cache échoue
@@ -548,8 +541,6 @@ export class UserService {
     this.cacheService.delPattern('users:list:*');
     // Invalider les caches de slug car les photos peuvent affecter l'affichage
     this.cacheService.delPattern('user:slug:*');
-
-    console.log("Salon photos updated:", limitedPhotos);
     return user;
   }
 
@@ -566,7 +557,6 @@ export class UserService {
       const cachedSetting = await this.cacheService.get<{addConfirmationEnabled: boolean}>(cacheKey);
       
       if (cachedSetting) {
-        console.log(`✅ Confirmation setting pour user ${userId} trouvé dans Redis`);
         return {
           error: false,
           user: cachedSetting,
@@ -586,7 +576,6 @@ export class UserService {
       // 3. Mettre en cache (TTL 1 heure pour les settings)
       if (user) {
         await this.cacheService.set(cacheKey, user, 3600);
-        console.log(`💾 Confirmation setting pour user ${userId} mis en cache`);
       }
 
       return {
@@ -608,7 +597,6 @@ export class UserService {
 
   //! ------------------------------------------------------------------------------
   async updateConfirmationSetting({userId, addConfirmationEnabled}: {userId: string, addConfirmationEnabled: boolean}) {
-    console.log("userId dans le service:", userId, addConfirmationEnabled);
     try {
       const user = await this.prisma.user.update({
         where: {
@@ -658,7 +646,6 @@ export class UserService {
       const cachedSetting = await this.cacheService.get<{appointmentBookingEnabled: boolean}>(cacheKey);
       
       if (cachedSetting) {
-        console.log(`✅ Appointment booking setting pour user ${userId} trouvé dans Redis`);
         return {
           error: false,
           user: cachedSetting,
@@ -678,7 +665,6 @@ export class UserService {
       // 3. Mettre en cache (TTL 1 heure pour les settings)
       if (user) {
         await this.cacheService.set(cacheKey, user, 3600);
-        console.log(`💾 Appointment booking setting pour user ${userId} mis en cache`);
       }
 
       return {
@@ -700,7 +686,6 @@ export class UserService {
 
   //! ------------------------------------------------------------------------------
   async updateAppointmentBooking({userId, appointmentBookingEnabled}: {userId: string, appointmentBookingEnabled: boolean}) {
-    console.log("userId dans le service:", userId, appointmentBookingEnabled);
     try {
       const user = await this.prisma.user.update({
         where: {
@@ -749,7 +734,6 @@ export class UserService {
       const cachedColorProfile = await this.cacheService.get<{colorProfile: string | null, colorProfileBis: string | null}>(cacheKey);
       
       if (cachedColorProfile) {
-        console.log(`✅ Color profile pour user ${userId} trouvé dans Redis`);
         return {
           error: false,
           user: cachedColorProfile,
@@ -770,7 +754,6 @@ export class UserService {
       // 3. Mettre en cache (TTL 1 heure pour les couleurs)
       if (user) {
         await this.cacheService.set(cacheKey, user, 3600);
-        console.log(`💾 Color profile pour user ${userId} mis en cache`);
       }
 
       return {

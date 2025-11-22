@@ -71,7 +71,6 @@ export class ProductSalonService {
       }[]>(cacheKey);
       
       if (cachedProducts) {
-        console.log(`✅ Produits salon pour user ${userId} trouvés dans Redis`);
         return cachedProducts;
       }
 
@@ -83,7 +82,6 @@ export class ProductSalonService {
 
       // 3. Mettre en cache (TTL 20 minutes pour les produits salon)
       await this.cacheService.set(cacheKey, products, 1200);
-      console.log(`💾 Produits salon pour user ${userId} mis en cache`);
 
       return products;
     } catch (error: unknown) {

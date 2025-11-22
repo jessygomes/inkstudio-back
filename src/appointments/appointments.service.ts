@@ -266,8 +266,6 @@ export class AppointmentsService {
             undefined, // salonEmail
             userId // Passer l'ID utilisateur pour les couleurs
           );
-          
-          console.log('🎯 Email de confirmation PROJET/TATTOO envoyé avec succès !');
         } catch (emailError) {
           console.error('💥 ERREUR lors de l\'envoi de l\'email PROJET/TATTOO:', emailError);
           // Ne pas faire échouer la création du RDV si l'email échoue
@@ -340,8 +338,6 @@ export class AppointmentsService {
           },
           salon?.salonName || undefined // Passer le nom du salon
         );
-        
-        console.log('🎯 Email de confirmation envoyé avec succès !');
       } catch (emailError) {
         console.error('💥 ERREUR lors de l\'envoi de l\'email:', emailError);
         // Ne pas faire échouer la création du RDV si l'email échoue
@@ -806,7 +802,6 @@ export class AppointmentsService {
       }>(cacheKey);
       
       if (cachedResult) {
-        console.log(`✅ RDV par date trouvés dans Redis pour user ${userId}, page ${page}`);
         return cachedResult;
       }
 
@@ -870,7 +865,6 @@ export class AppointmentsService {
 
       // 3. Mettre en cache (TTL 5 minutes pour les listes par date)
       await this.cacheService.set(cacheKey, result, 300);
-      console.log(`💾 RDV par date mis en cache pour user ${userId}, page ${page}`);
 
       return result;
     } catch (error: unknown) {
@@ -905,7 +899,6 @@ export class AppointmentsService {
       }>(cacheKey);
       
       if (cachedResult) {
-        console.log(`✅ Tous les RDV du salon ${salonId} trouvés dans Redis, page ${page}`);
         return cachedResult;
       }
 
@@ -962,7 +955,6 @@ export class AppointmentsService {
 
       // 3. Mettre en cache (TTL 5 minutes pour la liste complète)
       await this.cacheService.set(cacheKey, result, 300);
-      console.log(`💾 Tous les RDV du salon ${salonId} mis en cache, page ${page}`);
 
       return result;
     } catch (error: unknown) {
@@ -1030,7 +1022,6 @@ export class AppointmentsService {
       }>(cacheKey);
       
       if (cachedAppointment) {
-        console.log(`✅ RDV ${id} trouvé dans Redis`);
         return cachedAppointment;
       }
 
@@ -1048,7 +1039,6 @@ export class AppointmentsService {
       // 3. Mettre en cache si trouvé (TTL 10 minutes pour un RDV spécifique)
       if (appointment) {
         await this.cacheService.set(cacheKey, appointment, 600);
-        console.log(`💾 RDV ${id} mis en cache`);
       }
 
       return appointment;
@@ -1477,8 +1467,6 @@ export class AppointmentsService {
       ? statusData.status 
       : statusData;
     
-    console.log(`🔄 Changement du statut du rendez-vous ${id} à ${status}`);
-    
     // Validation du statut
     if (!['COMPLETED', 'NO_SHOW'].includes(status)) {
       return {
@@ -1521,7 +1509,6 @@ export class AppointmentsService {
             },
           });
           
-          console.log(`✅ Historique de tatouage créé pour le RDV ${id}`);
         } catch (historyError) {
           console.error('⚠️ Erreur lors de la création de l\'historique:', historyError);
           // On ne fait pas échouer la mise à jour du statut si l'historique échoue
@@ -1534,12 +1521,10 @@ export class AppointmentsService {
           
           // 1. Programmer le suivi de cicatrisation pour TATTOO et PIERCING
           await this.followupSchedulerService.scheduleFollowupFromCompletion(appointment.id, completedTime);
-          console.log(`✅ Suivi de cicatrisation programmé pour le RDV ${id}`);
           
           // 2. Programmer le rappel retouches uniquement pour les TATTOO
           if (appointment.prestation === 'TATTOO') {
             this.followupSchedulerService.scheduleRetouchesReminderFromCompletion(appointment.id, completedTime);
-            console.log(`✅ Rappel retouches programmé pour le RDV ${id}`);
           }
         } catch (followupError) {
           console.error('⚠️ Erreur lors de la programmation des suivis:', followupError);
@@ -1600,8 +1585,6 @@ export class AppointmentsService {
           message: 'Client non trouvé pour ce rendez-vous',
         };
       }
-
-      console.log(`✉️ Envoi d'un email personnalisé au client ${appointment.client.email} pour le RDV ${appointmentId}`);
 
       // Envoyer l'email personnalisé avec le template et le nom du salon
       await this.mailService.sendCustomEmail(
@@ -2488,8 +2471,6 @@ export class AppointmentsService {
     try {
       const { appointmentId, reason, newTatoueurId } = proposeData;
 
-      console.log(reason)
-
       // ==================== ÉTAPE 1: VÉRIFICATION DU RDV EXISTANT ====================
       const existingAppointment = await this.prisma.appointment.findFirst({
         where: {
@@ -2849,7 +2830,6 @@ export class AppointmentsService {
 
   //! ------------------------------------------------------------------------------
   async createAppointmentRequest(dto: CreateAppointmentRequestDto) {
-    console.log('Création d\'une demande de rendez-vous:', dto);
 
     try {
       const appointmentRequest = await this.prisma.appointmentRequest.create({
@@ -3133,8 +3113,6 @@ export class AppointmentsService {
   //       where: { appointmentRequestId: requestId },
   //       orderBy: { createdAt: 'asc' },
   //     });
-
-  //     console.log('Créneaux proposés:', createdSlots);
 
   //     // Envoi d'un email au client avec les créneaux proposés
   //     const salonName = appointmentRequest.user?.salonName || 'Votre salon';

@@ -77,7 +77,6 @@ export class TatoueursService {
       }[]>(cacheKey);
       
       if (cachedTatoueurs) {
-        console.log(`✅ Tous les tatoueurs trouvés dans Redis`);
         return cachedTatoueurs;
       }
 
@@ -86,7 +85,6 @@ export class TatoueursService {
 
       // 3. Mettre en cache (TTL 30 minutes pour tous les tatoueurs)
       await this.cacheService.set(cacheKey, tatoueurs, 1800);
-      console.log(`💾 Tous les tatoueurs mis en cache`);
 
       return tatoueurs;
     } catch (error: unknown) {
@@ -113,7 +111,6 @@ export class TatoueursService {
       }[]>(cacheKey);
       
       if (cachedTatoueurs) {
-        console.log(`✅ Tatoueurs pour user ${userId} trouvés dans Redis`);
         return cachedTatoueurs;
       }
 
@@ -126,7 +123,6 @@ export class TatoueursService {
 
       // 3. Mettre en cache (TTL 20 minutes pour les tatoueurs d'un salon)
       await this.cacheService.set(cacheKey, tatoueurs, 1200);
-      console.log(`💾 Tatoueurs pour user ${userId} mis en cache`);
 
       return tatoueurs;
     } catch (error: unknown) {
@@ -154,7 +150,6 @@ export class TatoueursService {
       }[]>(cacheKey);
       
       if (cachedTatoueurs) {
-        console.log(`✅ Tatoueurs RDV-enabled pour user ${userId} trouvés dans Redis`);
         return cachedTatoueurs;
       }
 
@@ -168,7 +163,6 @@ export class TatoueursService {
 
       // 3. Mettre en cache (TTL 15 minutes pour les tatoueurs RDV-enabled)
       await this.cacheService.set(cacheKey, tatoueurs, 900);
-      console.log(`💾 Tatoueurs RDV-enabled pour user ${userId} mis en cache`);
 
       return tatoueurs;
     } catch (error: unknown) {
@@ -195,7 +189,6 @@ export class TatoueursService {
       }>(cacheKey);
       
       if (cachedTatoueur) {
-        console.log(`✅ Tatoueur ${id} trouvé dans Redis`);
         return cachedTatoueur;
       }
 
@@ -209,7 +202,6 @@ export class TatoueursService {
       // 3. Mettre en cache si trouvé (TTL 30 minutes pour un tatoueur spécifique)
       if (tatoueur) {
         await this.cacheService.set(cacheKey, tatoueur, 1800);
-        console.log(`💾 Tatoueur ${id} mis en cache`);
       }
 
       return tatoueur;

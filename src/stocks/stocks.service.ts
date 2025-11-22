@@ -70,7 +70,6 @@ export class StocksService {
       }>(cacheKey);
       
       if (cachedResult) {
-        console.log(`✅ Stocks du salon ${userId} trouvés dans Redis pour la page ${page}`);
         return cachedResult;
       }
 
@@ -127,7 +126,6 @@ export class StocksService {
 
       // 3. Mettre en cache (TTL 5 minutes pour les listes de stocks)
       await this.cacheService.set(cacheKey, result, 300);
-      console.log(`💾 Stocks du salon ${userId} mis en cache pour la page ${page}`);
 
       return result;
     } catch (error: unknown) {
@@ -156,7 +154,6 @@ export class StocksService {
       }>(cacheKey);
       
       if (cachedStockItem) {
-        console.log(`✅ Élément de stock ${id} trouvé dans Redis`);
         return cachedStockItem;
       }
 
@@ -171,7 +168,6 @@ export class StocksService {
 
       // 3. Mettre en cache (TTL 10 minutes pour un élément spécifique)
       await this.cacheService.set(cacheKey, stockItem, 600);
-      console.log(`💾 Élément de stock ${id} mis en cache`);
 
       return stockItem;
     } catch (error: unknown) {
