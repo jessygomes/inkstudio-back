@@ -32,6 +32,8 @@ import { RedisModule } from './redis/redis.module';
 import { StocksModule } from './stocks/stocks.module';
 import { StocksController } from './stocks/stocks.controller';
 import { StocksService } from './stocks/stocks.service';
+import { PiercingPriceController } from './piercing-price/piercing-price.controller';
+import { PiercingPriceService } from './piercing-price/piercing-price.service';
 
 @Module({
   imports: [
@@ -74,6 +76,7 @@ import { StocksService } from './stocks/stocks.service';
     TattooHistoryController,
     PortfolioController,
     ProductSalonController,
+    PiercingPriceController,
   ],
   providers: [
     UserService,
@@ -83,6 +86,7 @@ import { StocksService } from './stocks/stocks.service';
     StocksService,
     TattooHistoryService,
     PortfolioService,
+    PiercingPriceService,
   ],
 })
 export class AppModule {}

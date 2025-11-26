@@ -436,13 +436,18 @@ export class UserService {
 
   //! UPDATE USER
   async updateUser({userId, userBody} : {userId: string; userBody: { salonName: string; firstName: string; lastName: string; phone: string; address: string; city: string; postalCode: string; instagram: string; facebook: string; tiktok: string; website: string; description: string; image: string; prestations?: string[]; }}) {
+    
+    // Vérifier que userId est défini
+    if (!userId) {
+      throw new Error('UserId est requis pour mettre à jour un utilisateur');
+    }
 
-  const allowed = new Set(["TATTOO", "RETOUCHE", "PROJET", "PIERCING"]);
-  const safePrestations = Array.isArray(userBody.prestations)
-    ? userBody.prestations
-        .map(p => typeof p === 'string' ? p.toUpperCase().trim() : '')
-        .filter(p => allowed.has(p))
-    : [];
+    const allowed = new Set(["TATTOO", "RETOUCHE", "PROJET", "PIERCING"]);
+    const safePrestations = Array.isArray(userBody.prestations)
+      ? userBody.prestations
+          .map(p => typeof p === 'string' ? p.toUpperCase().trim() : '')
+          .filter(p => allowed.has(p))
+      : [];
 
     const user = await this.prisma.user.update({
       where: {

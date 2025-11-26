@@ -61,6 +61,8 @@ model User {
   TimeSlot                  TimeSlot[]
 
   StockItem                  StockItem[]
+  PiercingPrice             PiercingPrice[]
+  PiercingServicePrice      PiercingServicePrice[]
 }
 
 model VerificationToken {
@@ -232,12 +234,19 @@ model TattooDetail {
   colorStyle     String?
   reference      String?
   sketch         String?
+  piercingZone    PiercingZone?
+  piercingZoneOreille PiercingZoneOreille?
+  piercingZoneVisage  PiercingZoneVisage?
+  piercingZoneBouche  PiercingZoneBouche?
+  piercingZoneCorps   PiercingZoneCorps?
+  piercingZoneMicrodermal PiercingZoneMicrodermal?
   estimatedPrice Float?
   price          Float?
   isPayed        Boolean      @default(false)
   appointment    Appointment? @relation(fields: [appointmentId], references: [id])
   client         Client?      @relation(fields: [clientId], references: [id])
 }
+
 
 model MedicalHistory {
   id            String  @id @default(cuid())
@@ -410,6 +419,45 @@ model RescheduleRequest {
   @@index([expiresAt])
 }
 
+model PiercingPrice {
+  id               String          @id @default(cuid())
+  userId           String
+  piercingZone     PiercingZone
+  isActive         Boolean         @default(true)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  services         PiercingServicePrice[]
+  
+  @@unique([userId, piercingZone])
+  @@index([userId])
+  @@index([piercingZone])
+}
+
+model PiercingServicePrice {
+  id               String          @id @default(cuid())
+  userId           String
+  piercingPriceId  String
+  piercingZoneOreille  PiercingZoneOreille?
+  piercingZoneVisage   PiercingZoneVisage?
+  piercingZoneBouche   PiercingZoneBouche?
+  piercingZoneCorps    PiercingZoneCorps?
+  piercingZoneMicrodermal PiercingZoneMicrodermal?
+  price            Float
+  description      String?
+  isActive         Boolean         @default(true)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  piercingPrice    PiercingPrice   @relation(fields: [piercingPriceId], references: [id], onDelete: Cascade)
+  
+  @@unique([piercingPriceId, piercingZoneOreille, piercingZoneVisage, piercingZoneBouche, piercingZoneCorps, piercingZoneMicrodermal])
+  @@index([userId])
+  @@index([piercingPriceId])
+}
+
 enum Role {
   admin
   user
@@ -433,6 +481,74 @@ enum PrestationType {
   PIERCING
   RETOUCHE
   PROJET
+}
+
+enum PiercingZone {
+  OREILLE
+  VISAGE
+  BOUCHE
+  CORPS
+  MICRODERMAL
+}
+
+enum PiercingZoneOreille {
+  LOBE
+  LOBE_x2
+  HELIX
+  ANTI_HELIX
+  ROOK 
+  TRAGUS
+  ANTI_TRAGUS
+  CONCH
+  FLAT 
+  DAITH
+  SNUG
+  INDUSTRIEL
+  STRETCH
+  SURFACE_TRAGUS
+  CARTILAGE_PUNCH
+}
+
+enum PiercingZoneVisage {
+  NOSTRIL_FAKE_RING
+  NOSTRIL_FAKE_RING_x2
+  NOSTRIL_CLASSIQUE
+  NOSTRIL_CLASSIQUE_x2
+  HIGH_NOSTRIL
+  HIGH_NOSTRIL_x2
+  SEPTUM
+  ARCADE
+  CHEEK
+  CHEEK_x2
+  BRIDGE
+}
+
+enum PiercingZoneBouche {
+  SMILEY
+  MEDUSA
+  LABRET
+  JESTRUM
+  LABRET_VERTICAL
+  LABRET_DECALE
+  DAHLIA
+  LANGUE
+  LANGUE_VENUM
+  ANGEL_BITES
+  SNAKE_BITES
+  ANGEL_FANGS
+  CYBER_BITES
+  ASHLEY
+}
+
+enum PiercingZoneCorps {
+  NOMBRIL
+  TETON
+  TETON_x2
+}
+
+enum PiercingZoneMicrodermal {
+  SURFACE
+  MICRODERMAL
 }
 
 enum AppointmentStatus {
