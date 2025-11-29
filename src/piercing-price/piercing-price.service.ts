@@ -178,6 +178,21 @@ export class PiercingPriceService {
   //   });
   // }
 
+  async getServicePriceById(userId: string, id: string) {
+    const servicePrice = await this.prisma.piercingServicePrice.findFirst({
+      where: { id, userId },
+      include: {
+        piercingPrice: true,
+      },
+    });
+
+    if (!servicePrice) {
+      throw new NotFoundException('Prix de service non trouvé');
+    }
+
+    return servicePrice;
+  }
+
   //! Obtenir un aperçu complet des zones et prix configurés par le salon
   async getSalonPricingOverview(userId: string) {
     const zones = await this.prisma.piercingPrice.findMany({
@@ -207,6 +222,40 @@ export class PiercingPriceService {
         ),
         price: service.price,
         description: service.description
+      }))
+    }));
+  }
+
+  //! Obtenir les configurations complètes du salon (zones + services avec détails)
+  async getSalonPiercingConfiguration(userId: string) {
+    const zones = await this.prisma.piercingPrice.findMany({
+      where: { userId },
+      include: {
+        services: {
+          orderBy: { price: 'asc' }
+        },
+      },
+      orderBy: { piercingZone: 'asc' }
+    });
+
+    return zones.map(zone => ({
+      id: zone.id,
+      piercingZone: zone.piercingZone,
+      isActive: zone.isActive,
+      createdAt: zone.createdAt,
+      updatedAt: zone.updatedAt,
+      services: zone.services.map(service => ({
+        id: service.id,
+        piercingZoneOreille: service.piercingZoneOreille,
+        piercingZoneVisage: service.piercingZoneVisage,
+        piercingZoneBouche: service.piercingZoneBouche,
+        piercingZoneCorps: service.piercingZoneCorps,
+        piercingZoneMicrodermal: service.piercingZoneMicrodermal,
+        price: service.price,
+        description: service.description,
+        isActive: service.isActive,
+        createdAt: service.createdAt,
+        updatedAt: service.updatedAt
       }))
     }));
   }

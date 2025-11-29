@@ -7,11 +7,10 @@ import { CreatePiercingServicePriceDto } from './dto/create-piercing-service-pri
 import { CreatePiercingPriceDto } from './dto/create-piercing-price.dto';
 
 @Controller('piercing-prices')
-@UseGuards(JwtAuthGuard)
 export class PiercingPriceController {
   constructor(private readonly piercingPriceService: PiercingPriceService) {}
 
-  // Endpoints pour récupérer les enums
+  // Endpoints pour récupérer les enums (routes spécifiques en premier)
   @Get('enums/zones')
   getPiercingZoneEnums() {
     return Object.values(PiercingZone as unknown as { [s: string]: unknown });
@@ -60,44 +59,40 @@ export class PiercingPriceController {
     }
   }
 
-  // Types de piercing (zones générales)
-  @Post('zones')
+  // Endpoints utilitaires (routes spécifiques avant les routes avec paramètres)
+
+
+  @Get('overview')
   @UseGuards(JwtAuthGuard)
-  createPiercingZone(@Request() req: RequestWithUser, @Body() createPiercingPriceDto: CreatePiercingPriceDto) {
-    return this.piercingPriceService.createPiercingZone(req.user.userId, createPiercingPriceDto);
+  getSalonPricingOverview(@Request() req: RequestWithUser) {
+    return this.piercingPriceService.getSalonPricingOverview(req.user.userId);
   }
 
-  @Get('zones')
-  getPiercingZones(@Request() req: RequestWithUser) {
-    return this.piercingPriceService.getPiercingZones(req.user.userId);
-  }
-
-  @Patch('zones/:id')
-  updatePiercingZone(
-    @Request() req: RequestWithUser,
-    @Param('id') id: string,
-    @Body() updatePiercingPriceDto: CreatePiercingPriceDto,
-  ) {
-    return this.piercingPriceService.updatePiercingZone(req.user.userId, id, updatePiercingPriceDto);
-  }
-
-  @Delete('zones/:id')
-  deletePiercingZone(@Request() req: RequestWithUser, @Param('id') id: string) {
-    return this.piercingPriceService.deletePiercingZone(req.user.userId, id);
+  @Get('available-zones')
+  getAvailableZonesForConfiguration(@Request() req: RequestWithUser) {
+    return this.piercingPriceService.getAvailableZonesForConfiguration(req.user.userId);
   }
 
   // Services de piercing (zones spécifiques avec prix)
-  @Post('services')
-  createServicePrice(@Request() req: RequestWithUser, @Body() createServicePriceDto: CreatePiercingServicePriceDto) {
-    return this.piercingPriceService.createServicePrice(req.user.userId, createServicePriceDto);
-  }
-
   @Get('services')
   getServicePrices(@Request() req: RequestWithUser, @Query('piercingPriceId') piercingPriceId?: string) {
     return this.piercingPriceService.getServicePrices(req.user.userId, piercingPriceId);
   }
 
+  @Post('services')
+  @UseGuards(JwtAuthGuard)
+  createServicePrice(@Request() req: RequestWithUser, @Body() createServicePriceDto: CreatePiercingServicePriceDto) {
+    return this.piercingPriceService.createServicePrice(req.user.userId, createServicePriceDto);
+  }
+
+  @Get('services/:id')
+  @UseGuards(JwtAuthGuard)
+  getServicePriceById(@Request() req: RequestWithUser, @Param('id') id: string) {
+    return this.piercingPriceService.getServicePriceById(req.user.userId, id);
+  }
+
   @Patch('services/:id')
+  @UseGuards(JwtAuthGuard)
   updateServicePrice(
     @Request() req: RequestWithUser,
     @Param('id') id: string,
@@ -107,23 +102,41 @@ export class PiercingPriceController {
   }
 
   @Delete('services/:id')
+  @UseGuards(JwtAuthGuard)
   deleteServicePrice(@Request() req: RequestWithUser, @Param('id') id: string) {
     return this.piercingPriceService.deleteServicePrice(req.user.userId, id);
   }
 
-  // @Get('services/search')
-  // getSpecificServicePrice(@Request() req: RequestWithUser, @Query() searchCriteria: any) {
-  //   return this.piercingPriceService.getSpecificServicePrice(req.user.userId, searchCriteria);
-  // }
-
-  // Endpoints utilitaires
-  @Get('overview')
-  getSalonPricingOverview(@Request() req: RequestWithUser) {
-    return this.piercingPriceService.getSalonPricingOverview(req.user.userId);
+    @Get('configuration/:userId')
+  getSalonPiercingConfiguration(@Param('userId') userId: string) {
+    return this.piercingPriceService.getSalonPiercingConfiguration(userId);
   }
 
-  @Get('available-zones')
-  getAvailableZonesForConfiguration(@Request() req: RequestWithUser) {
-    return this.piercingPriceService.getAvailableZonesForConfiguration(req.user.userId);
+  // Types de piercing (zones générales)
+  @Get('zones')
+  getPiercingZones(@Request() req: RequestWithUser) {
+    return this.piercingPriceService.getPiercingZones(req.user.userId);
+  }
+
+  @Post('zones')
+  @UseGuards(JwtAuthGuard)
+  createPiercingZone(@Request() req: RequestWithUser, @Body() createPiercingPriceDto: CreatePiercingPriceDto) {
+    return this.piercingPriceService.createPiercingZone(req.user.userId, createPiercingPriceDto);
+  }
+
+  @Patch('zones/:id')
+  @UseGuards(JwtAuthGuard)
+  updatePiercingZone(
+    @Request() req: RequestWithUser,
+    @Param('id') id: string,
+    @Body() updatePiercingPriceDto: CreatePiercingPriceDto,
+  ) {
+    return this.piercingPriceService.updatePiercingZone(req.user.userId, id, updatePiercingPriceDto);
+  }
+
+  @Delete('zones/:id')
+  @UseGuards(JwtAuthGuard)
+  deletePiercingZone(@Request() req: RequestWithUser, @Param('id') id: string) {
+    return this.piercingPriceService.deletePiercingZone(req.user.userId, id);
   }
 }

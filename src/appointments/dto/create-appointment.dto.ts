@@ -6,6 +6,7 @@ import {
   IsOptional,
   IsString,
 } from 'class-validator';
+import { PiercingZone } from '@prisma/client';
 
 export enum PrestationType {
   TATTOO = 'TATTOO',
@@ -17,10 +18,11 @@ export enum PrestationType {
 export class CreateAppointmentDto {  
   @IsOptional()
   @IsString()
-  userId: string; // Permet de créer un RDV pour un client spécifique (admin ou tatoueur)
+  userId?: string; // Permet de créer un RDV pour un client spécifique (admin ou tatoueur)
 
+  @IsOptional()
   @IsString()
-  title: string;
+  title?: string;
 
   @IsEnum(PrestationType)
   @IsNotEmpty()
@@ -46,13 +48,13 @@ export class CreateAppointmentDto {
   @IsNotEmpty()
   clientEmail: string;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  clientPhone: string;
+  clientPhone?: string;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  clientBirthdate: string;
+  clientBirthdate?: string;
 
   @IsString()
   @IsNotEmpty()
@@ -62,6 +64,7 @@ export class CreateAppointmentDto {
   @IsOptional()
   isPayed?: boolean = false;
 
+  @IsOptional()
   @IsBoolean()
   visio?: boolean = false; // coche la case ou non
 
@@ -78,4 +81,34 @@ export class CreateAppointmentDto {
   @IsOptional() @IsString() sketch?: string;
   @IsOptional() estimatedPrice?: number;
   @IsOptional() price?: number;
+
+  // Champs spécifiques aux piercings
+  @IsEnum(PiercingZone)
+  @IsOptional()
+  piercingZone?: PiercingZone;
+
+  @IsOptional()
+  @IsString()
+  piercingServicePriceId?: string; // ID du service de piercing sélectionné
+
+  // Champs de compatibilité avec l'ancien système
+  @IsOptional()
+  @IsString()
+  piercingZoneOreille?: string;
+
+  @IsOptional()
+  @IsString()
+  piercingZoneVisage?: string;
+
+  @IsOptional()
+  @IsString()
+  piercingZoneBouche?: string;
+
+  @IsOptional()
+  @IsString()
+  piercingZoneCorps?: string;
+
+  @IsOptional()
+  @IsString()
+  piercingZoneMicrodermal?: string;
 }

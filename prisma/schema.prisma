@@ -225,26 +225,23 @@ model Client {
 }
 
 model TattooDetail {
-  id             String       @id @default(cuid())
-  clientId       String?
-  appointmentId  String?      @unique
-  description    String
-  zone           String?
-  size           String?
-  colorStyle     String?
-  reference      String?
-  sketch         String?
-  piercingZone    PiercingZone?
-  piercingZoneOreille PiercingZoneOreille?
-  piercingZoneVisage  PiercingZoneVisage?
-  piercingZoneBouche  PiercingZoneBouche?
-  piercingZoneCorps   PiercingZoneCorps?
-  piercingZoneMicrodermal PiercingZoneMicrodermal?
-  estimatedPrice Float?
-  price          Float?
-  isPayed        Boolean      @default(false)
-  appointment    Appointment? @relation(fields: [appointmentId], references: [id])
-  client         Client?      @relation(fields: [clientId], references: [id])
+  id                      String       @id @default(cuid())
+  clientId                String?
+  appointmentId           String?      @unique
+  description             String
+  zone                    String?
+  size                    String?
+  colorStyle              String?
+  reference               String?
+  sketch                  String?
+  piercingZone            PiercingZone?
+  piercingServicePriceId  String?      // ID du service de piercing sélectionné
+  estimatedPrice          Float?
+  price                   Float?
+  isPayed                 Boolean      @default(false)
+  appointment             Appointment? @relation(fields: [appointmentId], references: [id])
+  client                  Client?      @relation(fields: [clientId], references: [id])
+  piercingServicePrice    PiercingServicePrice? @relation(fields: [piercingServicePriceId], references: [id])
 }
 
 
@@ -452,6 +449,7 @@ model PiercingServicePrice {
   
   user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   piercingPrice    PiercingPrice   @relation(fields: [piercingPriceId], references: [id], onDelete: Cascade)
+  tattooDetails    TattooDetail[]  // Relation inverse
   
   @@unique([piercingPriceId, piercingZoneOreille, piercingZoneVisage, piercingZoneBouche, piercingZoneCorps, piercingZoneMicrodermal])
   @@index([userId])

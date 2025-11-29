@@ -24,9 +24,12 @@ export class AppointmentsController {
   }
 
   @Post('by-client')
-  async createByClient(@Body() rdvBody: CreateAppointmentDto) {
-    const userId = rdvBody.userId;
-    return await this.appointmentsService.createByClient({userId, rdvBody });
+  async createByClient(@Body() body: { userId: string; rdvBody: CreateAppointmentDto }) {
+    console.log('Creating appointment by client with body:', body);
+    const { userId, rdvBody } = body;
+    console.log('User ID:', userId);
+    console.log('RDV Body:', rdvBody);
+    return await this.appointmentsService.createByClient({ userId, rdvBody });
   }
 
   //! DEMANDE DE RDV CLIENT

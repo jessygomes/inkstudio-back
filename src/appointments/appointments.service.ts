@@ -21,7 +21,7 @@ export class AppointmentsService {
     private readonly followupSchedulerService: FollowupSchedulerService,
     private readonly saasService: SaasService,
     private readonly videoCallService: VideoCallService,
-     private cacheService: CacheService
+    private cacheService: CacheService
   ) {}
 
   //! ------------------------------------------------------------------------------
@@ -97,33 +97,24 @@ export class AppointmentsService {
     try {
       const {  title, prestation, start, end, clientFirstname, clientLastname, clientEmail, clientPhone, clientBirthdate, tatoueurId, visio, visioRoom } = rdvBody;
 
+      // S'assurer que title a toujours une valeur
+      const appointmentTitle = title || `${prestation} - ${clientFirstname} ${clientLastname}`;
+
       // Convertir la date de naissance en objet Date si elle est fournie
       const parsedBirthdate = clientBirthdate ? new Date(clientBirthdate) : null;
 
-      // 🔒 VÉRIFIER LES LIMITES SAAS - RENDEZ-VOUS PAR MOIS
-      // const canCreateAppointment = await this.saasService.canPerformAction(userId, 'appointment');
-      
-      // if (!canCreateAppointment) {
-      //   const limits = await this.saasService.checkLimits(userId);
-      //   return {
-      //     error: true,
-      //     message: `Limite de rendez-vous par mois atteinte (${limits.limits.appointments}). Passez au plan PRO ou BUSINESS pour continuer.`,
-      //   };
-      // }
-
-        // Vérifier si le tatoueur existe
-        const artist = await this.prisma.tatoueur.findUnique({
-          where: {
-            id: tatoueurId,
-          },
-        });
-
-        if (!artist) {
-          return {
-            error: true,
-            message: 'Tatoueur introuvable.',
-          };
-        }
+      // Vérifier si le tatoueur existe
+      const artist = await this.prisma.tatoueur.findUnique({
+        where: {
+          id: tatoueurId,
+        },
+      });
+      if (!artist) {
+        return {
+          error: true,
+          message: 'Tatoueur introuvable.',
+        };
+      }
 
       // Vérifier si il y a deja un rendez-vous à ce créneau horaire avec ce tatoueur
       const existingAppointment = await this.prisma.appointment.findFirst({
@@ -154,18 +145,6 @@ export class AppointmentsService {
       });
 
       if (!client) {
-        // 🔒 VÉRIFIER LES LIMITES SAAS - CLIENTS (seulement si on crée un nouveau client)
-        // const canCreateClient = await this.saasService.canPerformAction(userId, 'client');
-        
-        // if (!canCreateClient) {
-        //   const limits = await this.saasService.checkLimits(userId);
-        //   return {
-        //     error: true,
-        //     message: `Limite de fiches clients atteinte (${limits.limits.clients}). Passez au plan PRO ou BUSINESS pour continuer.`,
-        //   };
-        // }
-
-        // Étape 2 : Créer le client s'il n'existe pas
         client = await this.prisma.client.create({
           data: {
             firstName: clientFirstname,
@@ -197,7 +176,7 @@ export class AppointmentsService {
         const newAppointment = await this.prisma.appointment.create({
           data: {
             userId,
-            title,
+            title: appointmentTitle,
             prestation,
             start: new Date(start),
             end: new Date(end),
@@ -222,20 +201,90 @@ export class AppointmentsService {
           select: { salonName: true }
         });
 
-        const tattooDetail = await this.prisma.tattooDetail.create({
-          data: {
-            appointmentId: newAppointment.id,
-            clientId: client.id,
-            description: rdvBody.description || '',
-            zone: rdvBody.zone || '',
-            size: rdvBody.size || '',
-            colorStyle: rdvBody.colorStyle || '',
-            reference: rdvBody.reference,
-            sketch: rdvBody.sketch,
-            estimatedPrice: rdvBody.estimatedPrice || 0,
-            price: rdvBody.price || 0,
-          },
-        });
+        // Gérer les détails spécifiques selon le type de prestation
+        if (prestation === PrestationType.PIERCING) {
+          // Pour les piercings, récupérer le prix automatiquement si possible
+          let piercingPrice = rdvBody.price || rdvBody.estimatedPrice || 0;
+
+          // Déterminer l'ID du service de piercing depuis les données du front
+          let piercingServiceId = rdvBody.piercingServicePriceId;
+          
+          // Si pas d'ID direct, chercher dans les anciens champs
+          if (!piercingServiceId) {
+            piercingServiceId = rdvBody.piercingZoneOreille || 
+                              rdvBody.piercingZoneVisage || 
+                              rdvBody.piercingZoneBouche || 
+                              rdvBody.piercingZoneCorps || 
+                              rdvBody.piercingZoneMicrodermal;
+          }
+
+          if (piercingServiceId) {
+            try {
+              const piercingPriceConfig = await this.prisma.piercingServicePrice.findUnique({
+                where: {
+                  id: piercingServiceId,
+                  userId,
+                  isActive: true,
+                },
+                select: {
+                  price: true,
+                },
+              });
+
+              if (piercingPriceConfig) {
+                piercingPrice = piercingPriceConfig.price;
+              }
+            } catch (priceError) {
+              console.warn('⚠️ Erreur lors de la récupération du prix piercing par ID:', priceError);
+            }
+          }
+
+          const tattooDetail = await this.prisma.tattooDetail.create({
+            data: {
+              appointmentId: newAppointment.id,
+              clientId: client.id,
+              description: rdvBody.description || '',
+              zone: rdvBody.zone || '',
+              size: rdvBody.size || '',
+              colorStyle: rdvBody.colorStyle || '',
+              reference: rdvBody.reference,
+              sketch: rdvBody.sketch,
+              // Champs spécifiques aux piercings
+              piercingZone: rdvBody.piercingZone,
+              piercingServicePriceId: piercingServiceId,
+              estimatedPrice: rdvBody.estimatedPrice || piercingPrice,
+              price: piercingPrice,
+            },
+          });
+
+          // Mettre à jour l'appointment avec l'ID du tattooDetail
+          await this.prisma.appointment.update({
+            where: { id: newAppointment.id },
+            data: { tattooDetailId: tattooDetail.id },
+          });
+        } else {
+          // Pour les autres prestations (TATTOO, PROJET, RETOUCHE)
+          const tattooDetail = await this.prisma.tattooDetail.create({
+            data: {
+              appointmentId: newAppointment.id,
+              clientId: client.id,
+              description: rdvBody.description || '',
+              zone: rdvBody.zone || '',
+              size: rdvBody.size || '',
+              colorStyle: rdvBody.colorStyle || '',
+              reference: rdvBody.reference,
+              sketch: rdvBody.sketch,
+              estimatedPrice: rdvBody.estimatedPrice || 0,
+              price: rdvBody.price || 0,
+            },
+          });
+
+          // Mettre à jour l'appointment avec l'ID du tattooDetail
+          await this.prisma.appointment.update({
+            where: { id: newAppointment.id },
+            data: { tattooDetailId: tattooDetail.id },
+          });
+        }
         
         try {
           await this.mailService.sendAppointmentConfirmation(
@@ -279,7 +328,7 @@ export class AppointmentsService {
           error: false,
           message: 'Rendez-vous projet créé avec détail tatouage.',
           appointment: newAppointment,
-          tattooDetail,
+          // tattooDetail,
         };
       }
 
@@ -287,7 +336,7 @@ export class AppointmentsService {
       const newAppointment = await this.prisma.appointment.create({
         data: {
           userId,
-          title,
+          title: appointmentTitle,
           prestation,
           start: new Date(start),
           end: new Date(end),
@@ -367,42 +416,42 @@ export class AppointmentsService {
     }
   } 
 
-    //! ------------------------------------------------------------------------------
+  //! ------------------------------------------------------------------------------
 
   //! CREER UN RDV PAR UN CLIENT (sans authentification)
 
   //! ------------------------------------------------------------------------------
-  async createByClient({ userId, rdvBody }: {userId: string, rdvBody: CreateAppointmentDto}) {
+  async createByClient({ userId, rdvBody }: {userId: string | undefined, rdvBody: CreateAppointmentDto}) {
     try {
-      const {  title, prestation, start, end, clientFirstname, clientLastname, clientEmail, clientPhone, clientBirthdate, tatoueurId, visio, visioRoom } = rdvBody;
+      // Vérifier que userId est fourni
+      if (!userId) {
+        return {
+          error: true,
+          message: 'ID du salon requis.',
+        };
+      }
+
+      const { title, prestation, start, end, clientFirstname, clientLastname, clientEmail, clientPhone, clientBirthdate, tatoueurId, visio, visioRoom } = rdvBody;
+
+      // S'assurer que title a toujours une valeur
+      const appointmentTitle = title || `${prestation} - ${clientFirstname} ${clientLastname}`;
 
       // Convertir la date de naissance en objet Date si elle est fournie
       const parsedBirthdate = clientBirthdate ? new Date(clientBirthdate) : null;
 
-      // 🔒 VÉRIFIER LES LIMITES SAAS - RENDEZ-VOUS PAR MOIS
-      const canCreateAppointment = await this.saasService.canPerformAction(userId, 'appointment');
-      
-      if (!canCreateAppointment) {
-        const limits = await this.saasService.checkLimits(userId);
+      // Vérifier si le tatoueur existe
+      const artist = await this.prisma.tatoueur.findUnique({
+        where: {
+          id: tatoueurId,
+        },
+      });
+
+      if (!artist) {
         return {
           error: true,
-          message: `Limite de rendez-vous par mois atteinte (${limits.limits.appointments}). Passez au plan PRO ou BUSINESS pour continuer.`,
+          message: 'Tatoueur introuvable.',
         };
       }
-
-        // Vérifier si le tatoueur existe
-        const artist = await this.prisma.tatoueur.findUnique({
-          where: {
-            id: tatoueurId,
-          },
-        });
-
-        if (!artist) {
-          return {
-            error: true,
-            message: 'Tatoueur introuvable.',
-          };
-        }
 
       // Vérifier si il y a deja un rendez-vous à ce créneau horaire avec ce tatoueur
       const existingAppointment = await this.prisma.appointment.findFirst({
@@ -433,18 +482,7 @@ export class AppointmentsService {
       });
 
       if (!client) {
-        // 🔒 VÉRIFIER LES LIMITES SAAS - CLIENTS (seulement si on crée un nouveau client)
-        const canCreateClient = await this.saasService.canPerformAction(userId, 'client');
-        
-        if (!canCreateClient) {
-          const limits = await this.saasService.checkLimits(userId);
-          return {
-            error: true,
-            message: `Limite de fiches clients atteinte (${limits.limits.clients}). Passez au plan PRO ou BUSINESS pour continuer.`,
-          };
-        }
-
-        // Étape 2 : Créer le client s'il n'existe pas
+        // Créer le client s'il n'existe pas
         client = await this.prisma.client.create({
           data: {
             firstName: clientFirstname,
@@ -485,7 +523,7 @@ export class AppointmentsService {
         const newAppointment = await this.prisma.appointment.create({
           data: {
             userId,
-            title,
+            title: appointmentTitle,
             prestation,
             start: new Date(start),
             end: new Date(end),
@@ -497,20 +535,90 @@ export class AppointmentsService {
           },
         });
       
-        const tattooDetail = await this.prisma.tattooDetail.create({
-          data: {
-            appointmentId: newAppointment.id,
-            clientId: client.id,
-            description: rdvBody.description || '',
-            zone: rdvBody.zone || '',
-            size: rdvBody.size || '',
-            colorStyle: rdvBody.colorStyle || '',
-            reference: rdvBody.reference,
-            sketch: rdvBody.sketch,
-            estimatedPrice: rdvBody.estimatedPrice || 0,
-            price: rdvBody.price || 0,
-          },
-        });
+        // Gérer les détails spécifiques selon le type de prestation
+        if (prestation === PrestationType.PIERCING) {
+          // Pour les piercings, récupérer le prix automatiquement si possible
+          let piercingPrice = rdvBody.price || rdvBody.estimatedPrice || 0;
+
+          // Déterminer l'ID du service de piercing depuis les données du front
+          let piercingServiceId = rdvBody.piercingServicePriceId;
+          
+          // Si pas d'ID direct, chercher dans les anciens champs
+          if (!piercingServiceId) {
+            piercingServiceId = rdvBody.piercingZoneOreille || 
+            rdvBody.piercingZoneVisage || 
+            rdvBody.piercingZoneBouche || 
+            rdvBody.piercingZoneCorps || 
+            rdvBody.piercingZoneMicrodermal;
+          }
+
+          if (piercingServiceId) {
+            try {
+              const piercingPriceConfig = await this.prisma.piercingServicePrice.findUnique({
+                where: {
+                  id: piercingServiceId,
+                  userId,
+                  isActive: true,
+                },
+                select: {
+                  price: true,
+                },
+              });
+
+              if (piercingPriceConfig) {
+                piercingPrice = piercingPriceConfig.price;
+              }
+            } catch (priceError) {
+              console.warn('⚠️ Erreur lors de la récupération du prix piercing par ID:', priceError);
+            }
+          }
+
+          const tattooDetail = await this.prisma.tattooDetail.create({
+            data: {
+              appointmentId: newAppointment.id,
+              clientId: client.id,
+              description: rdvBody.description || '',
+              zone: rdvBody.zone || '',
+              size: rdvBody.size || '',
+              colorStyle: rdvBody.colorStyle || '',
+              reference: rdvBody.reference,
+              sketch: rdvBody.sketch,
+              // Champs spécifiques aux piercings
+              piercingZone: rdvBody.piercingZone,
+              piercingServicePriceId: piercingServiceId,
+              estimatedPrice: rdvBody.estimatedPrice || piercingPrice,
+              price: piercingPrice,
+            },
+          });
+
+          // Mettre à jour l'appointment avec l'ID du tattooDetail
+          await this.prisma.appointment.update({
+            where: { id: newAppointment.id },
+            data: { tattooDetailId: tattooDetail.id },
+          });
+        } else {
+          // Pour les autres prestations (TATTOO, PROJET, RETOUCHE)
+          const tattooDetail = await this.prisma.tattooDetail.create({
+            data: {
+              appointmentId: newAppointment.id,
+              clientId: client.id,
+              description: rdvBody.description || '',
+              zone: rdvBody.zone || '',
+              size: rdvBody.size || '',
+              colorStyle: rdvBody.colorStyle || '',
+              reference: rdvBody.reference,
+              sketch: rdvBody.sketch,
+              estimatedPrice: rdvBody.estimatedPrice || 0,
+              price: rdvBody.price || 0,
+            },
+          });
+
+          // Mettre à jour l'appointment avec l'ID du tattooDetail
+          await this.prisma.appointment.update({
+            where: { id: newAppointment.id },
+            data: { tattooDetailId: tattooDetail.id },
+          });
+        }
 
         // Gestion des emails selon le statut
         if (salon.addConfirmationEnabled) {
@@ -609,10 +717,10 @@ export class AppointmentsService {
         return {
           error: false,
           message: salon.addConfirmationEnabled 
-            ? 'Rendez-vous projet créé en attente de confirmation.' 
-            : 'Rendez-vous projet créé avec détail tatouage.',
+            ? `Rendez-vous ${prestation.toLowerCase()} créé en attente de confirmation.` 
+            : `Rendez-vous ${prestation.toLowerCase()} créé avec succès.`,
           appointment: newAppointment,
-          tattooDetail,
+          // tattooDetail,
           status: appointmentStatus,
         };
       }
@@ -621,7 +729,7 @@ export class AppointmentsService {
       const newAppointment = await this.prisma.appointment.create({
         data: {
           userId,
-          title,
+          title: appointmentTitle,
           prestation,
           start: new Date(start),
           end: new Date(end),
@@ -730,8 +838,8 @@ export class AppointmentsService {
       return {
         error: false,
         message: salon.addConfirmationEnabled 
-          ? 'Rendez-vous créé en attente de confirmation.' 
-          : 'Rendez-vous créé avec succès.',
+          ? `Rendez-vous créé en attente de confirmation.` 
+          : `Rendez-vous créé avec succès.`,
         appointment: newAppointment,
         status: appointmentStatus,
       };
@@ -1102,7 +1210,7 @@ export class AppointmentsService {
     }
   }
 
-  //! ------------------------------------------------------------------------------
+  // ! -------------------------------------------------------------------------
 
   // ! MODIFIER UN RDV
 
@@ -1895,7 +2003,7 @@ export class AppointmentsService {
 
       // ==================== ÉTAPE 5: RETOUR DES RÉSULTATS ====================
       const result = {
-        error: false,           // Pas d'erreur
+        error: false,
         userId,                 // ID du salon
         startDate,              // Date de début (format original)
         endDate,                // Date de fin (format original)
@@ -2030,7 +2138,7 @@ export class AppointmentsService {
       // Formule: (RDV annulés / Total RDV) * 100
       // Exemple: 45 annulés sur 200 total = (45/200)*100 = 22.5%
       const cancellationRate = totalAppointments > 0 
-        ? Math.round((cancelledAppointments / totalAppointments) * 100 * 100) / 100 
+        ? Math.round((cancelledAppointments / totalAppointments) * 100 * 100) /  100 
         : 0; // Éviter la division par zéro
 
       // Calculer le taux de confirmation
@@ -2068,6 +2176,7 @@ export class AppointmentsService {
     } catch (error: unknown) {
       // ==================== GESTION D'ERREURS ====================
       // Si une erreur inattendue survient (problème DB, etc.)
+     
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       return {
         error: true,
@@ -2820,12 +2929,6 @@ export class AppointmentsService {
 
   //! ------------------------------------------------------------------------------
 
-  //! DEMANDE DE RDV ------------------------------------------------------------------------------
-
-  //! ------------------------------------------------------------------------------
-
-  //! ------------------------------------------------------------------------------
-
   //! DEMANDE DE RDV
 
   //! ------------------------------------------------------------------------------
@@ -3067,520 +3170,4 @@ export class AppointmentsService {
       };
     }
   }
-
-  // //! ------------------------------------------------------------------------------
-
-  // //! PROPOSER UN CRENEAU POUR UNE DEMANDE DE RDV CLIENT
-
-  // //! ------------------------------------------------------------------------------
-  // async proposeSlotForAppointmentRequest(requestId: string, slots: Array<{ from: Date; to: Date; tatoueurId?: string }>, message?: string) {
-  //   try {
-  //     const appointmentRequest = await this.prisma.appointmentRequest.findUnique({where: { id: requestId }, include: { user: true },});
-  //     if (!appointmentRequest) return { error: true, message: 'Demande de RDV introuvable' };
-  //     if (!slots?.length) return { error: true, message: 'Aucun créneau fourni' };
-
-  //     // GÉNÉRER UN TOKEN SÉCURISÉ ====================
-  //     const proposeToken = crypto.randomBytes(32).toString('hex');
-  //     const tokenExpiry = new Date();
-  //     tokenExpiry.setDate(tokenExpiry.getDate() + 7); // Le token expire dans 7 jours
-
-  //    // Met à jour la demande + remet à zéro d’anciens slots si tu veux repartir propre
-  //     await this.prisma.$transaction(async (tx) => {
-  //       await tx.proposedSlot.deleteMany({ where: { appointmentRequestId: requestId } });
-
-  //       await tx.appointmentRequest.update({
-  //         where: { id: requestId },
-  //         data: {
-  //           status: 'PROPOSED',
-  //           token: proposeToken,
-  //           tokenExpiresAt: tokenExpiry,
-  //           updatedAt: new Date(),
-  //         },
-  //       });
-
-  //       await tx.proposedSlot.createMany({
-  //         data: slots.map((s) => ({
-  //           appointmentRequestId: requestId,
-  //           from: s.from,
-  //           to: s.to,
-  //           tatoueurId: s.tatoueurId ?? null,
-  //         })),
-  //       });
-  //     });
-
-  //     // Récupère les slots créés (avec leurs IDs)
-  //     const createdSlots = await this.prisma.proposedSlot.findMany({
-  //       where: { appointmentRequestId: requestId },
-  //       orderBy: { createdAt: 'asc' },
-  //     });
-
-  //     // Envoi d'un email au client avec les créneaux proposés
-  //     const salonName = appointmentRequest.user?.salonName || 'Votre salon';
-  //     const clientEmail = appointmentRequest.clientEmail;
-  //     const clientName = `${appointmentRequest.clientFirstname} ${appointmentRequest.clientLastname}`;
-
-  //     // Lien d'acceptation/refus (à adapter selon le front)
-  //     const proposeUrl = `${process.env.FRONTEND_URL_BIS}/rdv-request?token=${proposeToken}`; 
-
-  //     const emailSubject = `Proposition de créneau pour votre demande de RDV - ${salonName}`;
-  //     const emailContent = `
-  //       <div style='font-family: Inter, sans-serif; max-width: 600px; margin: 0 auto; background: #f8fafc; color: #222; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.08);'>
-  //         <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 32px 24px; text-align: center; border-radius: 16px 16px 0 0;'>
-  //           <h1 style='margin: 0; font-size: 24px; color: #fff;'>Proposition de créneau</h1>
-  //           <p style='color: #e0e7ff;'>${salonName} vous propose un créneau pour votre demande de rendez-vous en fonction des disponibilités que vous avez indiquées.</p>
-  //         </div>
-  //           <p style='color: #e0e7ff;'>${message}</p>
-  //         <div style='padding: 32px 24px;'>
-  //           <p>Bonjour <strong>${clientName}</strong>,</p>
-  //           <p>Pour choisir votre créneau ou décliner, merci d’ouvrir la page sécurisée :</p>
-  //           <p style="text-align:center;margin:20px 0;">
-  //           <a href="${proposeUrl}" style="display:inline-block;padding:10px 16px;border-radius:8px;background:#0ea5e9;color:#fff;text-decoration:none;font-weight:600;">
-  //             Ouvrir la page de confirmation
-  //           </a>
-  //         </p>
-  //           <p style="color:#64748b;font-size:13px;">Ce lien expire le ${tokenExpiry.toLocaleDateString('fr-FR')}.</p>
-  //           <p style='color: #64748b; font-size: 14px;'>Si le créneau ne vous convient pas, vous pouvez le décliner et le salon pourra vous proposer un autre horaire.</p>
-  //         </div>
-  //         <div style='background: #e0e7ff; padding: 16px; text-align: center; border-radius: 0 0 16px 16px;'>
-  //           <p style='margin: 0; color: #475569; font-size: 12px;'>© ${new Date().getFullYear()} ${salonName} - Email automatique</p>
-  //         </div>
-  //       </div>
-  //     `;
-      
-  //     // Envoyer l'email au client
-  //     await this.mailService.sendMail({
-  //       to: clientEmail,
-  //       subject: emailSubject,
-  //       html: emailContent,
-  //     });
-
-  //     return { error: false, message: 'Créneau proposé au client et email envoyé.' };
-  //   } catch (error: unknown) {
-  //     return { error: true, message: error instanceof Error ? error.message : 'Erreur inconnue' };
-  //   }
-  // }
-
-  //   //! VALIDER LE TOKEN DE PROPOSITION DE CRENEAU
-  //   async validateAppointmentRequestToken(token: string) {
-  //     try {
-  //       const appointmentRequest = await this.prisma.appointmentRequest.findFirst({
-  //         where: { token },
-  //         include: {
-  //           user: {
-  //             select: {
-  //               id: true, email: true, salonName: true, image: true, salonHours: true,
-  //               phone: true, address: true, postalCode: true, city: true,
-  //             },
-  //           },
-  //           slots: { select: { id: true, from: true, to: true, tatoueurId: true, status: true } },
-  //         },
-  //       });
-
-  //       if (!appointmentRequest) {
-  //         return { error: true, code: 'INVALID_TOKEN', message: 'Token invalide ou demande introuvable.' };
-  //       }
-  //       if (appointmentRequest.tokenExpiresAt && appointmentRequest.tokenExpiresAt < new Date()) {
-  //         return { error: true, code: 'EXPIRED_TOKEN', message: 'Lien expiré.' };
-  //       }
-  //       // Optionnel: vérifier expiration si vous stockez une date d'expiration
-  //       // Retourner les infos pour affichage sur le front
-  //       return {
-  //         error: false,
-  //         appointmentRequest: {
-  //           id: appointmentRequest.id,
-  //           prestation: appointmentRequest.prestation,
-  //           clientFirstname: appointmentRequest.clientFirstname,
-  //           clientLastname: appointmentRequest.clientLastname,
-  //           clientEmail: appointmentRequest.clientEmail,
-  //           clientPhone: appointmentRequest.clientPhone,
-  //           availability: appointmentRequest.availability,
-  //           details: appointmentRequest.details,
-  //           status: appointmentRequest.status,
-  //           message: appointmentRequest.message,
-  //           salonName: appointmentRequest.user?.salonName,
-  //           salonEmail: appointmentRequest.user?.email,
-  //           salonImage: appointmentRequest.user?.image,
-  //           salonHours: appointmentRequest.user?.salonHours,
-  //           salonPhone: appointmentRequest.user?.phone,
-  //           salonAddress: appointmentRequest.user?.address,
-  //           salonPostalCode: appointmentRequest.user?.postalCode,
-  //           salonCity: appointmentRequest.user?.city,
-
-  //           // <-- nouveau : tous les créneaux proposés
-  //           proposedSlots: appointmentRequest.slots.map(s => ({
-  //             id: s.id,
-  //             from: s.from,
-  //             to: s.to,
-  //             tatoueurId: s.tatoueurId,
-  //             status: s.status,
-  //           })),
-  //         },
-  //       };
-  //     } catch (error: unknown) {
-  //       return { error: true, message: error instanceof Error ? error.message : 'Erreur inconnue' };
-  //     }
-  //   }
-
-  //   //! ------------------------------------------------------------------------------
-
-  //   //! TRAITER LA REPONSE DU CLIENT (ACCEPTER OU DECLINER)
-
-  //   //! ------------------------------------------------------------------------------
-  //   async handleAppointmentRequestResponse(token: string, action: 'accept' | 'decline', slotId?: string, reason?: string) {
-  //     try {
-  //       const appointmentRequest = await this.prisma.appointmentRequest.findFirst({
-  //         where: { token },
-  //         include: { user: { select: { id: true, email: true, salonName: true } } },
-  //       });
-
-  //       if (!appointmentRequest) {
-  //         return { error: true, message: 'Token invalide ou demande introuvable.' };
-  //       }
-
-  //       if (appointmentRequest.status !== 'PROPOSED') {
-  //         return { error: true, message: 'La demande n\'est pas en attente de réponse.' };
-  //       }
-
-  //       if (appointmentRequest.tokenExpiresAt && appointmentRequest.tokenExpiresAt < new Date())
-  //       return { error: true, message: 'Lien expiré.' };
-
-  //       const userId = appointmentRequest.userId;
-  //       const salonEmail = appointmentRequest.user?.email;
-  //       const salonName = appointmentRequest.user?.salonName || 'Salon';
-  //       const clientName = `${appointmentRequest.clientFirstname} ${appointmentRequest.clientLastname}`;
-        
-  //       if (action === 'accept') {
-  //         if (!slotId) return { error: true, message: 'slotId manquant pour acceptation.' };
-
-  //         const slot = await this.prisma.proposedSlot.findFirst({
-  //           where: { id: slotId, appointmentRequestId: appointmentRequest.id },
-  //         });
-  //         if (!slot) return { error: true, message: 'Créneau introuvable.' };
-
-
-  //         await this.prisma.appointmentRequest.update({
-  //           where: { id: appointmentRequest.id },
-  //           data: { status: 'ACCEPTED', updatedAt: new Date() },
-  //         });
-
-  //         // vérifier collision sur le tatoueur
-  //         if (slot.tatoueurId) {
-  //           const overlap = await this.prisma.appointment.findFirst({
-  //             where: {
-  //               tatoueurId: slot.tatoueurId,
-  //               // [start,end) overlap
-  //               NOT: [{ end: { lte: slot.from } }, { start: { gte: slot.to } }],
-  //             },
-  //             select: { id: true },
-  //           });
-  //           if (overlap) return { error: true, message: 'Ce créneau n\'est plus disponible.' };
-  //         }
-
-  //         //! Créer directement le rdv, le client et les détails tatouage client
-  //         // Vérifier les limites SAAS - RDV Par mois
-  //         const canCreateAppointment = await this.saasService.canPerformAction(userId, 'appointment');
-
-  //         if (!canCreateAppointment) {
-  //           const limits = await this.saasService.checkLimits(userId);
-  //           return {
-  //             error: true,
-  //             message: `Limite de rendez-vous par mois atteinte (${limits.limits.appointments}). Passez au plan PRO ou BUSINESS pour continuer.`,
-  //           };
-  //         }
-
-  //         // Vérifier si le client existe déja sinon on le créé
-  //         let client = await this.prisma.client.findFirst({
-  //           where: { email: appointmentRequest.clientEmail, userId },
-  //         });
-
-  //         if (!client) {
-  //           const canCreateClient = await this.saasService.canPerformAction(userId, 'client');
-        
-  //           if (!canCreateClient) {
-  //             const limits = await this.saasService.checkLimits(userId);
-  //             return {
-  //               error: true,
-  //               message: `Limite de fiches clients atteinte (${limits.limits.clients}). Passez au plan PRO ou BUSINESS pour continuer.`,
-  //             };
-  //           }
-
-  //           client = await this.prisma.client.create({
-  //             data: {
-  //               firstName: appointmentRequest.clientFirstname,
-  //               lastName: appointmentRequest.clientLastname,
-  //               email: appointmentRequest.clientEmail,
-  //               phone: appointmentRequest.clientPhone || '',
-  //               userId,
-  //             },
-  //           });
-  //         }
-
-
-  //        // Transaction : créer RDV + marquer le slot choisi + invalider le token
-  //         const newAppointment = await this.prisma.$transaction(async (tx) => {
-  //           const appt = await tx.appointment.create({
-  //             data: {
-  //               userId,
-  //               title: appointmentRequest.prestation,
-  //               prestation: appointmentRequest.prestation,
-  //               start: slot.from,
-  //               end: slot.to,
-  //               tatoueurId: slot.tatoueurId ?? appointmentRequest.tatoueurId ?? null,
-  //               clientId: client.id,
-  //               status: 'CONFIRMED',
-  //             },
-  //           });
-
-  //           await tx.proposedSlot.update({
-  //             where: { id: slot.id },
-  //             data: { status: 'ACCEPTED', selectedAt: new Date() },
-  //           });
-  //           await tx.proposedSlot.updateMany({
-  //             where: { appointmentRequestId: appointmentRequest.id, NOT: { id: slot.id } },
-  //             data: { status: 'DECLINED' },
-  //           });
-  //           await tx.appointmentRequest.update({
-  //             where: { id: appointmentRequest.id },
-  //             data: { status: 'ACCEPTED', token: null, tokenExpiresAt: null, updatedAt: new Date() },
-  //           });
-
-  //           // Détails tatouage éventuels
-  //           if (appointmentRequest.details) {
-  //             try {
-  //               const raw = typeof appointmentRequest.details === 'string'
-  //                 ? JSON.parse(appointmentRequest.details)
-  //                 : appointmentRequest.details;
-
-  //               await tx.tattooDetail.create({
-  //                 data: {
-  //                   appointmentId: appt.id,
-  //                   clientId: client.id,
-  //                   description: String(raw.description ?? ''),
-  //                   zone: String(raw.zone ?? null),
-  //                   size: String(raw.size ?? null),
-  //                   colorStyle: String(raw.colorStyle ?? null),
-  //                   sketch: String(raw.sketch ?? null),
-  //                   reference: String(raw.reference ?? null),
-  //                 },
-  //               });
-  //             } catch {/* ignore */}
-  //           }
-
-  //           return appt;
-  //         });
-
-  //         // Email au salon
-  //         if (salonEmail) {
-  //           const emailSubject = `Le client a accepté le créneau proposé - ${clientName}`;
-  //           const emailContent = `
-  //             <div style='font-family: Inter, sans-serif; max-width: 600px; margin: 0 auto; background: #f8fafc; color: #222; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.08);'>
-  //               <div style='background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 32px 24px; text-align: center; border-radius: 16px 16px 0 0;'>
-  //                 <h1 style='margin: 0; font-size: 24px; color: #fff;'>Créneau accepté</h1>
-  //                 <p style='color: #d1fae5;'>${clientName} a accepté le créneau proposé.</p>
-  //               </div>
-  //               <div style='padding: 32px 24px;'>
-  //                 <p>Créneau accepté :</p>
-  //                 <ul style='background: #d1fae5; padding: 16px; border-radius: 8px;'>
-  //                   <li><strong>De :</strong> ${newAppointment.start.toLocaleString()}</li>
-  //                   <li><strong>À :</strong> ${newAppointment.end.toLocaleString()}</li>
-  //                 </ul>
-  //                 <p style='color: #64748b; font-size: 14px;'>Vous pouvez maintenant créer le rendez-vous dans votre planning.</p>
-  //               </div>
-  //               <div style='background: #e0e7ff; padding: 16px; text-align: center; border-radius: 0 0 16px 16px;'>
-  //                 <p style='margin: 0; color: #475569; font-size: 12px;'>© ${new Date().getFullYear()} ${salonName} - Notification automatique</p>
-  //               </div>
-  //             </div>
-  //           `;
-
-  //           await this.mailService.sendMail({
-  //             to: salonEmail,
-  //             subject: emailSubject,
-  //             html: emailContent,
-  //           });
-
-  //             // Envoi du mail de confirmation
-  //           await this.mailService.sendMail({
-  //             to: client.email,
-  //             subject: "Rendez-vous confirmé",
-  //             html: `
-  //               <h2>Bonjour ${client.firstName} ${client.lastName} !</h2>
-  //               <p>Votre rendez-vous a été confirmé avec succès.</p>
-  //               <p><strong>Détails du rendez-vous :</strong></p>
-  //               <ul>
-  //                 <li>Date et heure : ${newAppointment.start.toLocaleString()} - ${newAppointment.end.toLocaleString()}</li>
-  //                 <li>Prestation : ${newAppointment.prestation}</li>
-  //               </ul>
-  //               <p>Nous avons hâte de vous voir !</p>
-  //               <p>Si vous avez des questions, n'hésitez pas à nous contacter.</p>
-  //               <p>À bientôt !</p>
-  //             `,
-  //           });
-  //         }
-
-  //         return { error: false, message: 'Demande acceptée, salon notifié.' };
-  //       } else if (action === 'decline') {
-  //         await this.prisma.$transaction(async (tx) => {
-  //           await tx.proposedSlot.updateMany({
-  //             where: { appointmentRequestId: appointmentRequest.id },
-  //             data: { status: 'DECLINED' },
-  //           });
-  //           await tx.appointmentRequest.update({
-  //             where: { id: appointmentRequest.id },
-  //             data: {
-  //               status: 'DECLINED',
-  //               message: reason ?? appointmentRequest.message,
-  //               token: null,
-  //               tokenExpiresAt: null,
-  //               updatedAt: new Date(),
-  //             },
-  //           });
-  //         });
-  //         // Email au salon
-  //         if (salonEmail) {
-  //           const emailSubject = `Le client a décliné le créneau proposé - ${clientName}`;
-  //           const emailContent = `
-  //             <div style='font-family: Inter, sans-serif; max-width: 600px; margin: 0 auto; background: #f8fafc; color: #222; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.08);'>
-  //               <div style='background: linear-gradient(135deg, #ef4444 0%, #f59e42 100%); padding: 32px 24px; text-align: center; border-radius: 16px 16px 0 0;'>
-  //                 <h1 style='margin: 0; font-size: 24px; color: #fff;'>Créneau décliné</h1>
-  //                 <p style='color: #fee2e2;'>${clientName} a décliné le créneau proposé.</p>
-  //               </div>
-  //               <div style='padding: 32px 24px;'>
-  //                 <p style='color: #64748b; font-size: 14px;'>Vous pouvez proposer un autre créneau ou clôturer la demande.</p>
-  //                 ${reason ? `<div style='margin-top:16px; color:#ef4444;'><strong>Motif du client :</strong> ${reason}</div>` : ''}
-  //               </div>
-  //               <div style='background: #e0e7ff; padding: 16px; text-align: center; border-radius: 0 0 16px 16px;'>
-  //                 <p style='margin: 0; color: #475569; font-size: 12px;'>© ${new Date().getFullYear()} ${salonName} - Notification automatique</p>
-  //               </div>
-  //             </div>
-  //           `;
-  //           await this.mailService.sendMail({
-  //             to: salonEmail,
-  //             subject: emailSubject,
-  //             html: emailContent,
-  //           });
-  //         }
-  //         return { error: false, message: 'Créneau refusé par le client, salon notifié.' };
-  //       } else {
-  //         return { error: true, message: 'Action non reconnue.' };
-  //       }
-  //     } catch (error: unknown) {
-  //       return { error: true, message: error instanceof Error ? error.message : 'Erreur inconnue' };
-  //     }
-  //   }
-
-  //   //! ------------------------------------------------------------------------------
-
-  //   //! SALON : REFUSER LA DEMANDE DE RDV D'UN CLIENT
-
-  //   //! ------------------------------------------------------------------------------
-  //   async declineAppointmentRequest(appointmentRequestId: string, reason?: string): Promise<{ error: boolean; message: string }> {
-  //     try {
-  //       const appointmentRequest = await this.prisma.appointmentRequest.findUnique({
-  //         where: { id: appointmentRequestId },
-  //         include: { user: true }
-  //       });
-
-  //       if (!appointmentRequest) {
-  //         return { error: true, message: 'Demande de rendez-vous introuvable.' };
-  //       }
-
-  //       const clientEmail = appointmentRequest.clientEmail;
-  //       const clientName = `${appointmentRequest.clientFirstname} ${appointmentRequest.clientLastname}`;
-  //       const salonName = appointmentRequest.user?.salonName || 'Votre salon';
-
-  //       await this.prisma.appointmentRequest.update({
-  //         where: { id: appointmentRequest.id },
-  //         data: { status: 'CLOSED', updatedAt: new Date()},
-  //       });
-
-  //       // Email au client
-  //       if (clientEmail) {
-  //         const emailSubject = `Votre demande de rendez-vous a été refusée - ${salonName}`;
-  //         const emailContent = `
-  //           <div style='font-family: Inter, sans-serif; max-width: 600px; margin: 0 auto; background: #f8fafc; color: #222; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.08);'>
-  //             <div style='background: linear-gradient(135deg, #ef4444 0%, #f59e42 100%); padding: 32px 24px; text-align: center; border-radius: 16px 16px 0 0;'>
-  //               <h1 style='margin: 0; font-size: 24px; color: #fff;'>Demande de rendez-vous refusée</h1>
-  //               <p style='color: #fee2e2;'>Votre demande de rendez-vous a été refusée par le salon.</p>
-  //             </div>
-  //             <div style='padding: 32px 24px;'>
-  //               <p>Motif du refus :</p>
-  //               <ul style='background: #fee2e2; padding: 16px; border-radius: 8px;'>
-  //                 <li><strong>Client :</strong> ${clientName}</li>
-  //                 <li><strong>Salon :</strong> ${salonName}</li>
-  //                 <li><strong>Motif :</strong> ${reason ?? 'Aucun motif fourni'}</li>
-  //               </ul>
-  //               <p style='color: #64748b; font-size: 14px;'>Vous pouvez proposer un autre créneau ou clôturer la demande.</p>
-  //             </div>
-  //             <div style='background: #e0e7ff; padding: 16px; text-align: center; border-radius: 0 0 16px 16px;'>
-  //               <p style='margin: 0; color: #475569; font-size: 12px;'>© ${new Date().getFullYear()} ${salonName} - Notification automatique</p>
-  //             </div>
-  //           </div>
-  //         `;
-  //         await this.mailService.sendMail({
-  //           to: clientEmail,
-  //           subject: emailSubject,
-  //           html: emailContent,
-  //         });
-  //       }
-
-  //       return { error: false, message: 'Demande de rendez-vous refusée, client notifié.' };
-  //     } catch (error: unknown) {
-  //       return { error: true, message: error instanceof Error ? error.message : 'Erreur inconnue' };
-  //     }
-  //   }
-
-
-
-  // //! ------------------------------------------------------------------------------
-
-  // //! MÉTHODE DE TEST POUR L'ENVOI D'EMAILS
-
-  // //! ------------------------------------------------------------------------------
-  // async testEmailSending(email: string) {
-  //   try {
-  //     console.log('🧪 Test d\'envoi d\'email vers:', email);
-      
-  //     // Test 1: Email basique
-  //     console.log('📤 Test 1: Email basique...');
-  //     await this.mailService.sendMail({
-  //       to: email,
-  //       subject: '🧪 Test Email Basique - Salon Test',
-  //       html: '<h1>Test réussi !</h1><p>Si vous recevez cet email, la configuration de base fonctionne.</p>',
-  //       salonName: 'Salon Test'
-  //     });
-
-  //     // Test 2: Email avec template
-  //     console.log('📤 Test 2: Email avec template...');
-  //     await this.mailService.sendAppointmentConfirmation(
-  //       email, 
-  //       {
-  //         recipientName: 'Test User',
-  //         appointmentDetails: {
-  //           date: 'Lundi 10 septembre 2025',
-  //           time: '14:00 - 16:00',
-  //           service: 'Test Service',
-  //           tatoueur: 'Test Artist',
-  //           price: 150
-  //         }
-  //       },
-  //       'Salon Test' // Nom du salon de test
-  //     );
-
-  //     return {
-  //       error: false,
-  //       message: 'Tests d\'email envoyés avec succès ! Vérifiez votre boîte de réception.',
-  //       tests: [
-  //         'Email basique envoyé',
-  //         'Email avec template envoyé'
-  //       ]
-  //     };
-  //   } catch (error) {
-  //     console.error('💥 Erreur lors du test d\'email:', error);
-  //     return {
-  //       error: true,
-  //       message: `Erreur lors du test: ${error instanceof Error ? error.message : 'Erreur inconnue'}`,
-  //       details: error
-  //     };
-  //   }
-  // }
 }
