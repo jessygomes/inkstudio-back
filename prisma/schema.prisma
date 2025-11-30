@@ -316,6 +316,7 @@ model StockItem {
   quantity     Int      @default(0)
   unit         String?  // "bouteilles", "boîtes", "pièces", etc.
   minQuantity  Int?     // pour déclencher une alerte
+  pricePerUnit Float?
   updatedAt    DateTime @updatedAt
   createdAt    DateTime @default(now())
 

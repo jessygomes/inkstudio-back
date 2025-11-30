@@ -776,6 +776,243 @@ export class UserService {
 
   //! ------------------------------------------------------------------------------
 
+  //! RECUPERER LES FACTURES D'UN SALON
+
+  //! ------------------------------------------------------------------------------
+  async getFactureSalon({userId, page = 1, limit = 10, search = '', isPayed = ''}: {userId: string, page?: number, limit?: number, search?: string, isPayed?: string}) {
+    try {
+      const currentPage = Math.max(1, Number(page) || 1);
+      const perPage = Math.min(50, Math.max(1, Number(limit) || 10));
+      const skip = (currentPage - 1) * perPage;
+
+      const cacheKey = `user:factures:${userId}:${JSON.stringify({
+        page: currentPage,
+        limit: perPage,
+        search: search?.trim() || null,
+        isPayed: isPayed?.trim() || null
+      })}`;
+
+      // 1. Vérifier dans Redis
+      try {
+        const cachedFactures = await this.cacheService.get<{
+          error: boolean;
+          factures: any[];
+          statistics: any;
+          pagination: any;
+          message: string;
+        }>(cacheKey);
+        if (cachedFactures) {
+          return cachedFactures;
+        }
+      } catch (cacheError) {
+        console.warn('Erreur cache Redis pour getFactureSalon:', cacheError);
+        // Continue sans cache si Redis est indisponible
+      }
+
+      // Construire les conditions de recherche
+      const searchConditions = search && search.trim() !== ""
+        ? {
+            OR: [
+              { 
+                client: {
+                  OR: [
+                    { firstName: { contains: search, mode: "insensitive" as const } },
+                    { lastName: { contains: search, mode: "insensitive" as const } },
+                    { email: { contains: search, mode: "insensitive" as const } },
+                  ]
+                }
+              },
+              { title: { contains: search, mode: "insensitive" as const } },
+            ],
+          }
+        : {};
+
+      // Construire les conditions de statut de paiement
+      const paymentConditions = isPayed && isPayed.trim() !== ""
+        ? isPayed.toLowerCase() === 'true' 
+          ? { isPayed: true }
+          : isPayed.toLowerCase() === 'false' 
+          ? { isPayed: false }
+          : {}
+        : {};
+
+      // 2. Compter le total des factures et récupérer les données avec pagination
+      const whereClause = {
+        userId,
+        status: "COMPLETED" as const,
+        prestation: {
+          not: "PROJET" as const
+        },
+        // tattooDetail: {
+        //   price: {
+        //     gt: 0
+        //   }
+        // },
+        ...searchConditions,
+        ...paymentConditions
+      };
+
+      const [totalFactures, appointments, allAppointmentsForStats] = await this.prisma.$transaction([
+        this.prisma.appointment.count({ where: whereClause }),
+        this.prisma.appointment.findMany({
+          where: whereClause,
+          include: {
+            client: {
+              select: {
+                firstName: true,
+                lastName: true,
+                email: true,
+                phone: true
+              }
+            },
+            tatoueur: {
+              select: {
+                name: true
+              }
+            },
+            tattooDetail: {
+              select: {
+                description: true,
+                zone: true,
+                size: true,
+                colorStyle: true,
+                reference: true,
+                sketch: true,
+                piercingZone: true,
+                piercingServicePriceId: true,
+                estimatedPrice: true,
+                price: true,
+                piercingServicePrice: {
+                  select: {
+                    description: true,
+                    piercingZoneOreille: true,
+                    piercingZoneVisage: true,
+                    piercingZoneBouche: true,
+                    piercingZoneCorps: true,
+                    piercingZoneMicrodermal: true
+                  }
+                }
+              }
+            }
+          },
+          orderBy: {
+            start: "desc"
+          },
+          skip,
+          take: perPage,
+        }),
+        this.prisma.appointment.findMany({
+          where: whereClause,
+          include: {
+            tattooDetail: {
+              select: {
+                price: true
+              }
+            }
+          }
+        })
+      ]);
+
+      // 3. Formater les données pour le front-end
+      const factures = appointments.map(appointment => ({
+        id: appointment.id,
+        client: {
+          firstName: appointment.client?.firstName || null,
+          lastName: appointment.client?.lastName || null,
+          email: appointment.client?.email || null,
+          phone: appointment.client?.phone || null
+        },
+        prestation: appointment.prestation,
+        title: appointment.title,
+        price: appointment.tattooDetail?.price || 0,
+        estimatedPrice: appointment.tattooDetail?.estimatedPrice || 0,
+        isPayed: appointment.isPayed,
+        dateRdv: appointment.start,
+        duration: appointment.end && appointment.start 
+          ? Math.round((appointment.end.getTime() - appointment.start.getTime()) / (1000 * 60))
+          : 0,
+        prestationDetails: {
+          description: appointment.tattooDetail?.description || null,
+          zone: appointment.tattooDetail?.zone || null,
+          size: appointment.tattooDetail?.size || null,
+          colorStyle: appointment.tattooDetail?.colorStyle || null,
+          reference: appointment.tattooDetail?.reference || null,
+          sketch: appointment.tattooDetail?.sketch || null,
+          piercingZone: appointment.tattooDetail?.piercingZone || null,
+          piercingDetails: appointment.tattooDetail?.piercingServicePrice ? {
+            serviceDescription: appointment.tattooDetail.piercingServicePrice.description || null,
+            zoneOreille: appointment.tattooDetail.piercingServicePrice.piercingZoneOreille || null,
+            zoneVisage: appointment.tattooDetail.piercingServicePrice.piercingZoneVisage || null,
+            zoneBouche: appointment.tattooDetail.piercingServicePrice.piercingZoneBouche || null,
+            zoneCorps: appointment.tattooDetail.piercingServicePrice.piercingZoneCorps || null,
+            zoneMicrodermal: appointment.tattooDetail.piercingServicePrice.piercingZoneMicrodermal || null
+          } : null
+        },
+        tatoueur: appointment.tatoueur?.name || null
+      }));
+
+      // 4. Calculer les statistiques sur TOUTES les factures
+      const totalChiffreAffaires = allAppointmentsForStats.reduce((sum, appointment) => sum + (appointment.tattooDetail?.price || 0), 0);
+      const totalPaye = allAppointmentsForStats
+        .filter(appointment => appointment.isPayed)
+        .reduce((sum, appointment) => sum + (appointment.tattooDetail?.price || 0), 0);
+      const totalEnAttente = allAppointmentsForStats
+        .filter(appointment => !appointment.isPayed)
+        .reduce((sum, appointment) => sum + (appointment.tattooDetail?.price || 0), 0);
+      const nombreFacturesPaye = allAppointmentsForStats.filter(appointment => appointment.isPayed).length;
+      const nombreFacturesEnAttente = allAppointmentsForStats.filter(appointment => !appointment.isPayed).length;
+
+      // 5. Calculer les informations de pagination
+      const totalPages = Math.ceil(totalFactures / perPage);
+      const startIndex = totalFactures === 0 ? 0 : skip + 1;
+      const endIndex = Math.min(skip + perPage, totalFactures);
+
+      const result = {
+        error: false,
+        factures,
+        pagination: {
+          currentPage,
+          limit: perPage,
+          totalFactures,
+          totalPages,
+          hasNextPage: currentPage < totalPages,
+          hasPreviousPage: currentPage > 1,
+          startIndex,
+          endIndex,
+        },
+        statistics: {
+          totalFactures,
+          totalChiffreAffaires,
+          totalPaye,
+          totalEnAttente,
+          nombreFacturesPaye,
+          nombreFacturesEnAttente,
+          tauxPaiement: totalFactures > 0 ? Math.round((nombreFacturesPaye / totalFactures) * 100) : 0
+        },
+        message: `${factures.length} facture(s) sur ${totalFactures} récupérée(s) avec succès.`
+      };
+
+      // 6. Mettre en cache
+      try {
+        const ttl = 30 * 60; // 30 minutes
+        await this.cacheService.set(cacheKey, result, ttl);
+      } catch (cacheError) {
+        console.warn('Erreur sauvegarde cache Redis pour getFactureSalon:', cacheError);
+      }
+
+      return result;
+
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
+
+  //! ------------------------------------------------------------------------------
+
   //! METTRE À JOUR LES COULEURS DU PROFIL
 
   //! ------------------------------------------------------------------------------

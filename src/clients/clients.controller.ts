@@ -47,7 +47,7 @@ export class ClientsController {
   //! VOIR TOUS LES CLIENTS D'UN SALON ✅
   @UseGuards(JwtAuthGuard)
   @Get('salon')
-  async getClientsBySalon(@Request() req: RequestWithUser, @Query('page') page?: string, @Query('limit') limit?: string,  @Query('search') search: string = '') {
+  async getClientsBySalon(@Request() req: RequestWithUser, @Query('page') page?: string, @Query('limit') limit?: string, @Query('search') search: string = '') {
     const userId = req.user.userId;
     const pageNumber = page ? parseInt(page, 10) : 1;
     const limitNumber = limit ? parseInt(limit, 10) : 5;

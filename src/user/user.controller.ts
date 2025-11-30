@@ -57,6 +57,22 @@ export class UserController {
     return this.userService.getAppointmentBooking({ userId });
   }
 
+  //! RECUPERER LES FACTURES DU SALON
+  @Get("factures")
+  @UseGuards(JwtAuthGuard)
+  getFactureSalon(
+    @Request() req: RequestWithUser, 
+    @Query('page') page?: string, 
+    @Query('limit') limit?: string,
+    @Query('search') search: string = '',
+    @Query('isPayed') isPayed?: string
+  ) {
+    const userId = req.user.userId;
+    const pageNumber = page ? parseInt(page, 10) : 1;
+    const limitNumber = limit ? parseInt(limit, 10) : 10;
+    return this.userService.getFactureSalon({userId, page: pageNumber, limit: limitNumber, search, isPayed});
+  }
+
   //! RECUPERER LES COULEURS DU PROFIL
   @UseGuards(JwtAuthGuard)
   @Get('color-profile')
@@ -115,6 +131,8 @@ export class UserController {
   updateHoursSalon(@Param('userId') userId: string,  @Body() salonHours: Record<string, { start: string; end: string } | null>) { // On récupère le paramètre dynamique userId
     return this.userService.updateHoursSalon({userId, salonHours: JSON.stringify(salonHours),}); // On appelle la méthode getUserById du service UserService
   }
+
+
 
   //! GET USER BY SLUG + LOCALISATION
   @Get(":nameSlug/:locSlug")
