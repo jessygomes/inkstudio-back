@@ -470,15 +470,15 @@ export class EmailTemplateService {
 
         <div class="message">
           <p>Si vous avez des questions ou besoin de modifier votre rendez-vous, n'hésitez pas à nous contacter.</p>
-          <p><strong>À très bientôt chez ${data.salonName || 'InkStudio'} ! ✨</strong></p>
+          <p><strong>À très bientôt chez ${data.salonName || 'Inkera Studio'} ! ✨</strong></p>
         </div>
       </div>
     `;
 
     return this.getBaseTemplate(
       content, 
-      `Confirmation de rendez-vous - ${data.salonName || 'InkStudio'}`, 
-      data.salonName || 'InkStudio',
+      `Confirmation de rendez-vous - ${data.salonName || 'Inkera Studio'}`, 
+      data.salonName || 'Inkera Studio',
       
     );
   }
@@ -542,7 +542,7 @@ export class EmailTemplateService {
           </div>
         ` : ''}
 
-        <a href="${process.env.FRONTEND_URL || '#'}/dashboard/appointments" class="cta-button">
+        <a href="${process.env.FRONTEND_URL || '#'}/dashboard" class="cta-button">
           📊 Voir dans le dashboard
         </a>
 
@@ -708,10 +708,6 @@ export class EmailTemplateService {
           <p>Si vous avez des questions ou préoccupations concernant la cicatrisation, n'hésitez pas à nous contacter.</p>
           <p><strong>Prenez soin de vous et de votre tatouage ! 🌟</strong></p>
         </div>
-
-        <a href="${process.env.FRONTEND_URL || '#'}/contact" class="cta-button">
-          💬 Nous contacter
-        </a>
       </div>
     `;
 
@@ -779,15 +775,15 @@ export class EmailTemplateService {
 
         <div class="message">
           <p>Si vous avez des questions concernant cette modification, n'hésitez pas à nous contacter.</p>
-          <p><strong>À bientôt chez ${data.salonName || 'InkStudio'} ! ✨</strong></p>
+          <p><strong>À bientôt chez ${data.salonName || 'Inkera Studio'} ! ✨</strong></p>
         </div>
       </div>
     `;
 
     return this.getBaseTemplate(
       content, 
-      `Modification de rendez-vous - ${data.salonName || 'InkStudio'}`, 
-      data.salonName || 'InkStudio'
+      `Modification de rendez-vous - ${data.salonName || 'Inkera Studio'}`, 
+      data.salonName || 'Inkera Studio'
     );
   }
 
@@ -832,42 +828,38 @@ export class EmailTemplateService {
         ` : ''}
 
         <div class="message">
-          <p>Nous serions ravis de vous accueillir à nouveau chez ${data.salonName || 'InkStudio'} quand vous le souhaiterez !</p>
+          <p>Nous serions ravis de vous accueillir à nouveau chez ${data.salonName || 'Inkera Studio'} quand vous le souhaiterez !</p>
           <p>N'hésitez pas à reprendre rendez-vous à tout moment.</p>
         </div>
 
-        <a href="${process.env.FRONTEND_URL || '#'}/booking" class="cta-button">
-          📅 Reprendre un rendez-vous
-        </a>
-
         <div class="message">
-          <p><strong>À bientôt chez ${data.salonName || 'InkStudio'} ! 🎨</strong></p>
+          <p><strong>À bientôt chez ${data.salonName || 'Inkera Studio'} ! 🎨</strong></p>
         </div>
       </div>
     `;
 
     return this.getBaseTemplate(
       content, 
-      `Annulation de rendez-vous - ${data.salonName || 'InkStudio'}`, 
-      data.salonName || 'InkStudio'
+      `Annulation de rendez-vous - ${data.salonName || 'Inkera Studio'}`, 
+      data.salonName || 'Inkera Studio'
     );
   }
 
   /**
    *! Template générique pour messages personnalisés
    */
-  generateCustomEmail(data: EmailTemplateData, subject: string = `Message de ${data.salonName || 'InkStudio'}`): string {
+  generateCustomEmail(data: EmailTemplateData, subject: string = `Message de ${data.salonName || 'Inkera Studio'}`): string {
     const content = `
       <div class="content">
         <div class="greeting">Bonjour ${data.recipientName || 'cher client'} ! 🎨</div>
         
         <div class="message">
-          ${data.customMessage || `<p>Nous vous contactons depuis ${data.salonName || 'InkStudio'}.</p>`}
+          ${data.customMessage || `<p>Nous vous contactons depuis ${data.salonName || 'Inkera Studio'}.</p>`}
         </div>
 
         <div class="message">
           <p>Si vous avez des questions, n'hésitez pas à nous contacter.</p>
-          <p><strong>L'équipe ${data.salonName || 'InkStudio'} ✨</strong></p>
+          <p><strong>L'équipe ${data.salonName || 'Inkera Studio'} ✨</strong></p>
         </div>
       </div>
     `;
@@ -875,7 +867,7 @@ export class EmailTemplateService {
     return this.getBaseTemplate(
       content, 
       subject, 
-      data.salonName || 'InkStudio'
+      data.salonName || 'Inkera Studio'
     );
   }
 
@@ -888,7 +880,7 @@ export class EmailTemplateService {
         <div class="greeting">Nouveau rendez-vous en attente ! ⏰</div>
         
         <div class="message">
-          <p>Un nouveau rendez-vous nécessite votre confirmation dans votre salon <strong>${data.salonName || 'InkStudio'}</strong>.</p>
+          <p>Un nouveau rendez-vous nécessite votre confirmation dans votre salon <strong>${data.salonName || 'Inkera Studio'}</strong>.</p>
         </div>
 
         ${data.appointmentDetails ? `
@@ -927,7 +919,7 @@ export class EmailTemplateService {
           </div>
         ` : ''}
 
-        <a href="${process.env.FRONTEND_URL || '#'}/dashboard/appointments" class="cta-button">
+        <a href="${process.env.FRONTEND_URL || '#'}/dashboard" class="cta-button">
           ✅ Confirmer le rendez-vous
         </a>
 
@@ -940,8 +932,8 @@ export class EmailTemplateService {
 
     return this.getBaseTemplate(
       content, 
-      `Nouveau rendez-vous en attente - ${data.salonName || 'InkStudio'}`, 
-      data.salonName || 'InkStudio'
+      `Nouveau rendez-vous en attente - ${data.salonName || 'Inkera Studio'}`, 
+      data.salonName || 'Inkera Studio'
     );
   }
 
@@ -995,15 +987,15 @@ export class EmailTemplateService {
 
         <div class="message">
           <p>Si vous avez des questions, n'hésitez pas à nous contacter.</p>
-          <p><strong>À très bientôt chez ${data.salonName || 'InkStudio'} ! ✨</strong></p>
+          <p><strong>À très bientôt chez ${data.salonName || 'Inkera Studio'} ! ✨</strong></p>
         </div>
       </div>
     `;
 
     return this.getBaseTemplate(
       content, 
-      `Rendez-vous confirmé - ${data.salonName || 'InkStudio'}`, 
-      data.salonName || 'InkStudio'
+      `Rendez-vous confirmé - ${data.salonName || 'Inkera Studio'}`, 
+      data.salonName || 'Inkera Studio'
     );
   }
 
@@ -1022,7 +1014,7 @@ export class EmailTemplateService {
         
         <div class="message">
           <p>Bonjour ${data.recipientName || 'cher client'},</p>
-          <p>Nous devons reprogrammer votre rendez-vous chez ${data.salonName || 'InkStudio'}.</p>
+          <p>Nous devons reprogrammer votre rendez-vous chez ${data.salonName || 'Inkera Studio'}.</p>
         </div>
 
         <div class="details-card">
@@ -1060,8 +1052,8 @@ export class EmailTemplateService {
 
     return this.getBaseTemplate(
       content, 
-      `Reprogrammation nécessaire - ${data.salonName || 'InkStudio'}`, 
-      data.salonName || 'InkStudio'
+      `Reprogrammation nécessaire - ${data.salonName || 'Inkera Studio'}`, 
+      data.salonName || 'Inkera Studio'
     );
   }
 
@@ -1140,7 +1132,7 @@ export class EmailTemplateService {
         
         <div class="message">
           <p>Bonjour <strong>${data.recipientName || 'cher client'}</strong>,</p>
-          <p>🎉 Parfait ! Votre rendez-vous a été reprogrammé avec succès chez ${data.salonName || 'InkStudio'}.</p>
+          <p>🎉 Parfait ! Votre rendez-vous a été reprogrammé avec succès chez ${data.salonName || 'Inkera Studio'}.</p>
         </div>
 
         <div class="details-card">
@@ -1164,14 +1156,14 @@ export class EmailTemplateService {
         <div class="message">
           <p>Merci pour votre flexibilité ! Nous avons hâte de vous voir. 🎨</p>
           <p>Si vous avez des questions, n'hésitez pas à nous contacter.</p>
-          <p><strong>À très bientôt chez ${data.salonName || 'InkStudio'} ! ✨</strong></p>
+          <p><strong>À très bientôt chez ${data.salonName || 'Inkera Studio'} ! ✨</strong></p>
         </div>
       </div>
     `;
 
     return this.getBaseTemplate(
       content, 
-      `Rendez-vous reprogrammé - ${data.salonName || 'InkStudio'}`, 
+      `Rendez-vous reprogrammé - ${data.salonName || 'Inkera Studio'}`, 
       data.salonName || 'Inkera Studio'
     );
   }
@@ -1203,7 +1195,7 @@ export class EmailTemplateService {
 
         <div class="message">
           <p>Nous espérons que ces informations vous seront utiles. N'hésitez pas à nous contacter si vous avez d'autres questions.</p>
-          <p>Cordialement,<br><strong>L'équipe de ${data.salonName || 'InkStudio'}</strong></p>
+          <p>Cordialement,<br><strong>L'équipe de ${data.salonName || 'Inkera Studio'}</strong></p>
         </div>
 
         <div class="warning-box" style="background: rgba(99, 102, 241, 0.1); border-left: 4px solid #6366f1;">
@@ -1320,15 +1312,15 @@ export class EmailTemplateService {
 
         <div class="message">
           <p>Merci pour votre confiance ! 🙏</p>
-          <p><strong>L'équipe de ${data.salonName || 'InkStudio'}</strong></p>
+          <p><strong>L'équipe de ${data.salonName || 'Inkera Studio'}</strong></p>
         </div>
       </div>
     `;
 
     return this.getBaseTemplate(
       content, 
-      `Comment s'est passé votre ${details.prestationName.toLowerCase()} ? - ${data.salonName || 'InkStudio'}`, 
-      data.salonName || 'InkStudio'
+      `Comment s'est passé votre ${details.prestationName.toLowerCase()} ? - ${data.salonName || 'Inkera Studio'}`, 
+      data.salonName || 'Inkera Studio'
     );
   }
 
@@ -1342,7 +1334,7 @@ export class EmailTemplateService {
         
         <div class="message">
           <p>Bonjour ${data.recipientName || 'cher utilisateur'} !</p>
-          <p>Nous vous confirmons que votre mot de passe a été <strong>modifié avec succès</strong> pour votre compte ${data.salonName || 'InkStudio'}.</p>
+          <p>Nous vous confirmons que votre mot de passe a été <strong>modifié avec succès</strong> pour votre compte ${data.salonName || 'Inkera Studio'}.</p>
         </div>
 
         <div class="details-card">
@@ -1397,8 +1389,8 @@ export class EmailTemplateService {
 
     return this.getBaseTemplate(
       content, 
-      `Mot de passe modifié - ${data.salonName || 'InkStudio'}`, 
-      data.salonName || 'InkStudio'
+      `Mot de passe modifié - ${data.salonName || 'Inkera Studio'}`, 
+      data.salonName || 'Inkera Studio'
     );
   }
 
@@ -1467,15 +1459,15 @@ export class EmailTemplateService {
 
         <div class="message">
           <p><strong>Merci de nous faire confiance pour vos créations artistiques ! ✨</strong></p>
-          <p><em>L'équipe ${data.retouchesReminderDetails?.salonName || data.salonName || 'InkStudio'}</em></p>
+          <p><em>L'équipe ${data.retouchesReminderDetails?.salonName || data.salonName || 'Inkera Studio'}</em></p>
         </div>
       </div>
     `;
 
     return this.getBaseTemplate(
       content, 
-      `Retouches gratuites disponibles - ${data.retouchesReminderDetails?.salonName || data.salonName || 'InkStudio'}`, 
-      data.retouchesReminderDetails?.salonName || data.salonName || 'InkStudio'
+      `Retouches gratuites disponibles - ${data.retouchesReminderDetails?.salonName || data.salonName || 'Inkera Studio'}`, 
+      data.retouchesReminderDetails?.salonName || data.salonName || 'Inkera Studio'
     );
   }
 
