@@ -14,10 +14,7 @@ export class StocksService {
 
   async createItemStock({ stockBody, userId }: { stockBody: CreateStockDto, userId: string }) {
     try {
-      const { name, category, quantity, unit, minQuantity } = stockBody;
-
-      // 🔒 VÉRIFIER LES LIMITES SAAS AVANT DE CRÉER LE CLIENT
-      // const canCreateClient = await this.saasService.canPerformAction(userId, 'client');
+      const { name, category, quantity, unit, minQuantity, pricePerUnit } = stockBody;
 
 
       // Créer l'élément de stock
@@ -29,6 +26,7 @@ export class StocksService {
           quantity,
           unit,
           minQuantity,
+          pricePerUnit,
         },
       });
 
@@ -93,12 +91,18 @@ export class StocksService {
         where: whereClause,
       });
 
-      const stockItems = await this.prisma.stockItem.findMany({
+      const stockItemsFromDb = await this.prisma.stockItem.findMany({
         where: whereClause,
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
       });
+
+      // Calculer le prix total pour chaque élément
+      const stockItems = stockItemsFromDb.map(item => ({
+        ...item,
+        totalPrice: item.pricePerUnit ? item.quantity * item.pricePerUnit : null
+      }));
 
       const totalPages = Math.ceil(totalStockItems / limit);
 

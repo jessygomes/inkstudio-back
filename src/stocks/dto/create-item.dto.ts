@@ -18,4 +18,8 @@ export class CreateStockDto {
   @IsOptional()
   @IsNumber()
   minQuantity: number;
+
+  @IsOptional()
+  @IsNumber()
+  pricePerUnit: number;
 }
