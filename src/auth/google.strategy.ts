@@ -1,41 +1,41 @@
-import { Inject, Injectable } from '@nestjs/common';
-import { PassportStrategy } from '@nestjs/passport';
-import { Strategy, VerifyCallback } from 'passport-google-oauth20';
-import googleOauthConfig from './google-oauth.config';
-import { ConfigType } from '@nestjs/config';
-import { AuthService } from './auth.service';
+// import { Inject, Injectable } from '@nestjs/common';
+// import { PassportStrategy } from '@nestjs/passport';
+// import { Strategy, VerifyCallback } from 'passport-google-oauth20';
+// import googleOauthConfig from './google-oauth.config';
+// import { ConfigType } from '@nestjs/config';
+// import { AuthService } from './auth.service';
 
-@Injectable()
-export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
-  constructor(
-    @Inject(googleOauthConfig.KEY) private readonly googleConfig: ConfigType<typeof googleOauthConfig>,
-    private readonly authService: AuthService,
-  ) {
-    const { clientID, clientSecret, callbackURL } = googleConfig;
-    
-    if (!clientID || !clientSecret) {
-      throw new Error('Google OAuth configuration is missing clientID or clientSecret');
-    }
+// @Injectable()
+// export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
+//   constructor(
+//     @Inject(googleOauthConfig.KEY) private readonly googleConfig: ConfigType<typeof googleOauthConfig>,
+//     private readonly authService: AuthService,
+//   ) {
+//     const { clientID, clientSecret, callbackURL } = googleConfig;
 
-    super({
-      clientID,
-      clientSecret,
-      callbackURL,
-      scope: ['email', 'profile'],
-    });
-  }
+//     if (!clientID || !clientSecret) {
+//       throw new Error('Google OAuth configuration is missing clientID or clientSecret');
+//     }
 
-  async validate(access_token: string, refresh_token: string, profile: any, done: VerifyCallback) {
-    console.log('Google profile:', profile);
+//     super({
+//       clientID,
+//       clientSecret,
+//       callbackURL,
+//       scope: ['email', 'profile'],
+//     });
+//   }
 
-    // const user = await this.authService.validateGoogleUser({
-    //   email: profile.emails[0].value,
-    //   firstName: profile.name.givenName,
-    //   lastName: profile.name.familyName,
-    //   avatarUrl: profile.photos[0].value,
-    //   password: "", // No password for OAuth users
-    // });
+//   async validate(access_token: string, refresh_token: string, profile: any, done: VerifyCallback) {
+//     console.log('Google profile:', profile);
 
-    // done(null, user);
-  }
-}
+//     // const user = await this.authService.validateGoogleUser({
+//     //   email: profile.emails[0].value,
+//     //   firstName: profile.name.givenName,
+//     //   lastName: profile.name.familyName,
+//     //   avatarUrl: profile.photos[0].value,
+//     //   password: "", // No password for OAuth users
+//     // });
+
+//     // done(null, user);
+//   }
+// }
