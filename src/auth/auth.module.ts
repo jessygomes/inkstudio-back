@@ -8,9 +8,9 @@ import { UserService } from 'src/user/user.service';
 import { MailModule } from 'src/email/mail.module';
 import { SaasModule } from 'src/saas/saas.module';
 import { CacheService } from 'src/redis/cache.service';
-import googleOauthConfig from './google-oauth.config';
+// import googleOauthConfig from './google-oauth.config';
 import { ConfigModule } from '@nestjs/config';
-import { GoogleStrategy } from './google.strategy';
+// import { GoogleStrategy } from './google.strategy';
 
 @Module({
   imports: [
@@ -21,7 +21,7 @@ import { GoogleStrategy } from './google.strategy';
     }),
     SaasModule,
     MailModule,
-    ConfigModule.forFeature(googleOauthConfig),
+    // ConfigModule.forFeature(googleOauthConfig),
   ],
   controllers: [AuthController],
   providers: [
@@ -29,7 +29,7 @@ import { GoogleStrategy } from './google.strategy';
     PrismaService,
     UserService,
     JwtStrategy,
-    GoogleStrategy,
+    // GoogleStrategy,
     CacheService,
   ],
 })
