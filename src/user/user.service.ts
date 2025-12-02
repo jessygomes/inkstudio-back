@@ -213,7 +213,7 @@ export class UserService {
   }
 
   //! GET USER BY SLUG + LOCALISATION
-  async getUserBySlugAndLocation({ nameSlug, locSlug }: { nameSlug: string; locSlug: string }) {
+  async getUserBySlugAndLocation({ nameSlug, locSlug }: { nameSlug: string; locSlug: string }): Promise<Record<string, any> | null> {
     try {
       // Créer une clé de cache basée sur les slugs
       const cacheKey = `user:slug:${nameSlug}:${locSlug}`;
@@ -328,7 +328,7 @@ export class UserService {
   }
 
   //! GET USER BY ID
-  async getUserById({userId} : {userId: string}) {
+  async getUserById({userId} : {userId: string}): Promise<CachedUser | null> {
     const cacheKey = `user:${userId}`;
 
     // 1. Vérifier dans Redis
@@ -338,53 +338,97 @@ export class UserService {
       return cachedUser;
     }
 
-    // 2. Sinon, aller chercher en DB
-    const user = await this.prisma.user.findUnique({
-      where: {
-        id: userId,
-      },
-      select: {
-        id: true,
-        saasPlan: true,
-        email: true,
-        salonName: true,
-        firstName: true,
-        lastName: true,
-        phone: true,
-        address: true,
-        city: true,
-        postalCode: true,
-        salonHours: true,
-        instagram: true,
-        facebook: true,
-        tiktok: true,
-        website: true,
-        description: true,
-        image: true,
-        role: true,
-        prestations: true,
-        Tatoueur: {
-          select: {
-            id: true,
-            name: true,
-            img: true,
-            description: true,
-            phone: true,
-            hours: true,
-            instagram: true,
-            style: true,
-            skills: true,
-            rdvBookingEnabled: true
+    // 2. D'abord récupérer le rôle de l'utilisateur
+    const userRole = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true }
+    });
+
+    if (!userRole) {
+      return null;
+    }
+
+    // 3. Récupérer les données selon le rôle
+    let user;
+
+    if (userRole.role === 'client') {
+      // Pour les clients : données de base + profil client
+      user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          phone: true,
+          image: true,
+          role: true,
+          updatedAt: true,
+          clientProfile: {
+            select: {
+              id: true,
+              pseudo: true,
+              birthDate: true,
+              city: true,
+              postalCode: true,
+              updatedAt: true
+            }
           }
         }
-      },
-    })
+      });
+    } else {
+      // Pour les salons : données existantes
+      user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          saasPlan: true,
+          email: true,
+          salonName: true,
+          firstName: true,
+          lastName: true,
+          phone: true,
+          address: true,
+          city: true,
+          postalCode: true,
+          salonHours: true,
+          instagram: true,
+          facebook: true,
+          tiktok: true,
+          website: true,
+          description: true,
+          image: true,
+          role: true,
+          prestations: true,
+          Tatoueur: {
+            select: {
+              id: true,
+              name: true,
+              img: true,
+              description: true,
+              phone: true,
+              hours: true,
+              instagram: true,
+              style: true,
+              skills: true,
+              rdvBookingEnabled: true
+            }
+          }
+        }
+      });
+    }
 
-    return user;
+    // 4. Mettre en cache (TTL différent selon le rôle)
+    if (user) {
+      const ttl = userRole.role === 'client' ? 1800 : 3600; // 30min pour client, 1h pour salon
+      await this.cacheService.set(cacheKey, user, ttl);
+    }
+
+    return user as CachedUser | null;
   }
 
     //! GET PHOTOS SALON
-  async getPhotosSalon({userId} : {userId: string}) {
+  async getPhotosSalon({userId} : {userId: string}): Promise<Record<string, any>> {
     try {
       // Créer une clé de cache spécifique pour les photos salon
       const cacheKey = `user:photos:${userId}`;
@@ -435,7 +479,7 @@ export class UserService {
   }
 
   //! UPDATE USER
-  async updateUser({userId, userBody} : {userId: string; userBody: { salonName: string; firstName: string; lastName: string; phone: string; address: string; city: string; postalCode: string; instagram: string; facebook: string; tiktok: string; website: string; description: string; image: string; prestations?: string[]; }}) {
+  async updateUser({userId, userBody} : {userId: string; userBody: { salonName: string; firstName: string; lastName: string; phone: string; address: string; city: string; postalCode: string; instagram: string; facebook: string; tiktok: string; website: string; description: string; image: string; prestations?: string[]; }}): Promise<Record<string, any>> {
     
     // Vérifier que userId est défini
     if (!userId) {
@@ -481,10 +525,76 @@ export class UserService {
     return user;
   }
 
+  async updateUserClient({userId, userBody} : {userId: string; userBody: { firstName: string; lastName: string; phone: string; pseudo: string; city: string; postalCode: string; birthDate: string; image: string; }}): Promise<Record<string, any>> {
+    // Vérifier que userId est défini
+    if (!userId) {
+      throw new Error('UserId est requis pour mettre à jour un utilisateur');
+    }
+
+    // Préparer les données pour la table User (champs de base)
+    const userUpdateData: Record<string, any> = {
+      firstName: userBody.firstName,
+      lastName: userBody.lastName,
+      phone: userBody.phone,
+      image: userBody.image,
+    };
+
+    // Préparer les données pour la table ClientProfile
+    const clientProfileData: Record<string, any> = {
+      pseudo: userBody.pseudo,
+      city: userBody.city,
+      postalCode: userBody.postalCode,
+      birthDate: userBody.birthDate ? new Date(userBody.birthDate) : null,
+    };
+
+    // Mettre à jour User et ClientProfile en une seule transaction
+    const user = await this.prisma.user.update({
+      where: {
+        id: userId,
+      },
+      data: {
+        ...userUpdateData,
+        clientProfile: {
+          upsert: {
+            create: clientProfileData,
+            update: clientProfileData
+          }
+        }
+      },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        phone: true,
+        image: true,
+        role: true,
+        updatedAt: true,
+        clientProfile: {
+          select: {
+            id: true,
+            pseudo: true,
+            birthDate: true,
+            city: true,
+            postalCode: true,
+            updatedAt: true
+          }
+        }
+      }
+    });
+
+    // Invalider le cache après update
+    await this.cacheService.del(`user:${userId}`);
+    this.cacheService.delPattern('users:list:*');
+    this.cacheService.delPattern('user:slug:*');
+
+    return user;
+  }
+
   
 
   //! UPDATE HOURS SALON
-  async updateHoursSalon({userId, salonHours} : {userId: string; salonHours: string}) {
+  async updateHoursSalon({userId, salonHours} : {userId: string; salonHours: string}): Promise<Record<string, any>> {
     const user = await this.prisma.user.update({
       where: {
         id: userId,
@@ -504,7 +614,7 @@ export class UserService {
   }
 
   //! ADD OR UPDATE PHOTO SALON
-  async addOrUpdatePhotoSalon({userId, salonPhotos} : {userId: string; salonPhotos: string[] | {photoUrls: string[]}}) {
+  async addOrUpdatePhotoSalon({userId, salonPhotos} : {userId: string; salonPhotos: string[] | {photoUrls: string[]}}): Promise<Record<string, any>> {
     // Gérer le cas où salonPhotos est un objet avec photoUrls ou directement un tableau
     let photosArray: string[];
     
@@ -1070,4 +1180,307 @@ export class UserService {
       };
     }
   }
+
+  //! ------------------------------------------------------------------------------
+  //! MÉTHODES POUR LES CLIENTS CONNECTÉS
+  //! ------------------------------------------------------------------------------
+
+  //! RECUPERER LES SALONS FAVORIS D'UN CLIENT
+  async getFavoriteSalons({userId}: {userId: string}): Promise<Record<string, any>> {
+    try {
+      const favorites = await this.prisma.favoriteUser.findMany({
+        where: { clientId: userId },
+        select: {
+          salon: {
+            select: {
+              id: true,
+              salonName: true,
+              city: true,
+              postalCode: true,
+              image: true,
+              description: true,
+              instagram: true,
+              facebook: true,
+              tiktok: true,
+              website: true,
+            }
+          }
+        }
+      });
+      const favoriteSalons = favorites.map(fav => fav.salon);
+      return {
+        error: false,
+        favoriteSalons,
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
+
+  //! RECUPERER TOUS LES RDV D'UN CLIENT
+  async getAllRdvForClient({userId, status, page = 1, limit = 10}: {userId: string, status?: string, page?: number, limit?: number}): Promise<Record<string, any>> {
+    try {
+      const currentPage = Math.max(1, Number(page) || 1);
+      const perPage = Math.min(50, Math.max(1, Number(limit) || 10));
+      const skip = (currentPage - 1) * perPage;
+
+      // Créer une clé de cache basée sur les paramètres
+      const cacheKey = `client:appointments:${userId}:${JSON.stringify({
+        status: status?.trim() || null,
+        page: currentPage,
+        limit: perPage
+      })}`;
+
+      // 1. Vérifier dans Redis
+      try {
+        const cachedAppointments = await this.cacheService.get<{
+          error: boolean;
+          appointments: Record<string, any>[];
+          pagination: Record<string, any>;
+          message: string;
+        }>(cacheKey);
+        if (cachedAppointments) {
+          return cachedAppointments;
+        }
+      } catch (cacheError) {
+        console.warn('Erreur cache Redis pour getAllRdvForClient:', cacheError);
+      }
+
+      // Construire les conditions de recherche
+      const whereClause: Record<string, any> = {
+        clientUserId: userId, // RDV pris en tant que client connecté
+      };
+
+      // Filtrer par statut si spécifié
+      if (status && status.trim() !== '') {
+        whereClause.status = status.toUpperCase();
+      }
+
+      // 2. Compter le total et récupérer les données avec pagination
+      const [totalAppointments, appointments] = await this.prisma.$transaction([
+        this.prisma.appointment.count({ where: whereClause }),
+        this.prisma.appointment.findMany({
+          where: whereClause,
+          select: {
+            id: true,
+            title: true,
+            prestation: true,
+            start: true,
+            end: true,
+            status: true,
+            isPayed: true,
+            createdAt: true,
+            updatedAt: true,
+            visio: true,
+            visioRoom: true,
+            // Informations du salon
+            user: {
+              select: {
+                id: true,
+                salonName: true,
+                firstName: true,
+                lastName: true,
+                image: true,
+                city: true,
+                postalCode: true,
+                phone: true,
+                address: true,
+                instagram: true,
+                website: true
+              }
+            },
+            // Informations du tatoueur
+            tatoueur: {
+              select: {
+                id: true,
+                name: true,
+                img: true,
+                phone: true,
+                instagram: true
+              }
+            },
+            // Détails du tatouage/piercing
+            tattooDetail: {
+              select: {
+                id: true,
+                description: true,
+                zone: true,
+                size: true,
+                colorStyle: true,
+                reference: true,
+                sketch: true,
+                piercingZone: true,
+                estimatedPrice: true,
+                price: true,
+                piercingServicePrice: {
+                  select: {
+                    description: true,
+                    piercingZoneOreille: true,
+                    piercingZoneVisage: true,
+                    piercingZoneBouche: true,
+                    piercingZoneCorps: true,
+                    piercingZoneMicrodermal: true
+                  }
+                }
+              }
+            }
+          },
+          orderBy: {
+            start: 'desc' // Plus récents en premier
+          },
+          skip,
+          take: perPage,
+        })
+      ]);
+
+      // 3. Formater les données pour le front-end
+      const formattedAppointments = appointments.map(appointment => ({
+        id: appointment.id,
+        title: appointment.title,
+        prestation: appointment.prestation,
+        start: appointment.start,
+        end: appointment.end,
+        status: appointment.status,
+        isPayed: appointment.isPayed,
+        visio: appointment.visio,
+        visioRoom: appointment.visioRoom,
+        createdAt: appointment.createdAt,
+        updatedAt: appointment.updatedAt,
+        duration: appointment.end && appointment.start 
+          ? Math.round((appointment.end.getTime() - appointment.start.getTime()) / (1000 * 60))
+          : 0,
+        salon: {
+          id: appointment.user.id,
+          salonName: appointment.user.salonName,
+          firstName: appointment.user.firstName,
+          lastName: appointment.user.lastName,
+          image: appointment.user.image,
+          city: appointment.user.city,
+          postalCode: appointment.user.postalCode,
+          phone: appointment.user.phone,
+          address: appointment.user.address,
+          instagram: appointment.user.instagram,
+          website: appointment.user.website
+        },
+        tatoueur: appointment.tatoueur ? {
+          id: appointment.tatoueur.id,
+          name: appointment.tatoueur.name,
+          img: appointment.tatoueur.img,
+          phone: appointment.tatoueur.phone,
+          instagram: appointment.tatoueur.instagram
+        } : null,
+        prestationDetails: appointment.tattooDetail ? {
+          id: appointment.tattooDetail.id,
+          description: appointment.tattooDetail.description,
+          zone: appointment.tattooDetail.zone,
+          size: appointment.tattooDetail.size,
+          colorStyle: appointment.tattooDetail.colorStyle,
+          reference: appointment.tattooDetail.reference,
+          sketch: appointment.tattooDetail.sketch,
+          piercingZone: appointment.tattooDetail.piercingZone,
+          estimatedPrice: appointment.tattooDetail.estimatedPrice,
+          price: appointment.tattooDetail.price,
+          piercingDetails: appointment.tattooDetail.piercingServicePrice ? {
+            description: appointment.tattooDetail.piercingServicePrice.description,
+            zoneOreille: appointment.tattooDetail.piercingServicePrice.piercingZoneOreille,
+            zoneVisage: appointment.tattooDetail.piercingServicePrice.piercingZoneVisage,
+            zoneBouche: appointment.tattooDetail.piercingServicePrice.piercingZoneBouche,
+            zoneCorps: appointment.tattooDetail.piercingServicePrice.piercingZoneCorps,
+            zoneMicrodermal: appointment.tattooDetail.piercingServicePrice.piercingZoneMicrodermal
+          } : null
+        } : null
+      }));
+
+      // 4. Calculer les informations de pagination
+      const totalPages = Math.ceil(totalAppointments / perPage);
+      const startIndex = totalAppointments === 0 ? 0 : skip + 1;
+      const endIndex = Math.min(skip + perPage, totalAppointments);
+
+      const result = {
+        error: false,
+        appointments: formattedAppointments,
+        pagination: {
+          currentPage,
+          limit: perPage,
+          totalAppointments,
+          totalPages,
+          hasNextPage: currentPage < totalPages,
+          hasPreviousPage: currentPage > 1,
+          startIndex,
+          endIndex,
+        },
+        message: `${formattedAppointments.length} rendez-vous sur ${totalAppointments} récupéré(s) avec succès.`
+      };
+
+      // 5. Mettre en cache (TTL 10 minutes - les RDV clients changent moins souvent)
+      try {
+        const ttl = 10 * 60; // 10 minutes
+        await this.cacheService.set(cacheKey, result, ttl);
+      } catch (cacheError) {
+        console.warn('Erreur sauvegarde cache Redis pour getAllRdvForClient:', cacheError);
+      }
+
+      return result;
+
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: `Erreur lors de la récupération des rendez-vous: ${errorMessage}`,
+      };
+    }
+  }
+
+  //! METTRE EN FAVORI / RETIRER DES FAVORIS UN SALON
+  async toggleFavoriteSalon({userId, salonId}: {userId: string, salonId: string}): Promise<Record<string, any>> {
+    try {
+      // Vérifier si le salon est déjà dans les favoris
+      const existingFavorite = await this.prisma.favoriteUser.findUnique({
+        where: {
+          clientId_salonId: {
+            clientId: userId,
+            salonId: salonId
+          }
+        }
+      });
+      if (existingFavorite) {
+        // Retirer des favoris
+        await this.prisma.favoriteUser.delete({
+          where: {
+            clientId_salonId: {
+              clientId: userId,
+              salonId: salonId
+            }
+          }
+        });
+        return {
+          error: false,
+          message: 'Salon retiré des favoris avec succès.'
+        };
+      } else {
+        // Ajouter aux favoris
+        await this.prisma.favoriteUser.create({
+          data: {
+            clientId: userId,
+            salonId: salonId
+          }
+        });
+        return {
+          error: false,
+          message: 'Salon ajouté aux favoris avec succès.'
+        };
+      }
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: `Erreur lors de la mise à jour des favoris: ${errorMessage}`,
+      };
+    }
+  }
+      
 }

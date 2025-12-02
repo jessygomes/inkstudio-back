@@ -134,13 +134,21 @@ export class MailService {
     return await this.sendMail(to, subject, html, salonName);
   }
 
-  //! MAIL DE VERIFICATION D'EMAIL
+  //! MAIL DE VERIFICATION D'EMAIL (SALON)
   async sendEmailVerification(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
     const subject = `Vérification de votre email${salonName ? ` - ${salonName}` : ''}`;
     const dataWithSalon = { ...data, salonName: salonName || data.salonName };
     const html = this.emailTemplateService.generateEmailVerificationEmail(dataWithSalon);
     
     return await this.sendMail(to, subject, html, salonName);
+  }
+
+  //! MAIL DE VERIFICATION D'EMAIL (CLIENT)
+  async sendClientEmailVerification(to: string, data: EmailTemplateData): Promise<MailgunResponse> {
+    const subject = 'Vérification de votre email - Inkera';
+    const html = this.emailTemplateService.generateClientEmailVerificationEmail(data);
+    
+    return await this.sendMail(to, subject, html, 'Inkera');
   }
 
   //! MAIL DE REINITIALISATION DE MOT DE PASSE

@@ -7,6 +7,9 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { LoginUserDto } from './dto/login-user.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { PrismaService } from 'src/database/prisma.service';
+import { CreateUserClientDto } from './dto/create-userClient.dto';
+import { CachedUser } from 'utils/type';
+// import { GoogleAuthGuard } from './guards/google-auth/google-auth.guard';
 
 
 @Controller('auth')
@@ -30,10 +33,31 @@ export class AuthController {
     return await this.authService.register({ registerBody });
   }
 
+  @Post('register_client') // POST /auth/register_client
+  async registerClient(@Body() registerBody: CreateUserClientDto) {
+    console.log("🔍 Données d'inscription client reçues :", registerBody);
+    console.log("🔍 Type de birthDate :", typeof registerBody.birthDate);
+    console.log("🔍 Type de email :", typeof registerBody.email);
+    
+    return await this.authService.registerClient({ registerBody });
+  }
+
+  // @Get('google/login')
+  // @UseGuards(GoogleAuthGuard)
+  // googleLogin() {
+  //   // Initiates the Google OAuth2 login flow
+  // }
+
+  // @Get('google/callback')
+  // @UseGuards(GoogleAuthGuard)
+  // async googleLoginCallback(@Req() req) {
+  //   const response = await this.authService.login(req.user.id)
+  // }
+
   // ici on utilise JWTStategy
   @UseGuards(JwtAuthGuard)
   @Get()
-  async getAuthenticatedUser(@Request() request: RequestWithUser) {
+  async getAuthenticatedUser(@Request() request: RequestWithUser): Promise<CachedUser | null> {
     return await this.userService.getUserById({userId: request.user.userId});
   }
 

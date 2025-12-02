@@ -8,6 +8,7 @@ import { LoginUserDto } from './dto/login-user.dto';
 import { MailService } from 'src/email/mailer.service';
 import { randomBytes } from 'crypto';
 import { SaasService } from 'src/saas/saas.service';
+import { CreateUserClientDto } from './dto/create-userClient.dto';
 
 @Injectable()
 export class AuthService {
@@ -32,8 +33,6 @@ export class AuthService {
       if (!existingUser) {
         throw new Error("L'email ou le mot de passe sont incorrect.");
       }
-  
-      // const hashedPassword = await this.hashPassword(password);
   
       const isPasswordValid = await this.isPasswordValid({password, hashedPassword: existingUser.password});
   
@@ -63,22 +62,33 @@ export class AuthService {
   
         const confirmationUrl = `${process.env.FRONTEND_URL}/verifier-email?token=${token}&email=${email}`;
 
-        await this.mailService.sendEmailVerification(
-          email,
-          {
-            recipientName: existingUser.salonName || 'Salon',
-            salonName: existingUser.salonName || 'InkStudio',
-            verificationUrl: confirmationUrl,
-          },
-          existingUser.salonName || undefined
-        );
+        // Envoyer le bon template selon le rôle de l'utilisateur
+        if (existingUser.role === 'client') {
+          await this.mailService.sendClientEmailVerification(
+            email,
+            {
+              recipientName: `${existingUser.firstName} ${existingUser.lastName}`,
+              verificationUrl: confirmationUrl,
+            }
+          );
+        } else {
+          await this.mailService.sendEmailVerification(
+            email,
+            {
+              recipientName: existingUser.salonName || 'Salon',
+              salonName: existingUser.salonName || 'Inkera Studio',
+              verificationUrl: confirmationUrl,
+            },
+            existingUser.salonName || undefined
+          );
+        }
   
         return {
           error: "Votre adresse email n'est pas vérifiée. Un nouveau code de vérification vous a été envoyé par email.",
         };
       }
   
-      return this.authenticateUser({userId: existingUser.id});
+      return this.authenticateUser({userId: existingUser.id, role: existingUser.role});
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       return {
@@ -177,7 +187,79 @@ export class AuthService {
         message: errorMessage,
       };
     }
-    
+  }
+
+  //! INSCRIPTION CLIENT
+  async registerClient({ registerBody }: { registerBody: CreateUserClientDto }) {
+    try {
+      const { email, password, firstName, lastName, birthDate, confirmPassword } = registerBody;
+      
+      // Vérifier la confirmation du mot de passe
+      if (confirmPassword && password !== confirmPassword) {
+        throw new Error("Les mots de passe ne correspondent pas.");
+      }
+      
+      // Vérifier si l'utilisateur existe déjà
+      const existingUser = await this.prisma.user.findUnique({
+        where: { email },
+      });
+
+      if (existingUser) {
+        throw new Error("Un compte existe déjà avec cet email.");
+      }
+      // Hashage du mot de passe
+      const hashedPassword = await this.hashPassword({password});
+      // Création de l'utilisateur dans la DB avec son profil client
+      const createdUser = await this.prisma.user.create({
+        data: {
+          email,
+          firstName,
+          lastName,
+          password: hashedPassword,
+          role: 'client',
+          clientProfile: {
+            create: {
+              birthDate: birthDate ? new Date(birthDate) : null,
+            }
+          }
+        },
+        include: {
+          clientProfile: true
+        }
+      });
+
+      // Génération du token de vérification de l'adresse mail
+      const token = Math.floor(100000 + Math.random() * 900000).toString(); // Génère un nombre à 6 chiffres
+      const expires = new Date(Date.now() + 1000 * 60 * 10); // Expiration dans 10 minutes
+
+      await this.prisma.verificationToken.create({
+        data: {
+          email,
+          token,
+          expires,
+        },
+      });
+
+      const confirmationUrl = `${process.env.FRONTEND_URL}/verifier-email?token=${token}&email=${email}`;
+
+      await this.mailService.sendClientEmailVerification(
+        email,
+        {
+          recipientName: `${createdUser.firstName} ${createdUser.lastName}`,
+          verificationUrl: confirmationUrl,
+        }
+      );
+
+      return {
+        message: "Votre compte client a été créé avec succès. Veuillez vérifier vos emails pour confirmer votre adresse.",
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
   }
 
   //! MOT DE PASSE OUBLIÉ
@@ -309,8 +391,6 @@ export class AuthService {
     }
   }
 
-  
-
   //! Méthode d'authentification :
   // Méthodes privées pour le hashage du mot de passe et la vérification du mot de passe
   private async hashPassword({password} : {password: string}) {
@@ -319,12 +399,12 @@ export class AuthService {
   }
 
   private async isPasswordValid({password, hashedPassword} : {password: string, hashedPassword: string}) {
-   const isPasswordValid = await compare(password, hashedPassword);
-   return isPasswordValid;
+    const isPasswordValid = await compare(password, hashedPassword);
+    return isPasswordValid;
   }
 
   // Méthode pour générer un token d'authentification
-  private  authenticateUser({userId} : UserPayload) {
+  private  authenticateUser({userId, role} : UserPayload) {
     const payload: UserPayload = {userId}
     
     const access_token = this.jwtService.sign(payload);
@@ -334,7 +414,57 @@ export class AuthService {
     
     return {
       access_token,
-      userId
+      userId,
+      role,
     }
+  }
+
+  //! GOOGLE OAUTH - Validation et création d'utilisateur
+  async validateGoogleUser(googleUser: {
+    email: string;
+    firstName: string;
+    lastName: string;
+    image?: string;
+    access_token: string;
+  }) {
+    const { email, firstName, lastName, image } = googleUser;
+
+    // Vérifier si l'utilisateur existe déjà
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email },
+      include: { clientProfile: true }
+    });
+
+    if (existingUser) {
+      // Utilisateur existe, vérifier l'email et retourner
+      if (!existingUser.emailVerified) {
+        await this.prisma.user.update({
+          where: { id: existingUser.id },
+          data: { emailVerified: new Date() }
+        });
+      }
+      return existingUser;
+    }
+
+    // Créer un nouvel utilisateur client avec Google
+    const newUser = await this.prisma.user.create({
+      data: {
+        email,
+        firstName,
+        lastName,
+        image,
+        password: '', // Pas de mot de passe pour Google OAuth
+        role: 'client', // Par défaut client pour Google OAuth
+        emailVerified: new Date(), // Email vérifié par Google
+        clientProfile: {
+          create: {
+            // Profil client vide, sera complété plus tard par le client
+          }
+        }
+      },
+      include: { clientProfile: true }
+    });
+
+    return newUser;
   }
 }

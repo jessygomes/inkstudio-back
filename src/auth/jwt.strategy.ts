@@ -5,6 +5,7 @@ import { Request } from 'express';
 
 export type UserPayload = {
   userId: string,
+  role?: string,
 };
 
 export interface RequestWithUser extends Request {
@@ -27,8 +28,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate({ userId }: UserPayload) {
+  async validate({ userId, role }: UserPayload) {
     // console.log('🔍 JWT Strategy - Token validé pour userId:', userId);
-    return { userId };
+    return { userId, role };
   }
 }

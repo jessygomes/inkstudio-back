@@ -6,6 +6,7 @@ import { UpdateColorProfileDto } from './dto/update-color-profile.dto';
 import { GetUsersDto } from './dto/get-users.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RequestWithUser } from '../auth/jwt.strategy';
+import { UpdateUserClientDto } from './dto/update-userClient.dto';
 
 @Controller('users')
 export class UserController {
@@ -105,6 +106,63 @@ export class UserController {
     });
   }
 
+  //! ROUTES SPÉCIFIQUES AUX CLIENTS CONNECTÉS (AVANT LES PARAMÈTRES)
+  
+  //! Récupérer les salons favoris
+  @UseGuards(JwtAuthGuard)
+  @Get('favorites')
+  getFavoriteSalons(@Request() req: RequestWithUser) {
+    const userId = req.user.userId;
+    
+    return this.userService.getFavoriteSalons({ userId });
+  }
+
+  //! Ajouter/Supprimer un salon des favoris
+  @UseGuards(JwtAuthGuard)
+  @Patch('favorites/:salonId')
+  toggleFavoriteSalon(@Request() req: RequestWithUser, @Param('salonId') salonId: string) {
+    const userId = req.user.userId;
+    
+    return this.userService.toggleFavoriteSalon({ userId, salonId });
+  }
+
+  //! Récupérer tous les RDV d'un client
+  @UseGuards(JwtAuthGuard)
+  @Get('rdv-client')
+  getAllRdvForClient(
+    @Request() req: RequestWithUser,
+    @Query('status') status?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string
+  ) {
+    const userId = req.user.userId;
+    
+    const pageNumber = page ? parseInt(page, 10) : 1;
+    const limitNumber = limit ? parseInt(limit, 10) : 10;
+    
+    return this.userService.getAllRdvForClient({ 
+      userId, 
+      status, 
+      page: pageNumber, 
+      limit: limitNumber 
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch("userClient")
+  updateUserClient(@Request() req: RequestWithUser, @Body() userBody: UpdateUserClientDto) {
+    const userId = req.user.userId;
+    console.log("🔍 Mise à jour du client avec ID :", userBody);
+    return this.userService.updateUserClient({userId, userBody});
+  }
+  
+  @UseGuards(JwtAuthGuard)
+  @Patch()
+  updateUser(@Request() req: RequestWithUser, @Body() userBody: UpdateUserDto) {
+    const userId = req.user.userId;
+    return this.userService.updateUser({userId, userBody});
+  }
+
   //! 2️⃣ ROUTES GÉNÉRIQUES (sans paramètres)
   //! GET ALL USERS
   @Get()
@@ -132,8 +190,6 @@ export class UserController {
     return this.userService.updateHoursSalon({userId, salonHours: JSON.stringify(salonHours),}); // On appelle la méthode getUserById du service UserService
   }
 
-
-
   //! GET USER BY SLUG + LOCALISATION
   @Get(":nameSlug/:locSlug")
   getUserBySlugAndLocation(@Param('nameSlug') nameSlug: string, @Param('locSlug') locSlug: string) {
@@ -145,12 +201,73 @@ export class UserController {
   @Get(":userId") // :userId est un paramètre dynamique qui sera récupéré dans la méthode getUser
   getUser(@Param('userId') userId: string) { // On récupère le paramètre dynamique userId
     return this.userService.getUserById({userId}); // On appelle la méthode getUserById du service UserService
-  }
-  
-  @UseGuards(JwtAuthGuard)
-  @Patch() // :userId est un paramètre dynamique qui sera récupéré dans la méthode getUser
-  updateUser(@Request() req: RequestWithUser, @Body() userBody: UpdateUserDto) { // On récupère le paramètre dynamique userId
-    const userId = req.user.userId;
-    return this.userService.updateUser({userId, userBody}); // On appelle la méthode getUserById du service UserService
-  }
+  }  // //! Récupérer les RDV du client connecté
+  // @UseGuards(JwtAuthGuard)
+  // @Get('my-appointments')
+  // getMyAppointments(@Request() req: RequestWithUser, @Query('status') status?: string) {
+  //   const userId = req.user.userId;
+  //   const userRole = req.user.role;
+    
+  //   if (userRole !== 'client') {
+  //     throw new Error('Accès réservé aux clients');
+  //   }
+    
+  //   return this.userService.getClientAppointments({ userId, status });
+  // }
+
+  // //! Prendre un RDV en tant que client connecté
+  // @UseGuards(JwtAuthGuard)
+  // @Post('book-appointment')
+  // bookAppointment(@Request() req: RequestWithUser, @Body() appointmentData: any) {
+  //   const clientUserId = req.user.userId;
+  //   const userRole = req.user.role;
+    
+  //   if (userRole !== 'client') {
+  //     throw new Error('Accès réservé aux clients');
+  //   }
+    
+  //   return this.userService.bookAppointmentAsClient({ clientUserId, appointmentData });
+  // }
+
+  // //! Récupérer les salons favoris
+  // @UseGuards(JwtAuthGuard)
+  // @Get('favorites')
+  // getFavoriteSalons(@Request() req: RequestWithUser) {
+  //   const clientId = req.user.userId;
+  //   const userRole = req.user.role;
+    
+  //   if (userRole !== 'client') {
+  //     throw new Error('Accès réservé aux clients');
+  //   }
+    
+  //   return this.userService.getFavoriteSalons({ clientId });
+  // }
+
+  // //! Ajouter/Supprimer un salon des favoris
+  // @UseGuards(JwtAuthGuard)
+  // @Post('favorites/:salonId')
+  // toggleFavoriteSalon(@Request() req: RequestWithUser, @Param('salonId') salonId: string) {
+  //   const clientId = req.user.userId;
+  //   const userRole = req.user.role;
+    
+  //   if (userRole !== 'client') {
+  //     throw new Error('Accès réservé aux clients');
+  //   }
+    
+  //   return this.userService.toggleFavoriteSalon({ clientId, salonId });
+  // }
+
+  // //! Laisser un avis sur un salon
+  // @UseGuards(JwtAuthGuard)
+  // @Post('reviews')
+  // createSalonReview(@Request() req: RequestWithUser, @Body() reviewData: any) {
+  //   const authorId = req.user.userId;
+  //   const userRole = req.user.role;
+    
+  //   if (userRole !== 'client') {
+  //     throw new Error('Accès réservé aux clients');
+  //   }
+    
+  //   return this.userService.createSalonReview({ authorId, reviewData });
+  // }
 }

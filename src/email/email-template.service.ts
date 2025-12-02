@@ -1557,5 +1557,89 @@ export class EmailTemplateService {
       'Inkera Studio - Admin'
     );
   }
+
+  /**
+   *! Template pour vérification d'email CLIENT
+   */
+  generateClientEmailVerificationEmail(data: EmailTemplateData): string {
+    const content = `
+      <div class="content">
+        <div class="welcome-section">
+          <h2 class="welcome-title">Bienvenue sur InkStudio ! 🎨</h2>
+        </div>
+
+        <br/>
+        
+        <div class="message-box">
+          <p class="welcome-subtitle">Bonjour ${data.recipientName || 'cher client'},</p>
+          <p><strong>Félicitations !</strong> Votre compte client a été créé avec succès sur Inkera.</p>
+          <br/>
+          <p>Vous pouvez maintenant prendre rendez-vous facilement avec vos salons de tatouage préférés, suivre l'évolution de vos tatouages et bien plus encore !</p>
+          <br/>
+          <p>Pour accéder à toutes ces fonctionnalités, veuillez confirmer votre adresse email en cliquant sur le bouton ci-dessous :</p>
+        </div>
+        
+        ${data.verificationUrl ? `
+          <div style="text-align: center;">
+            <a href="${data.verificationUrl}" class="cta-button">
+              ✅ Confirmer mon adresse email
+            </a>
+          </div>
+        ` : ''}
+        
+        ${data.verificationToken ? `
+          <div class="token-display">
+            Code de vérification : ${data.verificationToken}
+          </div>
+        ` : ''}
+        
+        <div class="info-grid">
+          <div class="info-item">
+            <div class="info-item-label">🔒 Expiration dans 10min | Lien unique</div>
+          </div>
+        </div>
+        
+        <div class="details-card">
+          <div class="details-title">✨ Ce que vous pouvez faire maintenant :</div>
+          <ul style="list-style: none; padding: 0; color: #fff;">
+            <li style="padding: 8px 0; display: flex; align-items: center;">
+              <span style="margin-right: 10px;">📅</span>
+              <span>Prendre rendez-vous dans vos salons préférés</span>
+            </li>
+            <li style="padding: 8px 0; display: flex; align-items: center;">
+              <span style="margin-right: 10px;">❤️</span>
+              <span>Ajouter vos salons en favoris</span>
+            </li>
+            <li style="padding: 8px 0; display: flex; align-items: center;">
+              <span style="margin-right: 10px;">📝</span>
+              <span>Suivre vos rendez-vous et tatouages</span>
+            </li>
+            <li style="padding: 8px 0; display: flex; align-items: center;">
+              <span style="margin-right: 10px;">⭐</span>
+              <span>Laisser des avis sur vos expériences</span>
+            </li>
+          </ul>
+        </div>
+        
+        <div style="background: rgba(249, 115, 22, 0.1); border: 1px solid rgba(249, 115, 22, 0.2); border-radius: 12px; padding: 16px; margin: 24px 0; text-align: center;">
+          <p style="font-size: 13px; color: rgba(249, 115, 22, 0.9); margin: 0;">
+            <strong>⚠️ Important :</strong> Ce lien expire dans 10 minutes pour votre sécurité.
+          </p>
+        </div>
+
+        <div class="message">
+          <p class="welcome-subtitle">Si vous n'avez pas créé de compte, vous pouvez ignorer cet email en toute sécurité.</p>
+          <br/>
+          <p><strong>Bienvenue dans la communauté InkStudio ! ✨</strong></p>
+        </div>
+      </div>
+    `;
+
+    return this.getBaseTemplate(
+      content, 
+      'Vérification d\'email - InkStudio', 
+      'InkStudio'
+    );
+  }
 }
 
