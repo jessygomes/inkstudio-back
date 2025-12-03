@@ -342,57 +342,123 @@ export class ClientsService {
     }
   }
 
-    //! SEARCH CLIENTS BY NAME OR EMAIL (for reservation form)
-  async searchClients(query: string, userId: string) {
-    try {
-      const cacheKey = `clients:search:${userId}:${query?.trim()}`;
+//! SEARCH CLIENTS BY NAME OR EMAIL (for reservation form)
+async searchClients(query: string, userId: string) {
+  try {
+    const cacheKey = `clients:search:${userId}:${query?.trim()}`;
 
-      // 1. Vérifier dans Redis
-      const cachedResult = await this.cacheService.get<{
-        error: boolean;
-        message: string;
-        clients: any[];
-      }>(cacheKey);
-      
-      if (cachedResult) {
-        return cachedResult;
-      }
-
-      const clients = await this.prisma.client.findMany({
-        where: {
-          AND: [
-            { userId },
-            {
-              OR: [
-                { firstName: { contains: query, mode: 'insensitive' } },
-                { lastName: { contains: query, mode: 'insensitive' } },
-                { email: { contains: query, mode: 'insensitive' } },
-              ],
-            },
-          ],
-        },
-        take: 10,
-      });
-
-      const result = {
-        error: false,
-        message: clients.length > 0 ? 'Clients trouvés avec succès.' : 'Aucun client trouvé.',
-        clients: clients || [],
-      };
-
-      // 3. Mettre en cache (TTL 2 minutes pour les recherches)
-      await this.cacheService.set(cacheKey, result, 120);
-
-      return result;
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-      return {
-        error: true,
-        message: errorMessage,
-        clients: [],
-      };
+    // 1. Vérifier dans Redis
+    const cachedResult = await this.cacheService.get<{
+      error: boolean;
+      message: string;
+      clients: any[];
+      userClients: any[];
+    }>(cacheKey);
+    
+    if (cachedResult) {
+      return cachedResult;
     }
+
+    // Recherche dans les clients existants du salon
+    const existingClients = await this.prisma.client.findMany({
+      where: {
+        AND: [
+          { userId },
+          {
+            OR: [
+              { firstName: { contains: query, mode: 'insensitive' } },
+              { lastName: { contains: query, mode: 'insensitive' } },
+              { email: { contains: query, mode: 'insensitive' } },
+            ],
+          },
+        ],
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        phone: true,
+        birthDate: true,
+        address: true,
+        linkedUserId: true,
+        createdAt: true
+      },
+      take: 10,
+    });
+
+    // Recherche dans les utilisateurs connectés (role="client")
+    const userClients = await this.prisma.user.findMany({
+      where: {
+        role: 'client',
+        OR: [
+          { firstName: { contains: query, mode: 'insensitive' } },
+          { lastName: { contains: query, mode: 'insensitive' } },
+          { email: { contains: query, mode: 'insensitive' } },
+        ],
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        phone: true,
+        clientProfile: {
+          select: {
+            birthDate: true,
+          }
+        }
+      },
+      take: 10,
+    });
+
+    // Filtrer les userClients qui ne sont pas déjà liés à ce salon
+    const existingLinkedUserIds = existingClients
+      .filter(client => client.linkedUserId)
+      .map(client => client.linkedUserId);
+
+    const availableUserClients = userClients.filter(
+      userClient => !existingLinkedUserIds.includes(userClient.id)
+    );
+
+    // Formatter les userClients pour correspondre au format des clients
+    const formattedUserClients = availableUserClients.map(userClient => ({
+      id: userClient.id,
+      firstName: userClient.firstName,
+      lastName: userClient.lastName,
+      email: userClient.email,
+      phone: userClient.phone,
+      birthDate: userClient.clientProfile?.birthDate || null,
+      isUserClient: true, // Flag pour identifier les clients connectés
+      linkedUserId: userClient.id,
+      createdAt: new Date() // Pour le tri
+    }));
+
+    const totalResults = existingClients.length + formattedUserClients.length;
+
+    const result = {
+      error: false,
+      message: totalResults > 0 ? 'Clients trouvés avec succès.' : 'Aucun client trouvé.',
+      clients: existingClients || [],
+      userClients: formattedUserClients || [],
+      totalResults
+    };
+
+    // 3. Mettre en cache (TTL 2 minutes pour les recherches)
+    await this.cacheService.set(cacheKey, result, 120);
+
+    return result;
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+    return {
+      error: true,
+      message: errorMessage,
+      clients: [],
+      userClients: [],
+      totalResults: 0
+    };
   }
+}
 
   //! MODIFIER UN CLIENT
   async updateClient(clientId: string, clientBody: CreateClientDto) {

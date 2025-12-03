@@ -88,7 +88,7 @@ export class AppointmentsService {
     }
   }
 
-  //! ------------------------------------------------------------------------------
+//! ------------------------------------------------------------------------------
 
   //! CREER UN RDV
 
@@ -137,6 +137,25 @@ export class AppointmentsService {
         };
       }
 
+      // Vérifier s'il existe un utilisateur connecté avec cet email (role="client")
+      const clientUser = await this.prisma.user.findUnique({
+        where: {
+          email: clientEmail,
+          role: 'client',
+        },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          phone: true,
+          clientProfile: {
+            select: {
+              birthDate: true
+            }
+          }
+        }
+      });
+
       let client = await this.prisma.client.findFirst({
         where: {
           email: clientEmail,
@@ -145,16 +164,67 @@ export class AppointmentsService {
       });
 
       if (!client) {
+        // Créer le client s'il n'existe pas
+        // Si c'est un client connecté, utiliser ses données du compte utilisateur
+        const clientData = clientUser ? {
+          firstName: clientUser.firstName || clientFirstname,
+          lastName: clientUser.lastName || clientLastname,
+          email: clientEmail,
+          phone: clientUser.phone || clientPhone || "",
+          birthDate: clientUser.clientProfile?.birthDate || parsedBirthdate,
+          userId,
+          linkedUserId: clientUser.id, // Lier au compte utilisateur connecté
+        } : {
+          firstName: clientFirstname,
+          lastName: clientLastname,
+          email: clientEmail,
+          phone: clientPhone || "",
+          birthDate: parsedBirthdate,
+          userId,
+        };
+
         client = await this.prisma.client.create({
-          data: {
-            firstName: clientFirstname,
-            lastName: clientLastname,
-            email: clientEmail,
-            phone: clientPhone || "",
-            birthDate: parsedBirthdate,
-            userId,
-          },
+          data: clientData,
         });
+      } else {
+        // Si le client existe, vérifier s'il faut créer ou mettre à jour la liaison
+        if (clientUser) {
+          if (!client.linkedUserId) {
+            // Créer la liaison si elle n'existe pas
+            client = await this.prisma.client.update({
+              where: { id: client.id },
+              data: { linkedUserId: clientUser.id }
+            });
+          }
+
+          // Mettre à jour les infos de la fiche client avec celles du compte utilisateur
+          const updatedData: any = {};
+          
+          // Synchroniser les données si elles sont différentes ou manquantes
+          if (clientUser.firstName && (!client.firstName || client.firstName !== clientUser.firstName)) {
+            updatedData.firstName = clientUser.firstName;
+          }
+          
+          if (clientUser.lastName && (!client.lastName || client.lastName !== clientUser.lastName)) {
+            updatedData.lastName = clientUser.lastName;
+          }
+          
+          if (clientUser.phone && (!client.phone || client.phone !== clientUser.phone)) {
+            updatedData.phone = clientUser.phone;
+          }
+          
+          if (clientUser.clientProfile?.birthDate && (!client.birthDate || client.birthDate.getTime() !== clientUser.clientProfile.birthDate.getTime())) {
+            updatedData.birthDate = clientUser.clientProfile.birthDate;
+          }
+
+          // Appliquer les mises à jour si nécessaire
+          if (Object.keys(updatedData).length > 0) {
+            client = await this.prisma.client.update({
+              where: { id: client.id },
+              data: updatedData
+            });
+          }
+        }
       }
 
       // Générer le lien de visioconférence si nécessaire
@@ -182,6 +252,7 @@ export class AppointmentsService {
             end: new Date(end),
             tatoueurId,
             clientId: client.id,
+            clientUserId: clientUser?.id, // Lier au client connecté si applicable
             status: 'CONFIRMED',
             visio: visio || false,
             visioRoom: generatedVisioRoom
@@ -328,6 +399,7 @@ export class AppointmentsService {
           error: false,
           message: 'Rendez-vous projet créé avec détail tatouage.',
           appointment: newAppointment,
+          clientLinked: !!clientUser, // Indiquer si le client était connecté
           // tattooDetail,
         };
       }
@@ -342,6 +414,7 @@ export class AppointmentsService {
           end: new Date(end),
           tatoueurId,
           clientId: client.id,
+          clientUserId: clientUser?.id, // Lier au client connecté si applicable
           visio: visio || false,
           visioRoom: generatedVisioRoom
         },
@@ -406,6 +479,7 @@ export class AppointmentsService {
         error: false,
         message: 'Rendez-vous créé avec succès.',
         appointment: newAppointment,
+        clientLinked: !!clientUser, // Indiquer si le client était connecté
       };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
@@ -414,7 +488,7 @@ export class AppointmentsService {
         message: errorMessage,
       };
     }
-  } 
+  }
 
   //! ------------------------------------------------------------------------------
 
@@ -474,6 +548,25 @@ export class AppointmentsService {
         };
       }
 
+      // Vérifier s'il existe un utilisateur connecté avec cet email (role="client")
+      const clientUser = await this.prisma.user.findUnique({
+        where: {
+          email: clientEmail,
+          role: 'client',
+        },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          phone: true,
+          clientProfile: {
+            select: {
+              birthDate: true
+            }
+          }
+        }
+      });
+
       let client = await this.prisma.client.findFirst({
         where: {
           email: clientEmail,
@@ -483,15 +576,32 @@ export class AppointmentsService {
 
       if (!client) {
         // Créer le client s'il n'existe pas
+        // Si c'est un client connecté, utiliser ses données
+        const clientData = clientUser ? {
+          firstName: clientUser.firstName || clientFirstname,
+          lastName: clientUser.lastName || clientLastname,
+          email: clientEmail,
+          phone: clientUser.phone || clientPhone || "",
+          birthDate: clientUser.clientProfile?.birthDate || parsedBirthdate,
+          userId,
+          linkedUserId: clientUser.id, // Lier au compte utilisateur connecté
+        } : {
+          firstName: clientFirstname,
+          lastName: clientLastname,
+          email: clientEmail,
+          phone: clientPhone || "",
+          birthDate: parsedBirthdate,
+          userId,
+        };
+
         client = await this.prisma.client.create({
-          data: {
-            firstName: clientFirstname,
-            lastName: clientLastname,
-            email: clientEmail,
-            phone: clientPhone || "",
-            birthDate: parsedBirthdate,
-            userId,
-          },
+          data: clientData,
+        });
+      } else if (clientUser && !client.linkedUserId) {
+        // Si le client existe mais n'est pas encore lié au compte utilisateur, créer la liaison
+        client = await this.prisma.client.update({
+          where: { id: client.id },
+          data: { linkedUserId: clientUser.id }
         });
       }
 
@@ -529,6 +639,7 @@ export class AppointmentsService {
             end: new Date(end),
             tatoueurId,
             clientId: client.id,
+            clientUserId: clientUser?.id, // Lier au client connecté si applicable
             status: appointmentStatus,
             visio: visio || false,
             visioRoom: generatedVisioRoom
@@ -735,6 +846,7 @@ export class AppointmentsService {
           end: new Date(end),
           tatoueurId,
           clientId: client.id,
+          clientUserId: clientUser?.id, // Lier au client connecté si applicable
           status: appointmentStatus,
           visio: visio || false,
           visioRoom: generatedVisioRoom
