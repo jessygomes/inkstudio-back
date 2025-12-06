@@ -1612,7 +1612,7 @@ export class AppointmentsService {
     },
   });
 
-          // Envoyer un email d'annulation au client (si le client existe)
+  // Envoyer un email d'annulation au client (si le client existe)
   if (appointment.client) {
     // Récupérer les informations du salon
     const salon = await this.prisma.user.findUnique({
@@ -1675,6 +1675,161 @@ export class AppointmentsService {
       };
     }
   }
+
+  //! ------------------------------------------------------------------------------
+
+//! ANNULER UN RDV PAR LE CLIENT
+
+//! ------------------------------------------------------------------------------
+async cancelAppointmentByClient(appointmentId: string, clientUserId: string, reason?: string) {
+  try {
+    // Récupérer le rendez-vous avec toutes les informations nécessaires
+    const appointment = await this.prisma.appointment.findUnique({
+      where: { id: appointmentId },
+      include: {
+        client: true,
+        tatoueur: {
+          select: {
+            name: true
+          }
+        },
+        user: {
+          select: {
+            salonName: true,
+            email: true
+          }
+        }
+      }
+    });
+
+    if (!appointment) {
+      return {
+        error: true,
+        message: 'Rendez-vous introuvable.'
+      };
+    }
+
+    // Vérifier que le client connecté est bien celui du RDV
+    if (appointment.clientUserId !== clientUserId) {
+      return {
+        error: true,
+        message: 'Vous n\'êtes pas autorisé à annuler ce rendez-vous.'
+      };
+    }
+
+    // Vérifier que le RDV n'est pas déjà annulé ou terminé
+    if (appointment.status === 'CANCELED') {
+      return {
+        error: true,
+        message: 'Ce rendez-vous est déjà annulé.'
+      };
+    }
+
+    if (appointment.status === 'COMPLETED') {
+      return {
+        error: true,
+        message: 'Impossible d\'annuler un rendez-vous terminé.'
+      };
+    }
+
+    // Mettre à jour le statut du rendez-vous
+    const updatedAppointment = await this.prisma.appointment.update({
+      where: { id: appointmentId },
+      data: {
+        status: 'CANCELED'
+      }
+    });
+
+    // Envoyer un email au salon pour l'informer de l'annulation
+    try {
+      const clientName = `${appointment.client?.firstName || ''} ${appointment.client?.lastName || ''}`.trim();
+      
+      // Formater la date et l'heure
+      const appointmentDate = new Date(appointment.start).toLocaleDateString('fr-FR', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+      
+      const appointmentTime = `${new Date(appointment.start).toLocaleTimeString('fr-FR', {
+        hour: '2-digit',
+        minute: '2-digit'
+      })} - ${new Date(appointment.end).toLocaleTimeString('fr-FR', {
+        hour: '2-digit',
+        minute: '2-digit'
+      })}`;
+
+      // Email de notification au salon avec template
+      await this.mailService.sendClientCancellationNotification(
+        appointment.user.email,
+        {
+          salonName: appointment.user.salonName || undefined,
+          clientCancellationDetails: {
+            clientName: clientName || 'Client',
+            clientEmail: appointment.client?.email,
+            clientPhone: appointment.client?.phone,
+            appointmentDate,
+            appointmentTime,
+            prestation: appointment.prestation,
+            tatoueurName: appointment.tatoueur?.name,
+            cancellationReason: reason
+          }
+        },
+        appointment.user.salonName || undefined,
+        appointment.userId
+      );
+
+      // Envoyer un email de confirmation au client
+      if (appointment.client?.email) {
+        await this.mailService.sendClientCancellationConfirmation(
+          appointment.client.email,
+          {
+            recipientName: clientName,
+            salonName: appointment.user.salonName || undefined,
+            clientCancellationDetails: {
+              clientName,
+              appointmentDate,
+              appointmentTime,
+              prestation: appointment.prestation,
+              tatoueurName: appointment.tatoueur?.name
+            }
+          },
+          appointment.user.salonName || undefined,
+          appointment.user.email,
+          appointment.userId
+        );
+      }
+    } catch (emailError) {
+      console.error('Erreur lors de l\'envoi des emails d\'annulation:', emailError);
+      // Continue même si l'email échoue
+    }
+
+    // Invalider les caches
+    await this.cacheService.del(`appointment:${appointmentId}`);
+    this.cacheService.delPattern(`appointments:salon:${appointment.userId}:*`);
+    this.cacheService.delPattern(`appointments:date-range:${appointment.userId}:*`);
+    this.cacheService.delPattern(`client:appointments:${clientUserId}:*`);
+
+    // Invalider le cache du dashboard
+    await this.invalidateDashboardCache(appointment.userId, { 
+      start: appointment.start, 
+      isPayed: appointment.isPayed 
+    });
+
+    return {
+      error: false,
+      message: 'Rendez-vous annulé avec succès.',
+      appointment: updatedAppointment
+    };
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+    return {
+      error: true,
+      message: errorMessage,
+    };
+  }
+}
 
   //! ------------------------------------------------------------------------------
 

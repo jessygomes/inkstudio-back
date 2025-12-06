@@ -324,4 +324,50 @@ export class MailService {
     
     return await this.sendMail(to, subject, html, salonName);
   }
+
+  //! MAIL DE NOTIFICATION D'ANNULATION PAR LE CLIENT (SALON)
+  async sendClientCancellationNotification(to: string, data: EmailTemplateData, salonName?: string, userId?: string): Promise<MailgunResponse> {
+    const subject = `Annulation de rendez-vous${salonName ? ` - ${salonName}` : ''}`;
+    
+    // Récupérer les couleurs du salon si userId est fourni
+    let dataWithColors = { ...data, salonName: salonName || data.salonName };
+    if (userId) {
+      const salonColors = await this.getSalonColors(userId);
+      dataWithColors = {
+        ...dataWithColors,
+        colorProfile: salonColors.colorProfile,
+        colorProfileBis: salonColors.colorProfileBis
+      };
+    }
+    
+    const html = this.emailTemplateService.generateClientCancellationNotificationEmail(dataWithColors);
+    
+    return await this.sendMail(to, subject, html, salonName);
+  }
+
+  //! MAIL DE CONFIRMATION D'ANNULATION AU CLIENT
+  async sendClientCancellationConfirmation(to: string, data: EmailTemplateData, salonName?: string, salonEmail?: string, userId?: string): Promise<MailgunResponse> {
+    const subject = `Confirmation d'annulation${salonName ? ` - ${salonName}` : ''}`;
+    
+    // Récupérer les couleurs du salon si userId est fourni
+    let dataWithColors = { ...data, salonName: salonName || data.salonName };
+    if (userId) {
+      const salonColors = await this.getSalonColors(userId);
+      dataWithColors = {
+        ...dataWithColors,
+        colorProfile: salonColors.colorProfile,
+        colorProfileBis: salonColors.colorProfileBis
+      };
+    }
+    
+    const html = this.emailTemplateService.generateClientCancellationConfirmationEmail(dataWithColors);
+    
+    return await this.sendMail(
+      to,
+      subject,
+      html,
+      salonName || 'Inkera Studio',
+      salonEmail
+    );
+  }
 }

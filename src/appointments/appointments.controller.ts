@@ -241,6 +241,18 @@ export class AppointmentsController {
     return await this.appointmentsService.cancelAppointment(appointmentId, message.message);
   }
 
+  //! ANNULER UN RDV PAR LE CLIENT ✅
+  @UseGuards(JwtAuthGuard)
+  @Patch('client-cancel/:id')
+  async cancelAppointmentByClient(
+    @Request() req: RequestWithUser, 
+    @Param('id') appointmentId: string,
+    @Body() body: { reason?: string }
+  ) {
+    const clientUserId = req.user.userId;
+    return await this.appointmentsService.cancelAppointmentByClient(appointmentId, clientUserId, body.reason);
+  }
+
   //! RDV PAYE ✅
   @UseGuards(JwtAuthGuard)
   @Patch('payed/:id')

@@ -93,6 +93,18 @@ export interface EmailTemplateData {
     lastName?: string;
     phone?: string;
   } | null;
+
+  // Annulation de rendez-vous par le client
+  clientCancellationDetails?: {
+    clientName: string;
+    clientEmail?: string;
+    clientPhone?: string;
+    appointmentDate: string;
+    appointmentTime: string;
+    prestation: string;
+    tatoueurName?: string;
+    cancellationReason?: string;
+  };
 }
 
 @Injectable()
@@ -1555,6 +1567,150 @@ export class EmailTemplateService {
       content, 
       `Nouvelle inscription - ${newUser.salonName}`, 
       'Inkera Studio - Admin'
+    );
+  }
+
+  /**
+   *! Template pour notification d'annulation de RDV par le client (SALON)
+   */
+  generateClientCancellationNotificationEmail(data: EmailTemplateData): string {
+    const content = `
+      <div class="content">
+        <div class="greeting">Annulation de rendez-vous</div>
+        
+        <div class="message">
+          <p>Bonjour,</p>
+          <p><strong>${data.clientCancellationDetails?.clientName || 'Un client'}</strong> a annulé son rendez-vous.</p>
+        </div>
+
+        ${data.clientCancellationDetails ? `
+          <div class="details-card">
+            <div class="details-title">📋 Détails du rendez-vous annulé</div>
+            <ul class="details-list">
+              <li>
+                <span class="detail-label">👤 Client :</span>
+                <span class="detail-value">${data.clientCancellationDetails.clientName}</span>
+              </li>
+              ${data.clientCancellationDetails.clientEmail ? `
+                <li>
+                  <span class="detail-label">📧 Email :</span>
+                  <span class="detail-value">${data.clientCancellationDetails.clientEmail}</span>
+                </li>
+              ` : ''}
+              ${data.clientCancellationDetails.clientPhone ? `
+                <li>
+                  <span class="detail-label">📞 Téléphone :</span>
+                  <span class="detail-value">${data.clientCancellationDetails.clientPhone}</span>
+                </li>
+              ` : ''}
+              <li>
+                <span class="detail-label">📅 Date :</span>
+                <span class="detail-value">${data.clientCancellationDetails.appointmentDate}</span>
+              </li>
+              <li>
+                <span class="detail-label">⏰ Heure :</span>
+                <span class="detail-value">${data.clientCancellationDetails.appointmentTime}</span>
+              </li>
+              <li>
+                <span class="detail-label">🎨 Prestation :</span>
+                <span class="detail-value">${data.clientCancellationDetails.prestation}</span>
+              </li>
+              ${data.clientCancellationDetails.tatoueurName ? `
+                <li>
+                  <span class="detail-label">👨‍🎨 Artiste :</span>
+                  <span class="detail-value">${data.clientCancellationDetails.tatoueurName}</span>
+                </li>
+              ` : ''}
+            </ul>
+          </div>
+        ` : ''}
+
+        ${data.clientCancellationDetails?.cancellationReason ? `
+          <div style="background: rgba(245, 158, 11, 0.1); border-left: 4px solid #f59e0b; padding: 20px; border-radius: 8px; margin: 24px 0;">
+            <p style="margin: 0 0 8px 0; color: #f59e0b; font-weight: 600;">💬 Raison de l'annulation :</p>
+            <p style="margin: 0; color: #1e1e1fff; font-style: italic;">"${data.clientCancellationDetails.cancellationReason}"</p>
+          </div>
+        ` : ''}
+
+        <div style="background: linear-gradient(135deg, #059669, #047857); color: white; padding: 20px; border-radius: 10px; margin: 20px 0; text-align: center;">
+          <p style="margin: 0; font-weight: 600;">✅ Ce créneau est maintenant disponible</p>
+          <p style="margin: 8px 0 0 0; font-size: 14px; opacity: 0.9;">Vous pouvez l'attribuer à un autre client</p>
+        </div>
+
+        <div class="message">
+          <p>Cette annulation a été effectuée directement par le client depuis son espace personnel.</p>
+        </div>
+      </div>
+    `;
+
+    return this.getBaseTemplate(
+      content,
+      `Annulation de rendez-vous - ${data.salonName || 'Inkera Studio'}`,
+      data.salonName || 'Inkera Studio'
+    );
+  }
+
+  /**
+   *! Template pour confirmation d'annulation au client
+   */
+  generateClientCancellationConfirmationEmail(data: EmailTemplateData): string {
+    const content = `
+      <div class="content">
+        <div class="greeting">Annulation confirmée</div>
+        
+        <div class="message">
+          <p>Bonjour ${data.recipientName || 'cher client'},</p>
+          <p>Votre rendez-vous a bien été <strong>annulé</strong> comme demandé.</p>
+        </div>
+
+        ${data.clientCancellationDetails ? `
+          <div class="details-card">
+            <div class="details-title">📋 Récapitulatif du rendez-vous annulé</div>
+            <ul class="details-list">
+              <li>
+                <span class="detail-label">🏪 Salon :</span>
+                <span class="detail-value">${data.salonName || 'Inkera Studio'}</span>
+              </li>
+              <li>
+                <span class="detail-label">📅 Date :</span>
+                <span class="detail-value">${data.clientCancellationDetails.appointmentDate}</span>
+              </li>
+              <li>
+                <span class="detail-label">⏰ Heure :</span>
+                <span class="detail-value">${data.clientCancellationDetails.appointmentTime}</span>
+              </li>
+              <li>
+                <span class="detail-label">🎨 Prestation :</span>
+                <span class="detail-value">${data.clientCancellationDetails.prestation}</span>
+              </li>
+              ${data.clientCancellationDetails.tatoueurName ? `
+                <li>
+                  <span class="detail-label">👨‍🎨 Artiste :</span>
+                  <span class="detail-value">${data.clientCancellationDetails.tatoueurName}</span>
+                </li>
+              ` : ''}
+            </ul>
+          </div>
+        ` : ''}
+
+        <div style="background: linear-gradient(135deg, #131313 0%, #1a1a1a 100%); color: white; padding: 25px; border-radius: 15px; margin: 25px 0; text-align: center;">
+          <p style="margin: 0 0 12px 0; font-size: 18px; font-weight: 600;">💙 Nous restons à votre disposition</p>
+          <p style="margin: 0; font-size: 14px; opacity: 0.9; line-height: 1.6;">
+            Si vous souhaitez reprendre rendez-vous ou si vous avez des questions,<br>
+            n'hésitez pas à nous contacter.
+          </p>
+        </div>
+
+        <div class="message">
+          <p>Nous espérons vous revoir bientôt chez <strong>${data.salonName || 'Inkera Studio'}</strong> ! ✨</p>
+        </div>
+      </div>
+    `;
+
+    return this.getBaseTemplate(
+      content,
+      `Confirmation d'annulation - ${data.salonName || 'Inkera Studio'}`,
+      data.salonName || 'Inkera Studio'
     );
   }
 

@@ -152,7 +152,6 @@ export class UserController {
   @Patch("userClient")
   updateUserClient(@Request() req: RequestWithUser, @Body() userBody: UpdateUserClientDto) {
     const userId = req.user.userId;
-    console.log("🔍 Mise à jour du client avec ID :", userBody);
     return this.userService.updateUserClient({userId, userBody});
   }
   
