@@ -1327,6 +1327,21 @@ export class UserService {
                   }
                 }
               }
+            },
+            // Avis laissé par le client pour ce RDV
+            salonReview: {
+              select: {
+                id: true,
+                rating: true,
+                title: true,
+                comment: true,
+                photos: true,
+                isVerified: true,
+                isVisible: true,
+                createdAt: true,
+                salonResponse: true,
+                salonRespondedAt: true
+              }
             }
           },
           orderBy: {
@@ -1392,6 +1407,18 @@ export class UserService {
             zoneCorps: appointment.tattooDetail.piercingServicePrice.piercingZoneCorps,
             zoneMicrodermal: appointment.tattooDetail.piercingServicePrice.piercingZoneMicrodermal
           } : null
+        } : null,
+        review: appointment.salonReview ? {
+          id: appointment.salonReview.id,
+          rating: appointment.salonReview.rating,
+          title: appointment.salonReview.title,
+          comment: appointment.salonReview.comment,
+          photos: appointment.salonReview.photos,
+          isVerified: appointment.salonReview.isVerified,
+          isVisible: appointment.salonReview.isVisible,
+          createdAt: appointment.salonReview.createdAt,
+          salonResponse: appointment.salonReview.salonResponse,
+          salonRespondedAt: appointment.salonReview.salonRespondedAt
         } : null
       }));
 

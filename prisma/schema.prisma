@@ -38,6 +38,8 @@ model User {
 
   prestations               String[]
 
+  verifiedSalon            Boolean               @default(false)
+
   addConfirmationEnabled    Boolean              @default(false)
   appointmentBookingEnabled Boolean              @default(false)
 

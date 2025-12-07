@@ -1253,6 +1253,7 @@ export class AppointmentsService {
         include: {
           tatoueur: true,
           tattooDetail: true,
+          salonReview: true,
         },
       });
 
