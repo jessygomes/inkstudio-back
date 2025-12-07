@@ -292,9 +292,26 @@ export class ClientsService {
       const clients = await this.prisma.client.findMany({
         where: whereClause,
         include: {
-          appointments: true,
+          appointments: {
+            include: {
+              tatoueur: {
+                select: {
+                  id: true,
+                  name: true,
+                }
+              }
+            }
+          },
           medicalHistory: true,
-          tattooHistory: true,
+          tattooHistory: {
+            include: {
+              tatoueur: {
+                select: {
+                  name: true,
+                }
+              }
+            }
+          },
           aftercareRecords: true,
           FollowUpSubmission: {
             orderBy: { createdAt: 'desc' },

@@ -1141,6 +1141,7 @@ export class AppointmentsService {
               name: true,
             },
           },
+          salonReview: true,
           tattooDetail: true,
           client: {
             select: {
