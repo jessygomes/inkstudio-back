@@ -103,8 +103,6 @@ export class AuthService {
     try {
       const { email, salonName, saasPlan, password, firstName, lastName, phone } = registerBody;
 
-      console.log("Données d'inscription reçues :", { email, salonName, saasPlan, firstName, lastName, phone });
-
       // Convertir TESTEUR en FREE
       // const finalSaasPlan = saasPlan === "TESTEUR" ? "FREE" : saasPlan;
 
@@ -405,12 +403,12 @@ export class AuthService {
 
   // Méthode pour générer un token d'authentification
   private  authenticateUser({userId, role} : UserPayload) {
-    const payload: UserPayload = {userId}
+    const payload: UserPayload = {userId, role}
     
     const access_token = this.jwtService.sign(payload);
-    console.log("🔑 Token généré avec userId :", userId);
-    console.log("📦 Payload utilisé :", payload);
-    console.log('🔑 Token généré :', access_token);
+    // console.log("🔑 Token généré avec userId :", userId);
+    // console.log("📦 Payload utilisé :", payload);
+    // console.log('🔑 Token généré :', access_token);
     
     return {
       access_token,

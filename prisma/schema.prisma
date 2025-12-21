@@ -39,6 +39,7 @@ model User {
   prestations               String[]
 
   verifiedSalon            Boolean               @default(false)
+  SalonVerificationDocument SalonVerificationDocument[]
 
   addConfirmationEnabled    Boolean              @default(false)
   appointmentBookingEnabled Boolean              @default(false)
@@ -476,6 +477,25 @@ model SaasPlanDetails {
   @@index([endDate])
 }
 
+//! MODEL POUR LES DOCUMENTS DE VÉRIFICATION DE SALON
+model SalonVerificationDocument {
+  id          String                          @id @default(cuid())
+  userId      String
+  type        SalonVerificationDocumentType
+  fileUrl     String                          // URL S3 / Cloudinary / stockage
+  status      VerificationStatusDocument              @default(PENDING)
+  rejectionReason String?                     // Pourquoi refusé (lisible côté salon)
+  uploadedAt  DateTime                        @default(now())
+  reviewedAt  DateTime?
+  reviewedBy  String?                         // adminId (User admin)
+
+  user        User                            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type])                    // 1 document par type par salon
+  @@index([userId])
+  @@index([status])
+}
+
 //! MODEL POUR LES TOKENS DE VÉRIFICATION ET RÉINITIALISATION DE MOT DE PASSE
 model VerificationToken {
   id      String   @id @default(cuid())
@@ -513,6 +533,18 @@ enum SaasPlanStatus {
   EXPIRED
   CANCELED
   TRIAL
+}
+
+enum SalonVerificationDocumentType {
+  HYGIENE_SALUBRITE
+  ARS_DECLARATION
+  LEGAL_PROOF
+}
+
+enum VerificationStatusDocument {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 enum PrestationType {

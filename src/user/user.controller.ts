@@ -162,6 +162,14 @@ export class UserController {
     return this.userService.updateUser({userId, userBody});
   }
 
+    //! COMPTER LE NOMBRE DE CLIENTS QUI ONT MIS EN FAVORI CE SALON
+  @UseGuards(JwtAuthGuard)
+  @Get('favorites/count')
+  async getFavoritesCount(@Request() req: RequestWithUser,) {
+    const salonId = req.user.userId;
+    return await this.userService.getFavoritesCount(salonId);
+  }
+
   //! 2️⃣ ROUTES GÉNÉRIQUES (sans paramètres)
   //! GET ALL USERS
   @Get()
@@ -269,4 +277,6 @@ export class UserController {
     
   //   return this.userService.createSalonReview({ authorId, reviewData });
   // }
+
+
 }

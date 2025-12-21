@@ -399,6 +399,7 @@ export class UserService {
           description: true,
           image: true,
           role: true,
+          verifiedSalon: true,
           prestations: true,
           Tatoueur: {
             select: {
@@ -1506,6 +1507,48 @@ export class UserService {
       return {
         error: true,
         message: `Erreur lors de la mise à jour des favoris: ${errorMessage}`,
+      };
+    }
+  }
+
+  //! COMPTER LE NOMBRE DE CLIENTS (userClient) QUI ONT MIS EN FAVORI UN SALON
+  async getFavoritesCount(salonId: string) {
+    try {
+      // Vérifier que le salon existe
+      const salon = await this.prisma.user.findUnique({
+        where: { id: salonId },
+        select: { 
+          role: true,
+          salonName: true 
+        }
+      });
+
+      if (!salon || salon.role !== 'user') {
+        return {
+          error: true,
+          message: 'Salon introuvable.'
+        };
+      }
+
+      // Compter le nombre de favoris pour ce salon
+      const favoritesCount = await this.prisma.favoriteUser.count({
+        where: {
+          salonId: salonId
+        }
+      });
+
+      return {
+        error: false,
+        salonId,
+        salonName: salon.salonName,
+        favoritesCount,
+        message: `${favoritesCount} client(s) a/ont mis ce salon en favori.`
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: `Erreur lors de la récupération du nombre de favoris: ${errorMessage}`
       };
     }
   }

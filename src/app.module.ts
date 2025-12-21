@@ -35,6 +35,8 @@ import { StocksService } from './stocks/stocks.service';
 import { PiercingPriceController } from './piercing-price/piercing-price.controller';
 import { PiercingPriceService } from './piercing-price/piercing-price.service';
 import { SalonReviewModule } from './salon-review/salon-review.module';
+import { SalonVerificationModule } from './salon-verification/salon-verification.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -69,6 +71,8 @@ import { SalonReviewModule } from './salon-review/salon-review.module';
     }),
     RedisModule,
     SalonReviewModule,
+    SalonVerificationModule,
+    AdminModule,
   ],
   controllers: [
     UserController,
