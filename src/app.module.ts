@@ -37,6 +37,7 @@ import { PiercingPriceService } from './piercing-price/piercing-price.service';
 import { SalonReviewModule } from './salon-review/salon-review.module';
 import { SalonVerificationModule } from './salon-verification/salon-verification.module';
 import { AdminModule } from './admin/admin.module';
+import { MessagingModule } from './messaging/messaging.module';
 
 @Module({
   imports: [
@@ -73,6 +74,7 @@ import { AdminModule } from './admin/admin.module';
     SalonReviewModule,
     SalonVerificationModule,
     AdminModule,
+    MessagingModule,
   ],
   controllers: [
     UserController,

@@ -3,6 +3,9 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { redisStore } from 'cache-manager-redis-store';
 import { CacheService } from './cache.service';
+import { RedisService } from './redis.service';
+import { RedisOnlineStatusService } from './redis-online-status.service';
+import { RedisRateLimiterService } from './redis-rate-limiter.service';
 
 @Module({
   imports: [
@@ -21,7 +24,17 @@ import { CacheService } from './cache.service';
       }),
     }),
   ],
-  providers: [CacheService],
-  exports: [CacheService],
+  providers: [
+    CacheService,
+    RedisService,
+    RedisOnlineStatusService,
+    RedisRateLimiterService,
+  ],
+  exports: [
+    CacheService,
+    RedisService,
+    RedisOnlineStatusService,
+    RedisRateLimiterService,
+  ],
 })
 export class RedisModule {}

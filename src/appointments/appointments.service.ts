@@ -12,6 +12,7 @@ import * as crypto from 'crypto';
 import { CreateAppointmentRequestDto } from './dto/create-appointment-request.dto';
 import { VideoCallService } from 'src/video-call/video-call.service';
 import { CacheService } from 'src/redis/cache.service';
+import { ConversationsService } from 'src/messaging/conversations/conversations.service';
 
 @Injectable()
 export class AppointmentsService {
@@ -21,7 +22,8 @@ export class AppointmentsService {
     private readonly followupSchedulerService: FollowupSchedulerService,
     private readonly saasService: SaasService,
     private readonly videoCallService: VideoCallService,
-    private cacheService: CacheService
+    private cacheService: CacheService,
+    private readonly conversationsService: ConversationsService
   ) {}
 
   //! ------------------------------------------------------------------------------
@@ -474,6 +476,26 @@ export class AppointmentsService {
         start: newAppointment.start, 
         isPayed: newAppointment.isPayed 
       });
+
+      // Créer une conversation automatiquement si le client est connecté
+      if (clientUser?.id) {
+        try {
+          const prestationLabel = prestation === PrestationType.PROJET ? 'Projet tatouage' :
+            prestation === PrestationType.TATTOO ? 'Tatouage' :
+            prestation === PrestationType.PIERCING ? 'Piercing' :
+            prestation === PrestationType.RETOUCHE ? 'Retouche' : prestation;
+          
+          await this.conversationsService.createConversation(userId, {
+            clientUserId: clientUser.id,
+            appointmentId: newAppointment.id,
+            subject: `RDV ${prestationLabel} - ${newAppointment.start.toLocaleDateString('fr-FR')}`,
+            firstMessage: `Bonjour ${client.firstName}, votre rendez-vous a été confirmé ! N'hésitez pas à nous contacter pour toute question.`,
+          });
+        } catch (conversationError) {
+          console.error('⚠️ Erreur lors de la création de la conversation:', conversationError);
+          // Ne pas faire échouer la création du RDV si la conversation échoue
+        }
+      }
 
       return {
         error: false,
@@ -945,6 +967,30 @@ export class AppointmentsService {
           },
           salon.salonName || undefined
         );
+      }
+
+      // Créer une conversation automatiquement si le client est connecté
+      if (clientUser?.id) {
+        try {
+          const prestationLabel = prestation === PrestationType.PROJET ? 'Projet tatouage' :
+            prestation === PrestationType.TATTOO ? 'Tatouage' :
+            prestation === PrestationType.PIERCING ? 'Piercing' :
+            prestation === PrestationType.RETOUCHE ? 'Retouche' : prestation;
+          
+          const statusMessage = appointmentStatus === 'PENDING' 
+            ? `Votre demande de rendez-vous a bien été enregistrée et est en attente de confirmation par le salon.`
+            : `Votre rendez-vous a été confirmé automatiquement !`;
+          
+          await this.conversationsService.createConversation(userId, {
+            clientUserId: clientUser.id,
+            appointmentId: newAppointment.id,
+            subject: `RDV ${prestationLabel} - ${newAppointment.start.toLocaleDateString('fr-FR')}`,
+            firstMessage: `Bonjour ${client.firstName}, ${statusMessage} N'hésitez pas à nous contacter pour toute question.`,
+          });
+        } catch (conversationError) {
+          console.error('⚠️ Erreur lors de la création de la conversation:', conversationError);
+          // Ne pas faire échouer la création du RDV si la conversation échoue
+        }
       }
 
       return {

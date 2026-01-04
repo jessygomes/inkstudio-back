@@ -30,10 +30,13 @@
     "@nestjs/mapped-types": "*",
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.0.1",
+    "@nestjs/websockets": "^11.1.11",
     "@prisma/client": "^6.19.0",
+    "@socket.io/redis-adapter": "^8.3.0",
     "@types/bcrypt": "^5.0.2",
     "@types/passport-google-oauth20": "^2.0.17",
     "@types/passport-jwt": "^4.0.1",
+    "@types/socket.io": "^3.0.2",
     "@types/uuid": "^11.0.0",
     "bcrypt": "^5.1.1",
     "bull": "^4.16.5",
@@ -48,9 +51,10 @@
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
     "passport-jwt": "^4.0.1",
-    "redis": "^5.8.2",
+    "redis": "^5.10.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "socket.io": "^4.8.3",
     "uuid": "^13.0.0"
   },
   "devDependencies": {
@@ -98,6 +102,9 @@
       "**/*.(t|j)s"
     ],
     "coverageDirectory": "../coverage",
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "moduleNameMapper": {
+      "^src/(.*)$": "<rootDir>/$1"
+    }
   }
 }

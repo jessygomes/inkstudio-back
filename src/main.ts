@@ -13,7 +13,7 @@ async function bootstrap() {
     }),
   );
 
-  app.enableCors({
+  const corsOptions = {
     origin: [
       process.env.FRONTEND_URL,
       process.env.FRONTEND_URL_BIS,
@@ -23,7 +23,22 @@ async function bootstrap() {
     credentials: true, // Permet d'envoyer des cookies
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
-  });
+  };
+
+  app.enableCors(corsOptions);
+
+  // Configuration WebSocket - les WebSocketGateway doivent être configurés avec les mêmes origins
+  // Vérification prudente de l'instance HTTP (type-safe, sans assignation de any)
+  const httpServer = app.getHttpServer() as unknown;
+  if (
+    httpServer &&
+    typeof httpServer === 'object' &&
+    '_events' in httpServer &&
+    (httpServer as { _events?: Record<string, unknown> })._events &&
+    'connection' in (httpServer as { _events?: Record<string, unknown> })._events!
+  ) {
+    // WebSocket est actif, les gateways utiliseront la configuration définie dans @WebSocketGateway
+  }
 
   await app.listen(process.env.PORT ?? 3000);
 }

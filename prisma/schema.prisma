@@ -5,6 +5,9 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  // Optional advanced connections (enable only if env vars are defined)
+  // shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+  // directUrl        = env("DATABASE_DIRECT_URL")
 }
 
 model User {
@@ -78,6 +81,13 @@ model User {
   appointmentsAsClient      Appointment[]        @relation("ClientUserAppointments")
 
   linkedClientProfile Client?              @relation("LinkedClientProfile")
+
+  // Propriétés pour la messagerie
+  conversationsAsSalon      Conversation[]        @relation("SalonConversations")
+  conversationsAsClient     Conversation[]        @relation("ClientUserConversations")
+  messagesSent              Message[]
+  messageNotifications      MessageNotification[]
+  notificationPreference    NotificationPreference?
 }
 
 //! MODEL POUR STOCKER LES INFOS D'UN CLIENT CONNECTÉ
@@ -177,6 +187,10 @@ model Appointment {
   updatedAt          DateTime            @updatedAt
   visio              Boolean             @default(false)
   visioRoom          String?
+  followUp7SentAt    DateTime?
+  followUp30SentAt   DateTime?
+
+  conversation              Conversation?
   
   // Relations existantes
   client             Client?             @relation(fields: [clientId], references: [id])
@@ -197,6 +211,8 @@ model Appointment {
   @@index([clientUserId])
   @@index([status])
   @@index([start])
+  @@index([followUp7SentAt])
+  @@index([followUp30SentAt])
 }
 
 //! MODEL POUR LES DÉTAILS D'UN TATOUAGE DANS UN RDV
@@ -515,11 +531,170 @@ model PasswordResetToken {
   @@unique([email, token], name: "email_token")
 }
 
+//! MODEL CONVERSATION SIMPLIFIÉE (clients connectés uniquement)
+model Conversation {
+  id                String              @id @default(cuid())
+  
+  // Participants (SIMPLIFIÉ - clients connectés uniquement)
+  salonId           String              // Salon (User avec role="user")
+  clientUserId      String              // Client connecté (User avec role="client") - OBLIGATOIRE
+  
+  // Métadonnées
+  appointmentId     String?             @unique  // RDV associé (optionnel)
+  subject           String?             // Sujet de la conversation
+  status            ConversationStatus  @default(ACTIVE)
+  
+  // Timestamps
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  lastMessageAt     DateTime            @updatedAt
+  
+  // Relations
+  salon             User                @relation("SalonConversations", fields: [salonId], references: [id], onDelete: Cascade)
+  clientUser        User                @relation("ClientUserConversations", fields: [clientUserId], references: [id], onDelete: Cascade)
+  appointment       Appointment?        @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  
+  messages          Message[]
+  notifications     MessageNotification[]
+  emailNotifications EmailNotificationQueue[]
+  
+  // Index pour performance
+  @@index([salonId, lastMessageAt])
+  @@index([clientUserId, lastMessageAt])
+  @@index([appointmentId])
+  @@index([status])
+  
+  // Contrainte unique : 1 conversation par RDV (si appointmentId existe)
+  // Permet plusieurs conversations salon-client sans RDV
+  @@unique([salonId, clientUserId, appointmentId])
+}
+
+//! MODEL MESSAGE (Hard delete)
+model Message {
+  id                String              @id @default(cuid())
+  
+  // Contenu
+  conversationId    String
+  senderId          String              // ID du User (salon ou client connecté)
+  content           String              @db.Text // Texte du message (peut être long)
+  type              MessageType         @default(TEXT)
+  
+  // Statut de lecture
+  isRead            Boolean             @default(false)
+  readAt            DateTime?
+  
+  // Archivage (auto-cleanup des vieux messages)
+  archivedAt        DateTime?           // Si défini, message archivé (soft delete)
+  
+  // Pièces jointes
+  attachments       MessageAttachment[]
+  
+  // Timestamps
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  
+  // Relations
+  conversation      Conversation        @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender            User                @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  
+  // Index
+  @@index([conversationId, createdAt])
+  @@index([senderId])
+  @@index([isRead])
+  @@index([archivedAt])
+}
+
+//! MODEL ATTACHMENTS (UploadThing URLs)
+model MessageAttachment {
+  id                String              @id @default(cuid())
+  
+  messageId         String
+  fileName          String
+  fileUrl           String              // URL UploadThing
+  fileType          String              // mime type (image/png, application/pdf, etc.)
+  fileSize          Int                 // en bytes
+  uploadThingKey    String?             // Key UploadThing pour gestion/suppression
+  
+  createdAt         DateTime            @default(now())
+  
+  message           Message             @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  
+  @@index([messageId])
+}
+
+//! MODEL NOTIFICATION COMPTEUR NON LUS
+model MessageNotification {
+  id                String              @id @default(cuid())
+  
+  conversationId    String
+  userId            String              // Destinataire (salon ou client)
+  unreadCount       Int                 @default(0)
+  lastUnreadAt      DateTime?
+  
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  
+  conversation      Conversation        @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([conversationId, userId])
+  @@index([userId])
+  @@index([unreadCount])
+}
+
+//! MODEL PREFERENCES NOTIFICATIONS EMAIL
+model NotificationPreference {
+  id                        String   @id @default(cuid())
+  userId                    String   @unique
+  user                      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  emailNotificationsEnabled Boolean  @default(true)
+  emailFrequency            String   @default("IMMEDIATE") // IMMEDIATE, HOURLY, DAILY, NEVER
+  mutedConversations        String[] @default([])           // conversationIds
+
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+}
+
+//! MODEL QUEUE EMAIL NOTIFICATIONS
+model EmailNotificationQueue {
+  id               String      @id @default(cuid())
+  conversationId   String
+  conversation     Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  recipientUserId  String
+  messageCount     Int         @default(1)
+
+  status           String      @default("PENDING") // PENDING, SENT, FAILED
+  sentAt           DateTime?
+  failureReason    String?
+
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  @@index([recipientUserId])
+  @@index([status])
+  @@index([conversationId])
+}
+
 enum Role {
   admin
   user     // Propriétaires de salon
   client   // Clients uniquement
   formateur
+}
+
+//! ENUM POUR STATUS DE CONVERSATION
+enum ConversationStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+//! ENUM POUR TYPE DE MESSAGE
+enum MessageType {
+  TEXT
+  SYSTEM
+  IMAGE
+  FILE
 }
 
 enum SaasPlan {
