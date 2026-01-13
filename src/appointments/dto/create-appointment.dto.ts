@@ -5,6 +5,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  ValidateIf,
 } from 'class-validator';
 import { PiercingZone } from '@prisma/client';
 
@@ -83,8 +84,9 @@ export class CreateAppointmentDto {
   @IsOptional() price?: number;
 
   // Champs spécifiques aux piercings
-  @IsEnum(PiercingZone)
+  @ValidateIf((object: CreateAppointmentDto) => object.prestation === PrestationType.PIERCING)
   @IsOptional()
+  @IsEnum(PiercingZone)
   piercingZone?: PiercingZone;
 
   @IsOptional()

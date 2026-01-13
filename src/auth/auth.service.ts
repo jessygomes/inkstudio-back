@@ -10,6 +10,17 @@ import { randomBytes } from 'crypto';
 import { SaasService } from 'src/saas/saas.service';
 import { CreateUserClientDto } from './dto/create-userClient.dto';
 
+interface AuthenticatedUser {
+  id: string;
+  role: string;
+  salonName: string | null;
+  email: string;
+  saasPlan: string | null;
+  phone: string | null;
+  address: string | null;
+  verifiedSalon: boolean | null;
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -88,7 +99,7 @@ export class AuthService {
         };
       }
   
-      return this.authenticateUser({userId: existingUser.id, role: existingUser.role});
+      return this.authenticateUser(existingUser);
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       return {
@@ -402,18 +413,21 @@ export class AuthService {
   }
 
   // Méthode pour générer un token d'authentification
-  private  authenticateUser({userId, role} : UserPayload) {
-    const payload: UserPayload = {userId, role}
+  private authenticateUser(user: AuthenticatedUser) {
+    const payload: UserPayload = {userId: user.id, role: user.role}
     
     const access_token = this.jwtService.sign(payload);
-    // console.log("🔑 Token généré avec userId :", userId);
-    // console.log("📦 Payload utilisé :", payload);
-    // console.log('🔑 Token généré :', access_token);
     
     return {
       access_token,
-      userId,
-      role,
+      id: user.id,
+      salonName: user.salonName,
+      role: user.role,
+      email: user.email,
+      saasPlan: user.saasPlan,
+      phone: user.phone || "",
+      address: user.address || "",
+      verifiedSalon: user.verifiedSalon || false,
     }
   }
 

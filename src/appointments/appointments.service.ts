@@ -150,9 +150,10 @@ export class AppointmentsService {
           firstName: true,
           lastName: true,
           phone: true,
+          role: true,
           clientProfile: {
             select: {
-              birthDate: true
+              birthDate: true,
             }
           }
         }
@@ -396,6 +397,26 @@ export class AppointmentsService {
         // Invalider le cache des listes de RDV après création
         this.cacheService.delPattern(`appointments:salon:${userId}:*`);
         this.cacheService.delPattern(`appointments:date-range:${userId}:*`);
+
+        // Créer une conversation automatiquement si le client est connecté
+        if (clientUser && clientUser.role === 'client') {
+          try {
+            const prestationLabel = prestation === PrestationType.PROJET ? 'Projet tatouage' :
+              prestation === PrestationType.TATTOO ? 'Tatouage' :
+              prestation === PrestationType.PIERCING ? 'Piercing' :
+              prestation === PrestationType.RETOUCHE ? 'Retouche' : prestation;
+
+            await this.conversationsService.createConversation(userId, {
+              clientUserId: clientUser.id,
+              appointmentId: newAppointment.id,
+              subject: `RDV ${prestationLabel} - ${newAppointment.start.toLocaleDateString('fr-FR')}`,
+              firstMessage: `Bonjour ${client.firstName}, votre rendez-vous a été confirmé ! N'hésitez pas à nous contacter pour toute question.`,
+            });
+          } catch (conversationError) {
+            console.error('⚠️ Erreur lors de la création de la conversation:', conversationError);
+            // Ne pas faire échouer la création du RDV si la conversation échoue
+          }
+        }
       
         return {
           error: false,
@@ -476,15 +497,15 @@ export class AppointmentsService {
         start: newAppointment.start, 
         isPayed: newAppointment.isPayed 
       });
-
+      
       // Créer une conversation automatiquement si le client est connecté
-      if (clientUser?.id) {
+      if (clientUser && clientUser.role === 'client') {
         try {
           const prestationLabel = prestation === PrestationType.PROJET ? 'Projet tatouage' :
             prestation === PrestationType.TATTOO ? 'Tatouage' :
             prestation === PrestationType.PIERCING ? 'Piercing' :
             prestation === PrestationType.RETOUCHE ? 'Retouche' : prestation;
-          
+
           await this.conversationsService.createConversation(userId, {
             clientUserId: clientUser.id,
             appointmentId: newAppointment.id,
