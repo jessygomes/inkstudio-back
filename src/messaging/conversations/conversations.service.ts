@@ -270,9 +270,13 @@ export class ConversationsService {
       );
     }
 
+    const newStatus = conversation.status === ConversationStatus.ACTIVE
+      ? ConversationStatus.ARCHIVED
+      : ConversationStatus.ACTIVE;
+
     await this.prisma.conversation.update({
       where: { id: conversationId },
-      data: { status: ConversationStatus.ARCHIVED },
+      data: { status: newStatus },
     });
   }
 

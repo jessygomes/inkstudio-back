@@ -303,7 +303,7 @@ export class MessagesGateway
    * Événement : Quitter une conversation
    */
   @SubscribeMessage('leave-conversation')
-  handleLeaveConversation(
+  async handleLeaveConversation(
     @ConnectedSocket() client: Socket,
     @MessageBody() payload: LeaveConversationPayload,
   ) {
@@ -312,6 +312,17 @@ export class MessagesGateway
       if (!userId) return;
 
       const { conversationId } = payload;
+
+      // Marquer tous les messages de la conversation comme lus avant de quitter
+      await this.conversationsService.markAllAsRead(conversationId, userId);
+
+      // Mettre à jour le compteur global de notifications
+      const unreadCount =
+        await this.notificationService.getTotalUnreadCount(userId);
+
+      client.emit?.('unread-count-updated', {
+        totalUnread: unreadCount,
+      } as UnreadCountUpdatedEvent);
 
       // Quitter la room
       void client.leave?.(`conversation-${conversationId}`);
@@ -374,27 +385,55 @@ export class MessagesGateway
         attachments,
       });
 
-      // Broadcaster le nouveau message à tous les clients de la conversation
-      this.server
-        .to(`conversation-${conversationId}`)
-        .emit('new-message', message as NewMessageEvent);
-
-      // Mettre à jour le compteur de messages non lus pour les autres participants
+      // Vérifier si le destinataire est présent dans la conversation
       const otherUserId =
         conversation.salonId === userId
           ? conversation.clientUserId
           : conversation.salonId;
 
-      // Mettre à jour le compteur du destinataire
+      const otherUserSockets = this.userConnections.get(otherUserId) || new Set();
+      let isRecipientInRoom = false;
+
+      if (this.server?.sockets?.sockets) {
+        for (const socketId of otherUserSockets) {
+          const socket = this.server.sockets.sockets.get(socketId);
+          if (socket && socket.rooms.has(`conversation-${conversationId}`)) {
+            isRecipientInRoom = true;
+            break;
+          }
+        }
+      }
+
+      // Si le destinataire est dans la room, marquer le message comme lu automatiquement
+      let messageToSend = message;
+      if (isRecipientInRoom) {
+        const updatedMessage = await this.messagesService.markAsRead(message.id, otherUserId);
+        messageToSend = updatedMessage;
+        // Décrémenter le compteur de non-lus puisque le message a été lu immédiatement
+        await this.notificationService.resetUnreadCount(conversationId, otherUserId);
+        
+        // Envoyer un événement pour notifier que la conversation n'a plus de non-lus
+        this.notifyUser(otherUserId, 'conversation-unread-updated', {
+          conversationId,
+          unreadCount: 0,
+        });
+      }
+
+      // Broadcaster le nouveau message à tous les clients de la conversation
+      this.server
+        .to(`conversation-${conversationId}`)
+        .emit('new-message', messageToSend as NewMessageEvent);
+
+      // Mettre à jour le compteur de messages non lus pour les autres participants
       const unreadCount =
         await this.notificationService.getTotalUnreadCount(otherUserId);
 
       // Envoyer le notification seulement aux connexions de l'autre utilisateur
       const otherUserConnections = this.userConnections.get(otherUserId);
-      if (otherUserConnections) {
+      if (otherUserConnections && this.server?.sockets?.sockets) {
         otherUserConnections.forEach((socketId) => {
           const socket = this.server.sockets.sockets.get(socketId);
-          if (socket) {
+          if (socket?.emit) {
             socket.emit('unread-count-updated', {
               totalUnread: unreadCount,
             } as UnreadCountUpdatedEvent);

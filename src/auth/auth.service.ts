@@ -15,10 +15,21 @@ interface AuthenticatedUser {
   role: string;
   salonName: string | null;
   email: string;
+  firstName: string | null;
+  lastName: string | null;
+  image?: string | null;
   saasPlan: string | null;
   phone: string | null;
   address: string | null;
   verifiedSalon: boolean | null;
+  clientProfile?: {
+    id: string;
+    userId: string;
+    pseudo?: string | null;
+    birthDate?: Date | null;
+    city?: string | null;
+    postalCode?: string | null;
+  } | null;
 }
 
 @Injectable()
@@ -38,6 +49,9 @@ export class AuthService {
       const existingUser = await this.prisma.user.findUnique({
         where: {
           email,
+        },
+        include: {
+          clientProfile: true,
         },
       });
   
@@ -417,6 +431,21 @@ export class AuthService {
     const payload: UserPayload = {userId: user.id, role: user.role}
     
     const access_token = this.jwtService.sign(payload);
+
+    console.log("Authenticated user:", user);
+
+    if (user.role === 'client') {
+      return {
+        access_token,
+        id: user.id,
+        role: user.role,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        clientProfile: user.clientProfile,
+        image: user.image || null,
+      }
+    }
     
     return {
       access_token,
@@ -424,6 +453,7 @@ export class AuthService {
       salonName: user.salonName,
       role: user.role,
       email: user.email,
+      image: user.image || null,
       saasPlan: user.saasPlan,
       phone: user.phone || "",
       address: user.address || "",

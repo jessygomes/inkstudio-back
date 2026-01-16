@@ -1329,6 +1329,20 @@ export class UserService {
                 }
               }
             },
+            conversation: {
+              select: {
+                id: true,
+                lastMessageAt: true,
+                notifications: {
+                  where: {
+                    userId: userId
+                  },
+                  select: {
+                    unreadCount: true
+                  }
+                }
+              }
+            },
             // Avis laissé par le client pour ce RDV
             salonReview: {
               select: {
@@ -1408,6 +1422,12 @@ export class UserService {
             zoneCorps: appointment.tattooDetail.piercingServicePrice.piercingZoneCorps,
             zoneMicrodermal: appointment.tattooDetail.piercingServicePrice.piercingZoneMicrodermal
           } : null
+        } : null,
+        conversation: appointment.conversation ? {
+          id: appointment.conversation.id,
+          lastMessageAt: appointment.conversation.lastMessageAt,
+          isRead: (appointment.conversation.notifications?.[0]?.unreadCount ?? 0) === 0,
+          unreadCount: appointment.conversation.notifications?.[0]?.unreadCount ?? 0
         } : null,
         review: appointment.salonReview ? {
           id: appointment.salonReview.id,

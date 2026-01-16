@@ -21,11 +21,15 @@ import { ConversationResponseDto } from './dto/conversation-response.dto';
 import { PaginatedConversationsDto } from './dto/paginated-conversations.dto';
 import { ConversationStatus } from '@prisma/client';
 import { RequestWithUser } from '../../auth/jwt.strategy';
+import { MessageNotificationService } from '../notifications/message-notification.service';
 
 @Controller('messaging/conversations')
 @UseGuards(JwtAuthGuard)
 export class ConversationsController {
-  constructor(private readonly conversationsService: ConversationsService) {}
+  constructor(
+    private readonly conversationsService: ConversationsService,
+    private readonly notificationService: MessageNotificationService,
+  ) {}
 
   /**
    * POST /messaging/conversations
@@ -59,6 +63,20 @@ export class ConversationsController {
       limitNum,
       status,
     );
+  }
+
+  /**
+   * GET /messaging/conversations/unread/total
+   * Récupérer le nombre total de messages non lus pour l'utilisateur
+   */
+  @Get('unread/total')
+  async getTotalUnreadCount(
+    @Request() req: RequestWithUser,
+  ): Promise<{ totalUnread: number }> {
+    const totalUnread = await this.notificationService.getTotalUnreadCount(
+      req.user.userId,
+    );
+    return { totalUnread };
   }
 
   /**

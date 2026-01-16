@@ -9,7 +9,7 @@ import { MailModule } from 'src/email/mail.module';
 import { SaasModule } from 'src/saas/saas.module';
 import { CacheService } from 'src/redis/cache.service';
 // import googleOauthConfig from './google-oauth.config';
-import { ConfigModule } from '@nestjs/config';
+// import { ConfigModule } from '@nestjs/config';
 // import { GoogleStrategy } from './google.strategy';
 
 @Module({
@@ -17,7 +17,7 @@ import { ConfigModule } from '@nestjs/config';
     JwtModule.register({
       global: true,
       secret: process.env.JWT_SECRET,
-      signOptions: { expiresIn: '1d' },
+      signOptions: { expiresIn: '7d' },
     }),
     SaasModule,
     MailModule,
