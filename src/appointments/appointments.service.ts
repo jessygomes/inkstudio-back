@@ -395,8 +395,8 @@ export class AppointmentsService {
         }
 
         // Invalider le cache des listes de RDV après création
-        this.cacheService.delPattern(`appointments:salon:${userId}:*`);
-        this.cacheService.delPattern(`appointments:date-range:${userId}:*`);
+        await this.cacheService.delPattern(`appointments:salon:${userId}:*`);
+        await this.cacheService.delPattern(`appointments:date-range:${userId}:*`);
 
         // Créer une conversation automatiquement si le client est connecté
         if (clientUser && clientUser.role === 'client') {
@@ -489,8 +489,8 @@ export class AppointmentsService {
       }
 
       // Invalider le cache des listes de RDV après création
-      this.cacheService.delPattern(`appointments:salon:${userId}:*`);
-      this.cacheService.delPattern(`appointments:date-range:${userId}:*`);
+      await this.cacheService.delPattern(`appointments:salon:${userId}:*`);
+      await this.cacheService.delPattern(`appointments:date-range:${userId}:*`);
 
       // Invalider le cache du dashboard
       await this.invalidateDashboardCache(userId, { 
@@ -1168,14 +1168,28 @@ export class AppointmentsService {
   //! VOIR TOUS LES RDV D'UN SALON
 
   //! ------------------------------------------------------------------------------
-  async getAllAppointmentsBySalon(salonId: string, page: number = 1, limit: number = 5) {
+  async getAllAppointmentsBySalon(
+    salonId: string, 
+    page: number = 1, 
+    limit: number = 5,
+    status?: string,
+    period?: 'upcoming' | 'past',
+    tatoueurId?: string,
+    prestation?: string,
+    search?: string
+  ) {
     try {
       const skip = (page - 1) * limit;
 
-      // Créer une clé de cache basée sur les paramètres
+      // Créer une clé de cache basée sur les paramètres incluant les filtres
       const cacheKey = `appointments:salon:${salonId}:${JSON.stringify({
         page,
-        limit
+        limit,
+        status,
+        period,
+        tatoueurId,
+        prestation,
+        search
       })}`;
 
       // 1. Vérifier dans Redis
@@ -1183,48 +1197,135 @@ export class AppointmentsService {
         error: boolean;
         appointments: any[];
         pagination: any;
+        allTatoueurs: any[];
+        allPrestations: string[];
       }>(cacheKey);
       
       if (cachedResult) {
         return cachedResult;
       }
 
-      // Compter le total des rendez-vous
-      const totalAppointments = await this.prisma.appointment.count({
-        where: {
-          userId: salonId,
-        },
-      });
+      // Construire les conditions de filtrage
+      const now = new Date();
+      const whereConditions: any = {
+        userId: salonId,
+      };
 
-      // Récupérer les rendez-vous avec pagination
-      const appointments = await this.prisma.appointment.findMany({
-        where: {
-          userId: salonId,
-        },
-        include: {
-          tatoueur: {
-            select: {
-              id: true,
-              name: true,
+      // Filtre par statut
+      if (status) {
+        whereConditions.status = status;
+      }
+
+      // Filtre par période (à venir ou passée)
+      if (period === 'upcoming') {
+        whereConditions.start = { gte: now };
+      } else if (period === 'past') {
+        whereConditions.start = { lt: now };
+      }
+
+      // Filtre par tatoueur
+      if (tatoueurId) {
+        whereConditions.tatoueurId = tatoueurId;
+      }
+
+      // Filtre par type de prestation
+      if (prestation) {
+        whereConditions.prestation = prestation;
+      }
+
+      // Filtre de recherche par nom/prénom du client et titre
+      if (search) {
+        whereConditions.OR = [
+          {
+            client: {
+              firstName: {
+                contains: search,
+                mode: 'insensitive',
+              },
             },
           },
-          salonReview: true,
-          tattooDetail: true,
-          client: {
-            select: {
-              firstName: true,
-              lastName: true,
-              email: true,
-              phone: true,
+          {
+            client: {
+              lastName: {
+                contains: search,
+                mode: 'insensitive',
+              },
             },
           },
-        },
-        orderBy: {
-          start: 'desc', // Trier par date décroissante
-        },
-        skip,
-        take: limit,
-      });
+          {
+            title: {
+              contains: search,
+              mode: 'insensitive',
+            },
+          },
+        ];
+      }
+
+      // Récupérer en parallèle : les RDV filtrés, le total, tous les tatoueurs et toutes les prestations
+      const [appointments, totalAppointments, allTatoueurs, allPrestationsResult] = await Promise.all([
+        // Rendez-vous filtrés avec pagination
+        this.prisma.appointment.findMany({
+          where: whereConditions,
+          include: {
+            tatoueur: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            salonReview: true,
+            tattooDetail: true,
+            client: {
+              select: {
+                firstName: true,
+                lastName: true,
+                email: true,
+                phone: true,
+              },
+            },
+            conversation: {
+              select: {
+                id: true,
+              },
+            },
+          },
+          orderBy: {
+            start: 'desc',
+          },
+          skip,
+          take: limit,
+        }),
+        // Total des RDV correspondant aux filtres
+        this.prisma.appointment.count({
+          where: whereConditions,
+        }),
+        // Tous les tatoueurs du salon (pour les filtres)
+        this.prisma.tatoueur.findMany({
+          where: {
+            userId: salonId,
+          },
+          select: {
+            id: true,
+            name: true,
+          },
+          orderBy: {
+            name: 'asc',
+          },
+        }),
+        // Toutes les prestations utilisées par le salon (pour les filtres)
+        this.prisma.appointment.findMany({
+          where: {
+            userId: salonId,
+          },
+          select: {
+            prestation: true,
+          },
+          distinct: ['prestation'],
+        }),
+      ]);
+
+      // Extraire les prestations uniques
+      const allPrestations = allPrestationsResult.map(a => a.prestation).filter(Boolean);
 
       const totalPages = Math.ceil(totalAppointments / limit);
 
@@ -1239,9 +1340,11 @@ export class AppointmentsService {
           hasNextPage: page < totalPages,
           hasPreviousPage: page > 1,
         },
+        allTatoueurs, // Tous les tatoueurs pour les filtres
+        allPrestations, // Tous les types de rdv pour les filtres
       };
 
-      // 3. Mettre en cache (TTL 5 minutes pour la liste complète)
+      // 3. Mettre en cache (TTL 5 minutes)
       await this.cacheService.set(cacheKey, result, 300);
 
       return result;
@@ -1372,8 +1475,8 @@ export class AppointmentsService {
 
       // Invalider le cache après suppression
       await this.cacheService.del(`appointment:${id}`);
-      this.cacheService.delPattern(`appointments:salon:${appointmentToDelete.userId}:*`);
-      this.cacheService.delPattern(`appointments:date-range:${appointmentToDelete.userId}:*`);
+      await this.cacheService.delPattern(`appointments:salon:${appointmentToDelete.userId}:*`);
+      await this.cacheService.delPattern(`appointments:date-range:${appointmentToDelete.userId}:*`);
 
       // Invalider le cache du dashboard
       await this.invalidateDashboardCache(appointmentToDelete.userId, { 
@@ -1523,8 +1626,8 @@ export class AppointmentsService {
 
       // Invalider le cache après update
       await this.cacheService.del(`appointment:${id}`);
-      this.cacheService.delPattern(`appointments:salon:${existingAppointment.userId}:*`);
-      this.cacheService.delPattern(`appointments:date-range:${existingAppointment.userId}:*`);
+      await this.cacheService.delPattern(`appointments:salon:${existingAppointment.userId}:*`);
+      await this.cacheService.delPattern(`appointments:date-range:${existingAppointment.userId}:*`);
 
       // Invalider le cache du dashboard
       await this.invalidateDashboardCache(existingAppointment.userId, { 
@@ -1536,6 +1639,217 @@ export class AppointmentsService {
         error: false,
         message: 'Rendez-vous mis à jour avec succès.',
         appointment: updatedAppointment,
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
+
+  //! ------------------------------------------------------------------------------
+
+  //! MODIFIER UN RDV PAR LE CLIENT
+
+  //! ------------------------------------------------------------------------------
+  async updateAppointmentByClient(appointmentId: string, userId: string, rdvBody: { start: string; end: string; tatoueurId?: string }) {
+    try {
+      // Récupérer le RDV avec toutes les informations nécessaires
+      const existingAppointment = await this.prisma.appointment.findUnique({
+        where: { id: appointmentId },
+        include: {
+          client: true,
+          tatoueur: true,
+          user: {
+            select: {
+              salonName: true,
+              email: true,
+              addConfirmationEnabled: true,
+            },
+          },
+        },
+      });
+
+      if (!existingAppointment) {
+        return {
+          error: true,
+          message: 'Rendez-vous introuvable.',
+        };
+      }
+
+      // Vérifier que le client connecté est bien le propriétaire du RDV
+      if (existingAppointment.clientUserId !== userId) {
+        return {
+          error: true,
+          message: 'Vous n\'avez pas le droit de modifier ce rendez-vous.',
+        };
+      }
+
+      // Vérifier que le RDV n'est pas déjà terminé ou complet
+      if (['COMPLETED', 'NO_SHOW', 'CANCELED'].includes(existingAppointment.status)) {
+        return {
+          error: true,
+          message: 'Vous ne pouvez pas modifier un rendez-vous terminé, annulé ou complété.',
+        };
+      }
+
+      const { start, end, tatoueurId } = rdvBody;
+
+      // Vérifier si le tatoueur existe si fourni
+      if (tatoueurId && tatoueurId !== existingAppointment.tatoueurId) {
+        const artist = await this.prisma.tatoueur.findUnique({
+          where: { id: tatoueurId },
+        });
+
+        if (!artist) {
+          return {
+            error: true,
+            message: 'Tatoueur introuvable.',
+          };
+        }
+      }
+
+      // Déterminer le nouveau statut selon le paramètre addConfirmationEnabled du salon
+      const newAppointmentStatus = existingAppointment.user.addConfirmationEnabled ? 'PENDING' : existingAppointment.status;
+
+      // Mettre à jour le rendez-vous (dates, heure et tatoueur)
+      const updatedAppointment = await this.prisma.appointment.update({
+        where: { id: appointmentId },
+        data: {
+          start: new Date(start),
+          end: new Date(end),
+          tatoueurId: tatoueurId || existingAppointment.tatoueurId,
+          status: newAppointmentStatus,
+        },
+        include: {
+          client: true,
+          tatoueur: true,
+        },
+      });
+
+      // Envoyer un email de confirmation au client
+      if (updatedAppointment.client) {
+        try {
+          await this.mailService.sendAppointmentModification(
+            updatedAppointment.client.email,
+            {
+              recipientName: `${updatedAppointment.client.firstName} ${updatedAppointment.client.lastName}`,
+              appointmentDetails: {
+                date: updatedAppointment.start.toLocaleDateString('fr-FR', {
+                  weekday: 'long',
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric',
+                }),
+                time: `${updatedAppointment.start.toLocaleTimeString('fr-FR', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })} - ${updatedAppointment.end.toLocaleTimeString('fr-FR', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}`,
+                service: updatedAppointment.prestation,
+                tatoueur: updatedAppointment.tatoueur?.name || 'Non assigné',
+                visio: updatedAppointment.visio || false,
+                visioRoom: updatedAppointment.visio
+                  ? `${process.env.FRONTEND_URL || '#'}/meeting/${updatedAppointment.id}`
+                  : updatedAppointment.visioRoom || undefined,
+              },
+            },
+            existingAppointment.user?.salonName || undefined,
+            existingAppointment.user?.email || undefined
+          );
+        } catch (emailError) {
+          console.error('⚠️ Erreur lors de l\'envoi de l\'email au client:', emailError);
+        }
+      }
+
+      // Envoyer un email de notification au salon
+      if (existingAppointment.user?.email && updatedAppointment.client) {
+        try {
+          const clientName = `${updatedAppointment.client.firstName} ${updatedAppointment.client.lastName}`;
+          
+          // Formater les dates
+          const appointmentDate = updatedAppointment.start.toLocaleDateString('fr-FR', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+          });
+          
+          const appointmentTime = `${updatedAppointment.start.toLocaleTimeString('fr-FR', {
+            hour: '2-digit',
+            minute: '2-digit'
+          })} - ${updatedAppointment.end.toLocaleTimeString('fr-FR', {
+            hour: '2-digit',
+            minute: '2-digit'
+          })}`;
+
+          // Créer un message personnalisé pour le salon
+          const statusInfo = newAppointmentStatus === 'PENDING'
+            ? '⚠️ Ce rendez-vous est en attente de votre confirmation.'
+            : '✅ Ce rendez-vous a été automatiquement confirmé.';
+
+          const emailBody = `
+            <strong>${clientName}</strong> a modifié son rendez-vous.
+            <br><br>
+            ${statusInfo}
+            <br><br>
+            <strong>📅 Nouveaux détails du rendez-vous :</strong>
+            <br><br>
+            📅 <strong>Date :</strong> ${appointmentDate}
+            <br>
+            ⏰ <strong>Heure :</strong> ${appointmentTime}
+            <br>
+            🎨 <strong>Prestation :</strong> ${updatedAppointment.prestation}
+            <br>
+            👨‍🎨 <strong>Artiste :</strong> ${updatedAppointment.tatoueur?.name || 'Non assigné'}
+            <br><br>
+            👤 <strong>Informations client :</strong>
+            <br>
+            Nom : ${clientName}
+            <br>
+            Email : ${updatedAppointment.client.email}
+            <br>
+            Téléphone : ${updatedAppointment.client.phone || 'Non renseigné'}
+          `;
+
+          await this.mailService.sendCustomEmail(
+            existingAppointment.user.email,
+            '🔔 Modification de rendez-vous par un client',
+            {
+              recipientName: existingAppointment.user.salonName || 'Salon',
+              customMessage: emailBody,
+            },
+            existingAppointment.user.salonName || undefined,
+            existingAppointment.user.email
+          );
+        } catch (emailError) {
+          console.error('⚠️ Erreur lors de l\'envoi de l\'email au salon:', emailError);
+        }
+      }
+
+      // Invalider le cache après modification
+      await this.cacheService.del(`appointment:${appointmentId}`);
+      await this.cacheService.delPattern(`appointments:salon:${existingAppointment.userId}:*`);
+      await this.cacheService.delPattern(`appointments:date-range:${existingAppointment.userId}:*`);
+      await this.cacheService.delPattern(`client:appointments:${userId}:*`);
+
+      // Invalider le cache du dashboard
+      await this.invalidateDashboardCache(existingAppointment.userId, {
+        start: updatedAppointment.start,
+        isPayed: updatedAppointment.isPayed,
+      });
+
+      return {
+        error: false,
+        message: newAppointmentStatus === 'PENDING'
+          ? 'Rendez-vous modifié et en attente de confirmation du salon.'
+          : 'Rendez-vous modifié avec succès.',
+        appointment: updatedAppointment,
+        status: newAppointmentStatus,
       };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
@@ -1629,8 +1943,8 @@ export class AppointmentsService {
 
       // Invalider le cache après confirmation
       await this.cacheService.del(`appointment:${id}`);
-      this.cacheService.delPattern(`appointments:salon:${existingAppointment.userId}:*`);
-      this.cacheService.delPattern(`appointments:date-range:${existingAppointment.userId}:*`);
+      await this.cacheService.delPattern(`appointments:salon:${existingAppointment.userId}:*`);
+      await this.cacheService.delPattern(`appointments:date-range:${existingAppointment.userId}:*`);
 
       return {
         error: false,
@@ -1722,8 +2036,8 @@ export class AppointmentsService {
 
       // Invalider le cache après annulation
       await this.cacheService.del(`appointment:${id}`);
-      this.cacheService.delPattern(`appointments:salon:${existingAppointment.userId}:*`);
-      this.cacheService.delPattern(`appointments:date-range:${existingAppointment.userId}:*`);
+      await this.cacheService.delPattern(`appointments:salon:${existingAppointment.userId}:*`);
+      await this.cacheService.delPattern(`appointments:date-range:${existingAppointment.userId}:*`);
 
       // Invalider le cache du dashboard (annulation change les stats globales)
       await this.invalidateDashboardCache(existingAppointment.userId, { 
@@ -1876,9 +2190,9 @@ async cancelAppointmentByClient(appointmentId: string, clientUserId: string, rea
 
     // Invalider les caches
     await this.cacheService.del(`appointment:${appointmentId}`);
-    this.cacheService.delPattern(`appointments:salon:${appointment.userId}:*`);
-    this.cacheService.delPattern(`appointments:date-range:${appointment.userId}:*`);
-    this.cacheService.delPattern(`client:appointments:${clientUserId}:*`);
+    await this.cacheService.delPattern(`appointments:salon:${appointment.userId}:*`);
+    await this.cacheService.delPattern(`appointments:date-range:${appointment.userId}:*`);
+    await this.cacheService.delPattern(`client:appointments:${clientUserId}:*`);
 
     // Invalider le cache du dashboard
     await this.invalidateDashboardCache(appointment.userId, { 
@@ -1978,8 +2292,8 @@ async cancelAppointmentByClient(appointmentId: string, clientUserId: string, rea
 
       // Invalider le cache après changement de statut
       await this.cacheService.del(`appointment:${id}`);
-      this.cacheService.delPattern(`appointments:salon:${appointment.userId}:*`);
-      this.cacheService.delPattern(`appointments:date-range:${appointment.userId}:*`);
+      await this.cacheService.delPattern(`appointments:salon:${appointment.userId}:*`);
+      await this.cacheService.delPattern(`appointments:date-range:${appointment.userId}:*`);
 
       return {
         error: false,

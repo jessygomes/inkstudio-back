@@ -57,31 +57,29 @@ export class CacheService {
    */
   async delPattern(pattern: string): Promise<void> {
     try {
-      // Essayer d'abord via l'API de cache-manager (store.keys)
       const store: any = (this.cacheManager as any).store;
 
-      if (store && typeof store.keys === 'function') {
-        const keys: string[] = await store.keys(pattern);
-        if (!keys || keys.length === 0) return;
-        await Promise.allSettled(keys.map((key) => this.cacheManager.del(key)));
-        return;
+      // Essayer d'abord avec le client Redis direct
+      let client = store?.client;
+      
+      // Si ce n'est pas directement accessible, chercher dans store.getClient
+      if (!client && store && typeof store.getClient === 'function') {
+        client = store.getClient();
       }
 
-      // Fallback pour un client Redis accessible directement (node-redis v4)
-      if (store && store.client && typeof store.client.scan === 'function') {
-        const client = store.client;
+      if (client && typeof client.scan === 'function') {
         let cursor = '0';
         const keys: string[] = [];
 
         do {
           const scanResult = await client.scan(cursor, { MATCH: pattern, COUNT: 100 });
           // node-redis v4: { cursor: string; keys: string[] }
-          cursor = scanResult.cursor ?? (Array.isArray(scanResult) ? scanResult[0] : '0');
-          const foundKeys = scanResult.keys ?? (Array.isArray(scanResult) ? scanResult[1] : []);
-          if (foundKeys && foundKeys.length) {
+          cursor = scanResult?.cursor ?? (Array.isArray(scanResult) ? scanResult[0] : '0');
+          const foundKeys = scanResult?.keys ?? (Array.isArray(scanResult) ? scanResult[1] : []);
+          if (foundKeys && foundKeys.length > 0) {
             keys.push(...foundKeys);
           }
-        } while (cursor !== '0');
+        } while (cursor !== '0' && cursor !== undefined);
 
         if (keys.length > 0) {
           await client.del(keys);
@@ -89,9 +87,18 @@ export class CacheService {
         return;
       }
 
-      console.warn(`Impossible de supprimer le pattern ${pattern}: aucune méthode keys/scan disponible.`);
+      // Fallback avec store.keys pour certaines implémentations
+      if (store && typeof store.keys === 'function') {
+        const keys: string[] = await store.keys(pattern);
+        if (!keys || keys.length === 0) return;
+        await Promise.allSettled(keys.map((key) => this.cacheManager.del(key)));
+        return;
+      }
+
+      // Dernier fallback silencieux
+      console.debug(`Pattern ${pattern} : suppression non disponible (Redis non accessible)`);
     } catch (error) {
-      console.error(`Erreur lors de la suppression du pattern ${pattern}:`, error);
+      console.warn(`Erreur lors de la suppression du pattern ${pattern}:`, error);
     }
   }
 }

@@ -260,7 +260,14 @@ async findAllReviewBySalon(
       }
     });
 
-    if (!salon || salon.role !== 'user') {
+    // if (!salon || salon.role !== 'user') {
+    //   return {
+    //     error: true,
+    //     message: 'Salon introuvable.'
+    //   };
+    // }
+
+    if (!salon) {
       return {
         error: true,
         message: 'Salon introuvable.'
@@ -795,7 +802,14 @@ async findAllReviewBySalon(
         }
       });
 
-      if (!salon || salon.role !== 'user') {
+      // if (!salon || salon.role !== 'user') {
+      //   return {
+      //     error: true,
+      //     message: 'Salon introuvable.'
+      //   };
+      // }
+
+      if (!salon) {
         return {
           error: true,
           message: 'Salon introuvable.'

@@ -13,6 +13,7 @@ import {
   LastMessageDto,
 } from './dto/conversation-response.dto';
 import { PaginatedConversationsDto } from './dto/paginated-conversations.dto';
+import { UnreadConversationResponseDto } from './dto/unread-conversation-response.dto';
 import { ConversationStatus, MessageType } from '@prisma/client';
 import { MessageNotificationService } from '../notifications/message-notification.service';
 
@@ -165,6 +166,84 @@ export class ConversationsService {
       limit,
       totalPages: Math.ceil(total / limit),
     };
+  }
+
+  /**
+   * Récupère les 10 premières conversations avec messages non lus par le salon uniquement
+   * Retourne le dernier message et les infos du client
+   */
+  async getConversationsWithUnreadMessages(
+    salonId: string,
+  ): Promise<UnreadConversationResponseDto[]> {
+    // Récupérer les conversations où le salon a des messages non lus envoyés par le client
+    const conversationsWithUnread = await this.prisma.conversation.findMany({
+      where: {
+        salonId: salonId,
+        status: ConversationStatus.ACTIVE,
+        messages: {
+          some: {
+            senderId: { not: salonId }, // Messages envoyés par le client
+            isRead: false,
+          },
+        },
+      },
+      include: {
+        clientUser: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            image: true,
+          },
+        },
+        messages: {
+          where: {
+            senderId: { not: salonId },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: {
+            id: true,
+            content: true,
+            type: true,
+            createdAt: true,
+          },
+        },
+      },
+      orderBy: { lastMessageAt: 'desc' },
+      take: 10,
+    });
+
+    // Mapper les résultats
+    const data = await Promise.all(
+      conversationsWithUnread.map(async (conv) => {
+        const unreadCount = await this.notificationService.getUnreadCount(
+          conv.id,
+          salonId,
+        );
+
+        const lastMessage = conv.messages[0];
+
+        return {
+          conversationId: conv.id,
+          subject: conv.subject,
+          clientId: conv.clientUser.id,
+          clientFirstName: conv.clientUser.firstName ?? undefined,
+          clientLastName: conv.clientUser.lastName ?? undefined,
+          clientImage: conv.clientUser.image ?? undefined,
+          lastMessage: {
+            id: lastMessage.id,
+            content: lastMessage.content,
+            type: lastMessage.type,
+            createdAt: lastMessage.createdAt,
+          },
+          unreadCount,
+          lastMessageAt: conv.lastMessageAt,
+        } as UnreadConversationResponseDto;
+      }),
+    );
+
+    return data;
   }
 
   /**

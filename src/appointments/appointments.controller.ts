@@ -39,10 +39,10 @@ export class AppointmentsController {
   }
 
   //! VOIR TOUS LES RDV ✅
-  @Get()
-  async getAllAppointments(@Param('id') userId: string) {
-    return await this.appointmentsService.getAllAppointments(userId);
-  }
+  // @Get()
+  // async getAllAppointments(@Param('id') userId: string) {
+  //   return await this.appointmentsService.getAllAppointments(userId);
+  // }
 
   //! VOIR TOUS LES RDV PAR DATE ✅
   @UseGuards(JwtAuthGuard)
@@ -66,11 +66,25 @@ export class AppointmentsController {
   async getAllAppointmentsBySalon(
     @Param('id') salonId: string,
     @Query('page') page?: string,
-    @Query('limit') limit?: string
+    @Query('limit') limit?: string,
+    @Query('status') status?: string,
+    @Query('period') period?: 'upcoming' | 'past',
+    @Query('tatoueurId') tatoueurId?: string,
+    @Query('prestation') prestation?: string,
+    @Query('search') search?: string
   ) {
     const pageNumber = page ? parseInt(page, 10) : 1;
     const limitNumber = limit ? parseInt(limit, 10) : 5;
-    return await this.appointmentsService.getAllAppointmentsBySalon(salonId, pageNumber, limitNumber);
+    return await this.appointmentsService.getAllAppointmentsBySalon(
+      salonId, 
+      pageNumber, 
+      limitNumber,
+      status,
+      period,
+      tatoueurId,
+      prestation,
+      search
+    );
   }
 
   //! VOIR LES RDV DU JOUR POUR DASHBOARD ✅
@@ -218,6 +232,18 @@ export class AppointmentsController {
   async updateAppointment(@Param('id') appointmentId: string, @Body() rdvBody: UpdateAppointmentDto) {
     console.log('Updating appointment with ID:', appointmentId, 'and body:', rdvBody);
     return await this.appointmentsService.updateAppointment(appointmentId, rdvBody);
+  }
+
+  //! MODIFIER UN RDV PAR LE CLIENT ✅
+  @UseGuards(JwtAuthGuard)
+  @Patch('client-update/:id')
+  async updateAppointmentByClient(
+    @Request() req: RequestWithUser,
+    @Param('id') appointmentId: string,
+    @Body() rdvBody: UpdateAppointmentDto
+  ) {
+    const userId = req.user.userId;
+    return await this.appointmentsService.updateAppointmentByClient(appointmentId, userId, rdvBody);
   }
 
   //! CONFIRMER UN RDV ✅

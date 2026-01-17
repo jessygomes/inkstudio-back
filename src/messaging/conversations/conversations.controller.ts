@@ -19,6 +19,7 @@ import { CreateConversationDto } from './dto/create-conversation.dto';
 import { UpdateConversationDto } from './dto/update-conversation.dto';
 import { ConversationResponseDto } from './dto/conversation-response.dto';
 import { PaginatedConversationsDto } from './dto/paginated-conversations.dto';
+import { UnreadConversationResponseDto } from './dto/unread-conversation-response.dto';
 import { ConversationStatus } from '@prisma/client';
 import { RequestWithUser } from '../../auth/jwt.strategy';
 import { MessageNotificationService } from '../notifications/message-notification.service';
@@ -77,6 +78,20 @@ export class ConversationsController {
       req.user.userId,
     );
     return { totalUnread };
+  }
+
+  /**
+   * GET /messaging/conversations/unread
+   * Récupérer les 10 premières conversations ayant au moins un message non lu par le salon
+   * Retourne uniquement le dernier message et les infos du client
+   */
+  @Get('unread')
+  async getConversationsWithUnreadMessages(
+    @Request() req: RequestWithUser,
+  ): Promise<UnreadConversationResponseDto[]> {
+    return this.conversationsService.getConversationsWithUnreadMessages(
+      req.user.userId,
+    );
   }
 
   /**
