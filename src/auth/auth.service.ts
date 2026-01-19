@@ -22,6 +22,7 @@ interface AuthenticatedUser {
   phone: string | null;
   address: string | null;
   verifiedSalon: boolean | null;
+  salonHours?: string | null;
   clientProfile?: {
     id: string;
     userId: string;
@@ -432,8 +433,6 @@ export class AuthService {
     
     const access_token = this.jwtService.sign(payload);
 
-    console.log("Authenticated user:", user);
-
     if (user.role === 'client') {
       return {
         access_token,
@@ -458,6 +457,7 @@ export class AuthService {
       phone: user.phone || "",
       address: user.address || "",
       verifiedSalon: user.verifiedSalon || false,
+      salonHours: user.salonHours || null,
     }
   }
 

@@ -31,7 +31,7 @@ export class StocksService {
       });
 
       // Invalider le cache des listes de stocks après création
-      this.cacheService.delPattern(`stocks:salon:${userId}:*`);
+      await this.cacheService.delPattern(`stocks:salon:${userId}:*`);
 
       return {
         error: false,
@@ -194,7 +194,7 @@ export class StocksService {
       // Invalider le cache de l'élément spécifique
       await this.cacheService.del(`stockitem:${id}`);
       // Invalider le cache des listes de stocks du salon
-      this.cacheService.delPattern(`stocks:salon:${updatedStockItem.userId}:*`);
+      await this.cacheService.delPattern(`stocks:salon:${updatedStockItem.userId}:*`);
 
       return {
         error: false,
@@ -261,7 +261,7 @@ export class StocksService {
       // Invalider le cache de l'élément spécifique
       await this.cacheService.del(`stockitem:${id}`);
       // Invalider le cache des listes de stocks du salon
-      this.cacheService.delPattern(`stocks:salon:${updatedStockItem.userId}:*`);
+      await this.cacheService.delPattern(`stocks:salon:${updatedStockItem.userId}:*`);
 
       return {
         error: false,
@@ -300,7 +300,7 @@ export class StocksService {
       // Invalider le cache de l'élément spécifique
       await this.cacheService.del(`stockitem:${id}`);
       // Invalider le cache des listes de stocks du salon
-      this.cacheService.delPattern(`stocks:salon:${stockToDelete.userId}:*`);
+      await this.cacheService.delPattern(`stocks:salon:${stockToDelete.userId}:*`);
 
       return {
         error: false,
