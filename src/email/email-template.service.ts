@@ -579,14 +579,14 @@ export class EmailTemplateService {
     const content = `
       <div class="content">
         <div class="welcome-section">
-          <h2 class="welcome-title">Bienvenue sur InkStudio !</h2>
+          <h2 class="welcome-title">Bienvenue sur Inkera Studio !</h2>
         </div>
 
         <br/>
         
         <div class="message-box">
           <p class="welcome-subtitle">Bonjour ${data.recipientName || 'cher utilisateur'},</p>
-          <p><strong>Félicitations !</strong> Votre compte ${data.salonName || 'InkStudio'} a été créé avec succès.</p>
+          <p><strong>Félicitations !</strong> Votre compte ${data.salonName || 'Inkera Studio'} a été créé avec succès.</p>
           <br/>
           <p>Pour commencer à utiliser toutes les fonctionnalités de votre espace de gestion, veuillez confirmer votre adresse email en cliquant sur le bouton ci-dessous :</p>
         </div>

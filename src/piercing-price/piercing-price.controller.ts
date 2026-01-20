@@ -60,8 +60,6 @@ export class PiercingPriceController {
   }
 
   // Endpoints utilitaires (routes spécifiques avant les routes avec paramètres)
-
-
   @Get('overview')
   @UseGuards(JwtAuthGuard)
   getSalonPricingOverview(@Request() req: RequestWithUser) {
@@ -114,6 +112,7 @@ export class PiercingPriceController {
 
   // Types de piercing (zones générales)
   @Get('zones')
+  @UseGuards(JwtAuthGuard)
   getPiercingZones(@Request() req: RequestWithUser) {
     return this.piercingPriceService.getPiercingZones(req.user.userId);
   }
