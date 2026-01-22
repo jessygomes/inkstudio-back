@@ -55,20 +55,28 @@ export class RedisOnlineStatusService {
       const client = this.redisService.getClient();
 
       const connectionKey = `${this.USER_CONNECTIONS_PREFIX}${userId}`;
+      
+      // Get all connections before removing
+      const allConnections = await client.sMembers(connectionKey);
+      this.logger.debug(`🔴 [Redis] User ${userId} - Before removal: ${allConnections.length} connections - [${allConnections.join(', ')}]`);
+      this.logger.debug(`🔴 [Redis] Removing socketId: ${socketId}`);
+      
       await client.sRem(connectionKey, socketId);
 
       // Check if user has remaining connections
       const remainingConnections = await client.sCard(connectionKey);
+      const remainingConnectionsList = await client.sMembers(connectionKey);
+      this.logger.debug(`🔴 [Redis] User ${userId} - After removal: ${remainingConnections} connections - [${remainingConnectionsList.join(', ')}]`);
 
       if (remainingConnections === 0) {
         // User is completely offline
         const onlineKey = `${this.USER_ONLINE_PREFIX}${userId}`;
         await client.del([onlineKey, connectionKey]);
-        this.logger.debug(`User ${userId} marked offline (no connections)`);
+        this.logger.debug(`✅ User ${userId} marked offline (no connections)`);
         return true;
       }
 
-      this.logger.debug(`User ${userId} still has ${remainingConnections} connections`);
+      this.logger.debug(`⚠️ User ${userId} still has ${remainingConnections} connections`);
       return false;
     } catch (error) {
       this.logger.error(

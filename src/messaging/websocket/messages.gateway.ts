@@ -391,6 +391,9 @@ export class MessagesGateway
           ? conversation.clientUserId
           : conversation.salonId;
 
+      this.logger.log(`👥 [User Debug] Sender: ${userId}, Recipient: ${otherUserId}, ConversationId: ${conversationId}`);
+      this.logger.log(`👥 [User Debug] Conversation - salonId: ${conversation.salonId}, clientUserId: ${conversation.clientUserId}`);
+
       const otherUserSockets = this.userConnections.get(otherUserId) || new Set();
       let isRecipientInRoom = false;
 
