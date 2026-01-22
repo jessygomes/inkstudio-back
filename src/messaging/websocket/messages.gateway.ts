@@ -451,26 +451,36 @@ export class MessagesGateway
       // Queuer une notification email si le destinataire n'est pas connecté
       // Check both in-memory cache et Redis pour accuracy
       let isRecipientOnline = this.userConnections.has(otherUserId);
+      this.logger.log(`📊 [Email Debug] User ${otherUserId} - Local cache: ${isRecipientOnline}`);
       
       // If not online locally, check Redis (for multi-server deployments)
       if (!isRecipientOnline) {
         isRecipientOnline = await this.redisOnlineStatusService.isUserOnline(otherUserId);
+        this.logger.log(`📊 [Email Debug] User ${otherUserId} - Redis check: ${isRecipientOnline}`);
       }
 
       if (!isRecipientOnline) {
+        this.logger.log(`📧 [Email Debug] User ${otherUserId} is OFFLINE - checking if should send email...`);
         const shouldSendEmail = await this.emailNotificationService.shouldSendNotification(
           conversationId,
           otherUserId,
         );
+        this.logger.log(`📧 [Email Debug] shouldSendEmail result: ${shouldSendEmail}`);
         if (shouldSendEmail) {
           await this.emailNotificationService.queueNotification(
             conversationId,
             otherUserId,
           );
           this.logger.log(
-            `Email notification queued for ${otherUserId} in conversation ${conversationId}`,
+            `✅ Email notification queued for ${otherUserId} in conversation ${conversationId}`,
+          );
+        } else {
+          this.logger.log(
+            `⚠️ Email notification NOT queued for ${otherUserId} - preferences or rate limit`,
           );
         }
+      } else {
+        this.logger.log(`🟢 [Email Debug] User ${otherUserId} is ONLINE - no email needed`);
       }
 
       this.logger.log(

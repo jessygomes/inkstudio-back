@@ -46,6 +46,8 @@ export class EmailNotificationService {
     conversationId: string,
     recipientUserId: string,
   ): Promise<void> {
+    this.logger.log(`🔍 [Queue] Looking for existing PENDING email for conversation ${conversationId}, user ${recipientUserId}`);
+    
     const existing = await this.prisma.emailNotificationQueue.findFirst({
       where: {
         conversationId,
@@ -55,20 +57,24 @@ export class EmailNotificationService {
     });
 
     if (existing) {
+      this.logger.log(`📈 [Queue] Found existing entry (id: ${existing.id}), incrementing count from ${existing.messageCount} to ${existing.messageCount + 1}`);
       await this.prisma.emailNotificationQueue.update({
         where: { id: existing.id },
         data: { messageCount: existing.messageCount + 1 },
       });
+      this.logger.log(`✅ [Queue] Updated messageCount for entry ${existing.id}`);
       return;
     }
 
-    await this.prisma.emailNotificationQueue.create({
+    this.logger.log(`📧 [Queue] No existing PENDING email found, creating new entry with messageCount=1`);
+    const newEntry = await this.prisma.emailNotificationQueue.create({
       data: {
         conversationId,
         recipientUserId,
         messageCount: 1,
       },
     });
+    this.logger.log(`✅ [Queue] Created new email queue entry: ${newEntry.id}`);
   }
 
   /**
