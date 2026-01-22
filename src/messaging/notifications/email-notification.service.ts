@@ -139,6 +139,8 @@ export class EmailNotificationService {
         html,
       });
 
+      this.logger.log(`📤 Email sent to ${recipient.email} for conversation ${conversation.id}`);
+
       await this.prisma.emailNotificationQueue.update({
         where: { id: queueId },
         data: {
@@ -154,6 +156,7 @@ export class EmailNotificationService {
         3600, // 1 hour
       );
     } catch (error: unknown) {
+      this.logger.error(`❌ Failed to send email for queueId ${queueId}: ${this.getErrorMessage(error)}`);
       await this.prisma.emailNotificationQueue.update({
         where: { id: queueId },
         data: {

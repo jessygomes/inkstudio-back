@@ -18,6 +18,11 @@ export class SendEmailNotificationsJob {
 
       this.logger.log(`🚚 Processing queued emails: ${pendingEmails.length}`);
 
+      if (pendingEmails.length === 0) {
+        this.logger.log('ℹ️ No pending emails to process');
+        return { sent: 0 };
+      }
+
       let sent = 0;
       for (const email of pendingEmails) {
         await this.emailNotificationService.sendNotification(email.id);
