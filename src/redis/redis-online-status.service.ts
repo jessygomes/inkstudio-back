@@ -42,6 +42,31 @@ export class RedisOnlineStatusService {
   }
 
   /**
+   * Aggressive purge: remplace toutes les connexions existantes par la connexion courante.
+   * TODO: passer sur un heartbeat + nettoyage ciblé (option 2/3) pour supporter le multi-onglets.
+   */
+  async resetUserConnections(userId: string, socketId: string): Promise<void> {
+    try {
+      const client = this.redisService.getClient();
+
+      const connectionKey = `${this.USER_CONNECTIONS_PREFIX}${userId}`;
+      await client.del(connectionKey);
+      await client.sAdd(connectionKey, socketId);
+      await client.expire(connectionKey, this.TTL_SECONDS);
+
+      const onlineKey = `${this.USER_ONLINE_PREFIX}${userId}`;
+      await client.setEx(onlineKey, this.TTL_SECONDS, new Date().toISOString());
+
+      this.logger.debug(`User ${userId} connections reset to socket ${socketId}`);
+    } catch (error) {
+      this.logger.error(
+        `Failed to reset connections for user ${userId}:`,
+        this.getErrorMessage(error),
+      );
+    }
+  }
+
+  /**
    * Remove socket ID from user's connections
    * @param userId User ID
    * @param socketId Socket connection ID

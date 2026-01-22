@@ -149,7 +149,9 @@ export class MessagesGateway
       this.userConnections.get(userId)!.add(client.id);
 
       // Enregistrer en Redis pour le scaling horizontal
-      void this.redisOnlineStatusService.markUserOnline(userId, client.id);
+      // Purge agressive: on remplace toutes les connexions par la connexion courante.
+      // TODO: passer sur heartbeat + nettoyage ciblé pour réactiver le multi-onglets (option 2/3).
+      void this.redisOnlineStatusService.resetUserConnections(userId, client.id);
 
       this.logger.log(
         `Client ${client.id} connecté - User ${userId}`,
