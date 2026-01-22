@@ -79,7 +79,7 @@ export class MessagesGateway
     private emailNotificationService: EmailNotificationService,
     private prisma: PrismaService,
     private redisService: RedisService,
-    private redisOnlineStatusService: RedisOnlineStatusService,
+    private readonly redisOnlineStatusService: RedisOnlineStatusService,
     private webSocketAuthService: WebSocketAuthService,
   ) {}
 
@@ -107,15 +107,11 @@ export class MessagesGateway
       const subClient = this.redisService.getSubClient();
 
       server.adapter(createAdapter(pubClient, subClient));
-      this.logger.log('Redis adapter configured for Socket.IO');
-      this.logger.log('MessagesGateway initialized with horizontal scaling support');
     } catch (error) {
       this.logger.error(
         'Failed to setup Redis adapter:',
         this.getErrorMessage(error),
       );
-      // Continue sans Redis pour le dev local
-      this.logger.warn('Continuing without Redis adapter - using in-memory adapter');
     }
   }
 
@@ -151,11 +147,8 @@ export class MessagesGateway
       // Enregistrer en Redis pour le scaling horizontal
       // Purge agressive: on remplace toutes les connexions par la connexion courante.
       // TODO: passer sur heartbeat + nettoyage ciblé pour réactiver le multi-onglets (option 2/3).
-      void this.redisOnlineStatusService.resetUserConnections(userId, client.id);
-
-      this.logger.log(
-        `Client ${client.id} connecté - User ${userId}`,
-      );
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+      await this.redisOnlineStatusService.resetUserConnections(userId, client.id);
 
       // Récupérer les infos de l'utilisateur pour la notification
       const user = await this.prisma.user.findUnique({
@@ -213,14 +206,10 @@ export class MessagesGateway
               this.server.emit('user-offline', {
                 userId,
               } as UserOfflineEvent);
-
-              this.logger.log(`User ${userId} complètement déconnecté`);
             }
           },
         );
       }
-
-      this.logger.log(`Client ${client.id} déconnecté - User ${userId}`);
     } catch (error: unknown) {
       this.logger.error('Erreur lors de la déconnexion:', this.getErrorMessage(error));
     }
@@ -264,10 +253,6 @@ export class MessagesGateway
 
       // Rejoindre la room Socket.IO
       void client.join?.(`conversation-${conversationId}`); // void pour signaler l'appel fire-and-forget
-
-      this.logger.log(
-        `User ${userId} a rejoint la conversation ${conversationId}`,
-      );
 
       // Envoyer les messages récents (optionnel - pour l'historique)
       try {
@@ -393,9 +378,6 @@ export class MessagesGateway
           ? conversation.clientUserId
           : conversation.salonId;
 
-      this.logger.log(`👥 [User Debug] Sender: ${userId}, Recipient: ${otherUserId}, ConversationId: ${conversationId}`);
-      this.logger.log(`👥 [User Debug] Conversation - salonId: ${conversation.salonId}, clientUserId: ${conversation.clientUserId}`);
-
       const otherUserSockets = this.userConnections.get(otherUserId) || new Set();
       let isRecipientInRoom = false;
 
@@ -456,41 +438,24 @@ export class MessagesGateway
       // Queuer une notification email si le destinataire n'est pas connecté
       // Check both in-memory cache et Redis pour accuracy
       let isRecipientOnline = this.userConnections.has(otherUserId);
-      this.logger.log(`📊 [Email Debug] User ${otherUserId} - Local cache: ${isRecipientOnline}`);
       
       // If not online locally, check Redis (for multi-server deployments)
       if (!isRecipientOnline) {
         isRecipientOnline = await this.redisOnlineStatusService.isUserOnline(otherUserId);
-        this.logger.log(`📊 [Email Debug] User ${otherUserId} - Redis check: ${isRecipientOnline}`);
       }
 
       if (!isRecipientOnline) {
-        this.logger.log(`📧 [Email Debug] User ${otherUserId} is OFFLINE - checking if should send email...`);
         const shouldSendEmail = await this.emailNotificationService.shouldSendNotification(
           conversationId,
           otherUserId,
         );
-        this.logger.log(`📧 [Email Debug] shouldSendEmail result: ${shouldSendEmail}`);
         if (shouldSendEmail) {
           await this.emailNotificationService.queueNotification(
             conversationId,
             otherUserId,
           );
-          this.logger.log(
-            `✅ Email notification queued for ${otherUserId} in conversation ${conversationId}`,
-          );
-        } else {
-          this.logger.log(
-            `⚠️ Email notification NOT queued for ${otherUserId} - preferences or rate limit`,
-          );
         }
-      } else {
-        this.logger.log(`🟢 [Email Debug] User ${otherUserId} is ONLINE - no email needed`);
       }
-
-      this.logger.log(
-        `Message créé dans la conversation ${conversationId} par ${userId}`,
-      );
     } catch (error: unknown) {
       this.logger.error('Erreur handleSendMessage:', this.getErrorMessage(error));
       if (client?.emit) {
@@ -536,8 +501,6 @@ export class MessagesGateway
       client.emit?.('unread-count-updated', {
         totalUnread: unreadCount,
       } as UnreadCountUpdatedEvent);
-
-      this.logger.log(`Message ${messageId} marqué comme lu par ${userId}`);
     } catch (error: unknown) {
       this.logger.error('Erreur handleMarkAsRead:', this.getErrorMessage(error));
       if (client?.emit) {
@@ -575,10 +538,6 @@ export class MessagesGateway
       client.emit?.('unread-count-updated', {
         totalUnread: unreadCount,
       } as UnreadCountUpdatedEvent);
-
-      this.logger.log(
-        `Conversation ${conversationId} marquée comme lue par ${userId}`,
-      );
     } catch (error: unknown) {
       this.logger.error('Erreur handleMarkConversationAsRead:', this.getErrorMessage(error));
       if (client?.emit) {

@@ -9,19 +9,13 @@ export class SendEmailNotificationsJob implements OnModuleInit {
 
   constructor(private readonly emailNotificationService: EmailNotificationService) {}
 
-  onModuleInit() {
-    this.logger.log('✅ SendEmailNotificationsJob processor initialized and ready to consume jobs');
-  }
+  onModuleInit() {}
 
   @OnQueueActive()
-  onActive(job: Job) {
-    this.logger.log(`▶️ Processing job ${job.id} - ${job.name}`);
-  }
+  onActive() {}
 
   @OnQueueCompleted()
-  onCompleted(job: Job, result: any) {
-    this.logger.log(`✅ Job ${job.id} completed - Result: ${JSON.stringify(result)}`);
-  }
+  onCompleted() {}
 
   @OnQueueFailed()
   onFailed(job: Job, error: Error) {
@@ -39,7 +33,6 @@ export class SendEmailNotificationsJob implements OnModuleInit {
       this.logger.log(`🚚 Processing queued emails: ${pendingEmails.length}`);
 
       if (pendingEmails.length === 0) {
-        this.logger.log('ℹ️ No pending emails to process');
         return { sent: 0 };
       }
 
@@ -49,7 +42,6 @@ export class SendEmailNotificationsJob implements OnModuleInit {
         sent += 1;
       }
 
-      this.logger.log(`✅ Queued emails processed: ${sent}`);
       return { sent };
     } catch (error: unknown) {
       // eslint-disable-next-line @typescript-eslint/restrict-template-expressions

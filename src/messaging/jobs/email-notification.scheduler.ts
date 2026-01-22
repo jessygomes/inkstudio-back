@@ -14,18 +14,6 @@ export class EmailNotificationScheduler implements OnModuleInit {
    * Initialise le scheduler au démarrage du module
    */
   async onModuleInit(): Promise<void> {
-    this.logger.log('EmailNotificationScheduler initialized');
-
-    // Log des events Bull pour diagnostiquer en prod
-    this.emailQueue.on('failed', (job, err) => {
-      this.logger.error(`❌ Job failed: ${job.id} - ${job.name} - ${err?.message ?? err}`);
-    });
-    this.emailQueue.on('completed', (job) => {
-      this.logger.log(`✅ Job completed: ${job.id} - ${job.name}`);
-    });
-    this.emailQueue.on('active', (job) => {
-      this.logger.log(`▶️ Job active: ${job.id} - ${job.name}`);
-    });
 
     // Créer un job récurrent qui s'exécute toutes les 5 minutes
     await this.scheduleEmailNotifications();
@@ -40,7 +28,6 @@ export class EmailNotificationScheduler implements OnModuleInit {
         removeOnFail: true,
       },
     );
-    this.logger.log('🚀 Email notification job triggered once at startup');
   }
 
   /**
