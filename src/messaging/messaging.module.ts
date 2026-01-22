@@ -9,6 +9,7 @@ import { MessagesService } from './messages/messages.service';
 import { MessageNotificationService } from './notifications/message-notification.service';
 import { NotificationPreferenceService } from './notifications/notification-preference.service';
 import { NotificationPreferencesController } from './notifications/notification-preferences.controller';
+import { TestEmailNotificationController } from './notifications/test-email-notification.controller';
 import { EmailNotificationService } from './notifications/email-notification.service';
 import { ConversationAccessGuard } from './conversations/guards/conversation-access.guard';
 import { MessageAccessGuard } from './messages/guards/message-access.guard';
@@ -41,6 +42,7 @@ import { JwtModule } from '@nestjs/jwt';
     ConversationsController,
     MessagesController,
     NotificationPreferencesController,
+    TestEmailNotificationController,
   ],
   providers: [
     ConversationsService,

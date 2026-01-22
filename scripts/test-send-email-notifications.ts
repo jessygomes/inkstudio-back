@@ -1,178 +1,105 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { PrismaService } from '../../database/prisma.service';
-import { NotificationPreferenceService } from './notification-preference.service';
-import { MailgunService } from '../../email/mailgun.service';
-import { RedisRateLimiterService } from '../../redis/redis-rate-limiter.service';
-import { Message, User } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
+import Mailgun from 'mailgun.js';
+import * as formData from 'form-data';
 
-@Injectable()
-export class EmailNotificationService {
-  private readonly logger = new Logger('EmailNotificationService');
+const prisma = new PrismaClient();
 
-  constructor(
-    public readonly prisma: PrismaService,
-    private readonly notificationPreferenceService: NotificationPreferenceService,
-    private readonly mailgunService: MailgunService,
-    private readonly redisRateLimiterService: RedisRateLimiterService,
-  ) {}
+async function sendEmailNotifications() {
+  console.log('🔍 Recherche des emails en attente...\n');
 
-  /**
-   * Vérifie si une notification doit être envoyée (hors-ligne, prefs, rate limit)
-   */
-  async shouldSendNotification(
-    conversationId: string,
-    recipientUserId: string,
-  ): Promise<boolean> {
-    const prefs = await this.notificationPreferenceService.getPreferences(
-      recipientUserId,
-    );
-
-    if (!prefs.emailNotificationsEnabled) return false;
-    if (prefs.mutedConversations.includes(conversationId)) return false;
-
-    // Redis-based rate limiting (faster than database query)
-    const canSend = await this.redisRateLimiterService.canSendEmail(
-      conversationId,
-      recipientUserId,
-    );
-
-    return canSend;
-  }
-
-  /**
-   * Ajoute en file d'attente une notification email
-   */
-  async queueNotification(
-    conversationId: string,
-    recipientUserId: string,
-  ): Promise<void> {
-    const existing = await this.prisma.emailNotificationQueue.findFirst({
-      where: {
-        conversationId,
-        recipientUserId,
-        status: 'PENDING',
-      },
-    });
-
-    if (existing) {
-      await this.prisma.emailNotificationQueue.update({
-        where: { id: existing.id },
-        data: { messageCount: existing.messageCount + 1 },
-      });
-      return;
-    }
-
-    await this.prisma.emailNotificationQueue.create({
-      data: {
-        conversationId,
-        recipientUserId,
-        messageCount: 1,
-      },
-    });
-  }
-
-  /**
-   * Envoie l'email et marque l'entrée comme SENT/FAILED
-   */
-  async sendNotification(queueId: string): Promise<void> {
-    const queue = await this.prisma.emailNotificationQueue.findUnique({
-      where: { id: queueId },
-      include: {
-        conversation: {
-          include: {
-            salon: true,
-            clientUser: true,
-            messages: {
-              orderBy: { createdAt: 'desc' },
-              take: 3,
+  const pendingEmails = await prisma.emailNotificationQueue.findMany({
+    where: { status: 'PENDING' },
+    include: {
+      conversation: {
+        include: {
+          salon: {
+            select: {
+              id: true,
+              email: true,
+              salonName: true,
+              firstName: true,
             },
+          },
+          clientUser: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+          messages: {
+            orderBy: { createdAt: 'desc' },
+            take: 3,
           },
         },
       },
-    });
+    },
+  });
 
-    if (!queue) return;
+  console.log(`📧 ${pendingEmails.length} email(s) en attente\n`);
 
-    const { conversation, recipientUserId, messageCount } = queue;
-    const recipient: User | null =
-      conversation.clientUserId === recipientUserId
-        ? conversation.clientUser
-        : conversation.salon;
-
-    const sender: User | null =
-      conversation.clientUserId === recipientUserId
-        ? conversation.salon
-        : conversation.clientUser;
-
-    if (!recipient || !sender) {
-      await this.prisma.emailNotificationQueue.update({
-        where: { id: queueId },
-        data: { status: 'FAILED', failureReason: 'Missing recipient or sender' },
-      });
-      return;
-    }
-
-    const subject =
-      messageCount > 1
-        ? `${messageCount} nouveaux messages de ${sender.salonName || sender.firstName}`
-        : `Nouveau message de ${sender.salonName || sender.firstName}`;
-
-    const html = this.generateEmailHTML({
-      recipientName: recipient.firstName || 'Bonjour',
-      senderName: sender.salonName || sender.firstName || 'Un contact',
-      messageCount,
-      conversationLink: `${process.env.FRONTEND_URL}/conversations/${conversation.id}`,
-      latestMessages: conversation.messages,
-    });
-
-    try {
-      await this.mailgunService.sendEmail({
-        from: `Inkera Studio <noreply@${process.env.MAILGUN_DOMAIN}>`,
-        to: recipient.email,
-        subject,
-        html,
-      });
-
-      await this.prisma.emailNotificationQueue.update({
-        where: { id: queueId },
-        data: {
-          status: 'SENT',
-          sentAt: new Date(),
-        },
-      });
-
-      // Record rate limit in Redis
-      void this.redisRateLimiterService.recordEmailSent(
-        conversation.id,
-        recipientUserId,
-        3600, // 1 hour
-      );
-    } catch (error: unknown) {
-      await this.prisma.emailNotificationQueue.update({
-        where: { id: queueId },
-        data: {
-          status: 'FAILED',
-          failureReason: this.getErrorMessage(error),
-        },
-      });
-    }
+  if (pendingEmails.length === 0) {
+    console.log('✅ Aucun email à envoyer');
+    return;
   }
 
-  /**
-   * Construit le HTML d'email avec le template standard
-   */
-  private generateEmailHTML(data: {
-    recipientName: string;
-    senderName: string;
-    messageCount: number;
-    conversationLink: string;
-    latestMessages: Message[];
-  }): string {
-    const { recipientName, senderName, messageCount, conversationLink, latestMessages } = data;
+  // Configuration Mailgun
+  const mailgun = new Mailgun(formData);
+  const mg = mailgun.client({
+    username: 'api',
+    key: process.env.MAILGUN_API_KEY || '',
+    url: process.env.MAILGUN_BASE_URL || 'https://api.mailgun.net',
+  });
 
-    const messagesHtml = latestMessages
-      .map(
-        (msg) => `
+  let sent = 0;
+  let failed = 0;
+
+  for (const queue of pendingEmails) {
+    const { conversation, recipientUserId, messageCount } = queue;
+
+    try {
+      // Déterminer l'expéditeur et le destinataire
+      const recipient =
+        conversation.clientUserId === recipientUserId
+          ? conversation.clientUser
+          : conversation.salon;
+
+      const sender =
+        conversation.clientUserId === recipientUserId
+          ? conversation.salon
+          : conversation.clientUser;
+
+      if (!recipient || !sender) {
+        console.log(
+          `❌ Email ${queue.id}: Destinataire ou expéditeur manquant`,
+        );
+        await prisma.emailNotificationQueue.update({
+          where: { id: queue.id },
+          data: {
+            status: 'FAILED',
+            failureReason: 'Missing recipient or sender',
+          },
+        });
+        failed++;
+        continue;
+      }
+
+      const recipientName = recipient.firstName || 'Bonjour';
+      const senderName =
+        'salonName' in sender
+          ? sender.salonName || sender.firstName || 'Un contact'
+          : sender.firstName || 'Un contact';
+
+      const subject =
+        messageCount > 1
+          ? `${messageCount} nouveaux messages de ${senderName}`
+          : `Nouveau message de ${senderName}`;
+
+      // Générer le HTML avec le template design
+      const messagesHtml = conversation.messages
+        .map(
+          (msg) => `
           <div style="padding: 15px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.2);">
             <div style="color: rgba(255, 255, 255, 0.8); font-size: 12px; margin-bottom: 5px;">
               ${new Date(msg.createdAt).toLocaleString('fr-FR')}
@@ -182,10 +109,12 @@ export class EmailNotificationService {
             </div>
           </div>
         `,
-      )
-      .join('');
+        )
+        .join('');
 
-    const content = `
+      const conversationLink = `${process.env.FRONTEND_URL}/conversations/${conversation.id}`;
+
+      const content = `
       <div class="content">
         <div class="greeting">
           Bonjour ${recipientName},
@@ -224,20 +153,13 @@ export class EmailNotificationService {
       </div>
     `;
 
-    return this.getBaseTemplate(content, 'Nouveau message', senderName);
-  }
-
-  /**
-   * Template de base avec le design cohérent du site
-   */
-  private getBaseTemplate(content: string, title: string = 'Inkera Studio', salonName: string = 'Inkera Studio'): string {
-    return `
+      const html = `
       <!DOCTYPE html>
       <html lang="fr">
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>${title}</title>
+        <title>Nouveau message</title>
         <link href="https://fonts.googleapis.com/css2?family=Didact+Gothic&family=Exo+2:wght@300;400;500;600;700&family=Montserrat+Alternates:wght@400;500;600;700&display=swap" rel="stylesheet">
         <style>
           * {
@@ -395,27 +317,73 @@ export class EmailNotificationService {
       <body>
         <div class="email-container">
           <div class="header">
-            <div class="logo">${salonName}</div>
+            <div class="logo">${senderName}</div>
             <div class="tagline">Messagerie</div>
           </div>
           ${content}
           <div class="footer">
             <div class="footer-content">
-              <p><strong>${salonName}</strong></p>
+              <p><strong>${senderName}</strong></p>
             </div>
           </div>
         </div>
       </body>
       </html>
     `;
+
+      console.log(`📤 Envoi email à ${recipient.email}...`);
+      console.log(`   Sujet: ${subject}`);
+      console.log(`   Messages: ${messageCount}`);
+
+      // Envoyer l'email
+      await mg.messages.create(process.env.MAILGUN_DOMAIN || '', {
+        from: `Tattoo Studio <noreply@${process.env.MAILGUN_DOMAIN}>`,
+        to: [recipient.email],
+        subject,
+        html,
+      });
+
+      // Marquer comme envoyé
+      await prisma.emailNotificationQueue.update({
+        where: { id: queue.id },
+        data: {
+          status: 'SENT',
+          sentAt: new Date(),
+        },
+      });
+
+      console.log(`✅ Email envoyé avec succès!\n`);
+      sent++;
+    } catch (error) {
+      console.error(`❌ Erreur lors de l'envoi de l'email ${queue.id}:`, error);
+
+      await prisma.emailNotificationQueue.update({
+        where: { id: queue.id },
+        data: {
+          status: 'FAILED',
+          failureReason: error instanceof Error ? error.message : String(error),
+        },
+      });
+      failed++;
+    }
   }
 
-  /**
-   * Normalise une erreur inconnue en message lisible
-   */
-  private getErrorMessage(error: unknown): string {
-    if (error instanceof Error) return error.message;
-    if (typeof error === 'string') return error;
-    return 'Erreur inconnue';
-  }
+  console.log('\n📊 Résumé:');
+  console.log(`   ✅ Envoyés: ${sent}`);
+  console.log(`   ❌ Échoués: ${failed}`);
+  console.log(`   📧 Total: ${pendingEmails.length}`);
 }
+
+// Exécuter le script
+sendEmailNotifications()
+  .then(() => {
+    console.log('\n✨ Script terminé');
+    process.exit(0);
+  })
+  .catch((error) => {
+    console.error('\n💥 Erreur fatale:', error);
+    process.exit(1);
+  })
+  .finally(() => {
+    prisma.$disconnect();
+  });

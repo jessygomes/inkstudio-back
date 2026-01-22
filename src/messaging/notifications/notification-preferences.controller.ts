@@ -19,7 +19,7 @@ import {
 } from './dto/notification-preference.dto';
 
 interface RequestWithUser extends Request {
-  user?: { id: string };
+  user?: { userId: string };
 }
 
 @Controller('notification-preferences')
@@ -38,12 +38,10 @@ export class NotificationPreferencesController {
   async getPreferences(
     @Request() req: RequestWithUser,
   ): Promise<NotificationPreferenceResponseDto> {
-    const userId = req.user?.id;
+    const userId = req.user?.userId;
     if (!userId) {
       throw new Error('User ID not found in request');
     }
-
-    this.logger.log(`Fetching notification preferences for user ${userId}`);
     return this.notificationPreferenceService.getPreferences(userId);
   }
 
@@ -55,12 +53,10 @@ export class NotificationPreferencesController {
     @Request() req: RequestWithUser,
     @Body() dto: UpdateNotificationPreferenceDto,
   ): Promise<NotificationPreferenceResponseDto> {
-    const userId = req.user?.id;
+    const userId = req.user?.userId;
     if (!userId) {
       throw new Error('User ID not found in request');
     }
-
-    this.logger.log(`Updating notification preferences for user ${userId}`, dto);
     return this.notificationPreferenceService.updatePreferences(userId, dto);
   }
 
@@ -72,7 +68,7 @@ export class NotificationPreferencesController {
     @Request() req: RequestWithUser,
     @Body() dto: MuteConversationDto,
   ): Promise<void> {
-    const userId = req.user?.id;
+    const userId = req.user?.userId;
     if (!userId) {
       throw new Error('User ID not found in request');
     }
@@ -94,7 +90,7 @@ export class NotificationPreferencesController {
     @Request() req: RequestWithUser,
     @Param('conversationId') conversationId: string,
   ): Promise<void> {
-    const userId = req.user?.id;
+    const userId = req.user?.userId;
     if (!userId) {
       throw new Error('User ID not found in request');
     }

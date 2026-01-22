@@ -17,7 +17,10 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:send-emails": "ts-node -r tsconfig-paths/register scripts/test-send-email-notifications.ts",
+    "check:email-queue": "ts-node -r tsconfig-paths/register scripts/check-email-queue.ts",
+    "reset:failed-emails": "ts-node -r tsconfig-paths/register scripts/reset-failed-emails.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^0.10.4",

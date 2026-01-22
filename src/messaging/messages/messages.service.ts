@@ -148,6 +148,15 @@ export class MessagesService {
 
       // Décrémenter le compteur de notifications
       await this.notificationService.resetUnreadCount(conversationId, userId);
+
+      // Annuler les emails en attente si l'utilisateur a lu les messages
+      await this.prisma.emailNotificationQueue.deleteMany({
+        where: {
+          conversationId,
+          recipientUserId: userId,
+          status: 'PENDING',
+        },
+      });
     }
 
     const data = messages.map((msg) => this.mapToResponseDto(msg));
