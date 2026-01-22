@@ -18,6 +18,18 @@ export class EmailNotificationScheduler implements OnModuleInit {
 
     // Créer un job récurrent qui s'exécute toutes les 5 minutes
     await this.scheduleEmailNotifications();
+
+    // Lancer une exécution immédiate au démarrage pour vider les envois en attente
+    await this.emailQueue.add(
+      'send-queued',
+      {},
+      {
+        jobId: 'send-email-notifications-once',
+        removeOnComplete: true,
+        removeOnFail: true,
+      },
+    );
+    this.logger.log('🚀 Email notification job triggered once at startup');
   }
 
   /**

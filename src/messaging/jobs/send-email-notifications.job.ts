@@ -1,23 +1,35 @@
 import { Process, Processor } from '@nestjs/bull';
+import { Logger } from '@nestjs/common';
 import { EmailNotificationService } from '../notifications/email-notification.service';
 
 @Processor('email-notifications')
 export class SendEmailNotificationsJob {
+  private readonly logger = new Logger('SendEmailNotificationsJob');
+
   constructor(private readonly emailNotificationService: EmailNotificationService) {}
 
   @Process('send-queued')
   async sendQueued(): Promise<{ sent: number }> {
-    const pendingEmails = await this.emailNotificationService.prisma.emailNotificationQueue.findMany({
-      where: { status: 'PENDING' },
-      select: { id: true },
-    });
+    try {
+      const pendingEmails = await this.emailNotificationService.prisma.emailNotificationQueue.findMany({
+        where: { status: 'PENDING' },
+        select: { id: true },
+      });
 
-    let sent = 0;
-    for (const email of pendingEmails) {
-      await this.emailNotificationService.sendNotification(email.id);
-      sent += 1;
+      this.logger.log(`🚚 Processing queued emails: ${pendingEmails.length}`);
+
+      let sent = 0;
+      for (const email of pendingEmails) {
+        await this.emailNotificationService.sendNotification(email.id);
+        sent += 1;
+      }
+
+      this.logger.log(`✅ Queued emails processed: ${sent}`);
+      return { sent };
+    } catch (error: unknown) {
+      // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
+      this.logger.error(`❌ Failed processing queued emails: ${error instanceof Error ? error.message : error}`);
+      return { sent: 0 };
     }
-
-    return { sent };
   }
 }
