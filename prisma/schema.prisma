@@ -80,7 +80,7 @@ model User {
   // Nouvelle relation pour les RDV pris en tant que client connecté
   appointmentsAsClient      Appointment[]        @relation("ClientUserAppointments")
 
-  linkedClientProfile Client?              @relation("LinkedClientProfile")
+  linkedClientProfiles      Client[]             @relation("LinkedClientProfile")
 
   // Propriétés pour la messagerie
   conversationsAsSalon      Conversation[]        @relation("SalonConversations")
@@ -297,10 +297,11 @@ model Client {
   tattooDetails      TattooDetail[]
   tattooHistory      TattooHistory[]
 
-  linkedUserId       String?              @unique
-  linkedUser         User?                @relation("LinkedClientProfile", fields: [linkedUserId], references: [id])
+  linkedUserId       String?
+  linkedUser         User?                @relation("LinkedClientProfile", fields: [linkedUserId], references: [id], onDelete: SetNull)
 
   @@unique([userId, email])
+  @@index([linkedUserId])
 }
 
 model MedicalHistory {

@@ -251,6 +251,7 @@ export class UserService {
           salonHours: true,
           prestations: true,
           appointmentBookingEnabled: true,
+          addConfirmationEnabled: true,
           colorProfile: true,
           colorProfileBis: true,
           saasPlan: true,

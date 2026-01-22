@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CreateAppointmentDto, PrestationType } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
@@ -16,6 +16,7 @@ import { ConversationsService } from 'src/messaging/conversations/conversations.
 
 @Injectable()
 export class AppointmentsService {
+  private readonly logger = new Logger('AppointmentsService');
   constructor(
     private readonly prisma: PrismaService, 
     private readonly mailService: MailService, 
@@ -538,7 +539,7 @@ export class AppointmentsService {
   //! CREER UN RDV PAR UN CLIENT (sans authentification)
 
   //! ------------------------------------------------------------------------------
-  async createByClient({ userId, rdvBody }: {userId: string | undefined, rdvBody: CreateAppointmentDto}) {
+  async createByClient({ userId, rdvBody, clientUserId }: {userId: string | undefined, rdvBody: CreateAppointmentDto & { clientUserId?: string }, clientUserId?: string}) {
     try {
       // Vérifier que userId est fourni
       if (!userId) {
@@ -556,66 +557,116 @@ export class AppointmentsService {
       // Convertir la date de naissance en objet Date si elle est fournie
       const parsedBirthdate = clientBirthdate ? new Date(clientBirthdate) : null;
 
-      // Vérifier si le tatoueur existe
-      const artist = await this.prisma.tatoueur.findUnique({
-        where: {
-          id: tatoueurId,
-        },
-      });
+      // Vérifier si le tatoueur existe (seulement si un tatoueurId est fourni)
+      let artist: { id: string; name: string } | null = null;
+      if (tatoueurId) {
+        artist = await this.prisma.tatoueur.findUnique({
+          where: {
+            id: tatoueurId,
+          },
+          select: {
+            id: true,
+            name: true,
+          },
+        });
 
-      if (!artist) {
-        return {
-          error: true,
-          message: 'Tatoueur introuvable.',
-        };
-      }
+        if (!artist) {
+          return {
+            error: true,
+            message: 'Tatoueur introuvable.',
+          };
+        }
 
-      // Vérifier si il y a deja un rendez-vous à ce créneau horaire avec ce tatoueur
-      const existingAppointment = await this.prisma.appointment.findFirst({
-        where: {
-          tatoueurId: tatoueurId,
-          status: { in: ['PENDING', 'CONFIRMED', 'RESCHEDULING'] }, // Exclure les rendez-vous annulés
-          OR: [
-            {
-              start: { lt: new Date(end) },
-              end: { gt: new Date(start) },
-            },
-          ],
-        },
-      });
+        // Vérifier si il y a deja un rendez-vous à ce créneau horaire avec ce tatoueur
+        const existingAppointment = await this.prisma.appointment.findFirst({
+          where: {
+            tatoueurId: tatoueurId,
+            status: { in: ['PENDING', 'CONFIRMED', 'RESCHEDULING'] }, // Exclure les rendez-vous annulés
+            OR: [
+              {
+                start: { lt: new Date(end) },
+                end: { gt: new Date(start) },
+              },
+            ],
+          },
+        });
 
-      if (existingAppointment) {
-        return {
-          error: true,
-          message: 'Ce créneau horaire est déjà réservé.',
-        };
+        if (existingAppointment) {
+          return {
+            error: true,
+            message: 'Ce créneau horaire est déjà réservé.',
+          };
+        }
       }
 
       // Vérifier s'il existe un utilisateur connecté avec cet email (role="client")
-      const clientUser = await this.prisma.user.findUnique({
-        where: {
-          email: clientEmail,
-          role: 'client',
-        },
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          phone: true,
-          clientProfile: {
+      const effectiveClientUserId = clientUserId ?? rdvBody?.clientUserId;
+      const clientUser = effectiveClientUserId
+        ? await this.prisma.user.findUnique({
+            where: { id: effectiveClientUserId },
             select: {
-              birthDate: true
-            }
-          }
-        }
-      });
+              id: true,
+              firstName: true,
+              lastName: true,
+              phone: true,
+              role: true,
+              clientProfile: {
+                select: {
+                  birthDate: true,
+                },
+              },
+            },
+          })
+        : await this.prisma.user.findUnique({
+            where: {
+              email: clientEmail,
+              role: 'client',
+            },
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              phone: true,
+              role: true,
+              clientProfile: {
+                select: {
+                  birthDate: true,
+                },
+              },
+            },
+          });
 
-      let client = await this.prisma.client.findFirst({
-        where: {
-          email: clientEmail,
-          userId: userId, // Pour que chaque salon ait ses propres clients
-        },
-      });
+      // Chercher le client dans la base de données
+      // Chaque salon doit avoir sa propre fiche client
+      // Si le client est connecté (linkedUserId), on peut avoir plusieurs fiches (une par salon)
+      let client: {
+        id: string;
+        firstName: string;
+        lastName: string;
+        email: string;
+        phone: string;
+        linkedUserId: string | null;
+      } | null = null;
+      
+      if (clientUser) {
+        // Si un utilisateur client connecté existe, chercher une fiche pour CE salon avec ce linkedUserId
+        client = await this.prisma.client.findFirst({
+          where: {
+            linkedUserId: clientUser.id,
+            userId: userId, // Fiche client spécifique à ce salon
+          },
+        });
+      }
+      
+      // Si pas trouvé par linkedUserId, chercher par email pour ce salon
+      if (!client) {
+        client = await this.prisma.client.findFirst({
+          where: {
+            email: clientEmail,
+            userId: userId, // Pour que chaque salon ait ses propres clients
+          },
+        });
+      }
 
       if (!client) {
         // Créer le client s'il n'existe pas
@@ -828,7 +879,7 @@ export class AppointmentsService {
                 })}`,
                 service: newAppointment.prestation,
                 title: newAppointment.title,
-                tatoueur: artist.name,
+                tatoueur: artist?.name || 'À définir',
                 visio: visio || false,
                 visioRoom: generatedVisioRoom
               }
@@ -857,7 +908,7 @@ export class AppointmentsService {
                 })}`,
                 service: newAppointment.prestation,
                 title: newAppointment.title,
-                tatoueur: artist.name,
+                tatoueur: artist?.name || 'À définir',
                 clientEmail: client.email,
                 clientPhone: client.phone,
                 visio: visio || false,
@@ -866,6 +917,39 @@ export class AppointmentsService {
             },
             salon.salonName || undefined
           );
+        }
+
+        // Créer une conversation automatiquement dès qu'on a un userId côté client
+        const conversationClientUserId = effectiveClientUserId || client.linkedUserId;
+
+        if (conversationClientUserId) {
+          const existingConversation = await this.prisma.conversation.findUnique({
+            where: { appointmentId: newAppointment.id },
+            select: { id: true },
+          });
+
+          if (existingConversation) {
+            // Conversation déjà existante, pas de création
+          } else {
+            try {
+              const prestationLabel = prestation === PrestationType.PROJET ? 'Projet tatouage' :
+                prestation === PrestationType.TATTOO ? 'Tatouage' :
+                prestation === PrestationType.PIERCING ? 'Piercing' :
+                prestation === PrestationType.RETOUCHE ? 'Retouche' : prestation;
+              const statusMessage = appointmentStatus === 'PENDING' 
+                ? 'Votre demande de rendez-vous a bien été enregistrée et est en attente de confirmation par le salon.'
+                : 'Votre rendez-vous a été confirmé automatiquement !';
+
+              await this.conversationsService.createConversation(userId, {
+                clientUserId: conversationClientUserId,
+                appointmentId: newAppointment.id,
+                subject: `RDV ${prestationLabel} - ${newAppointment.start.toLocaleDateString('fr-FR')}`,
+                firstMessage: `Bonjour ${client.firstName}, ${statusMessage} N'hésitez pas à nous contacter pour toute question.`
+              });
+            } catch (conversationError) {
+              console.error('⚠️ Erreur lors de la création de la conversation:', conversationError);
+            }
+          }
         }
       
         return {
@@ -950,7 +1034,7 @@ export class AppointmentsService {
               })}`,
               service: newAppointment.prestation,
               title: newAppointment.title,
-              tatoueur: artist.name,
+              tatoueur: artist?.name || 'À définir',
               visio: visio || false,
               visioRoom: generatedVisioRoom
             }
@@ -979,7 +1063,7 @@ export class AppointmentsService {
               })}`,
               service: newAppointment.prestation,
               title: newAppointment.title,
-              tatoueur: artist.name,
+              tatoueur: artist?.name || 'À définir',
               clientEmail: client.email,
               clientPhone: client.phone,
               visio: visio || false,
@@ -990,28 +1074,48 @@ export class AppointmentsService {
         );
       }
 
-      // Créer une conversation automatiquement si le client est connecté
-      if (clientUser?.id) {
-        try {
-          const prestationLabel = prestation === PrestationType.PROJET ? 'Projet tatouage' :
-            prestation === PrestationType.TATTOO ? 'Tatouage' :
-            prestation === PrestationType.PIERCING ? 'Piercing' :
-            prestation === PrestationType.RETOUCHE ? 'Retouche' : prestation;
+      // Créer une conversation automatiquement dès qu'on a un userId côté client
+      const conversationClientUserId = effectiveClientUserId || client.linkedUserId;
+
+      if (conversationClientUserId) {
+        // Vérifier s'il existe déjà une conversation pour ce RDV
+        const existingConversation = await this.prisma.conversation.findUnique({
+          where: { appointmentId: newAppointment.id },
+          select: { id: true },
+        });
+
+        if (existingConversation) {
+          this.logger.log(`[Appointment] Conversation already exists for appointment ${newAppointment.id} (conversationId=${existingConversation.id}), skipping creation.`);
+          console.log('[Appointment] Conversation already exists, skipping creation:', existingConversation.id);
+        } else {
+          try {
+            const prestationLabel = prestation === PrestationType.PROJET ? 'Projet tatouage' :
+              prestation === PrestationType.TATTOO ? 'Tatouage' :
+              prestation === PrestationType.PIERCING ? 'Piercing' :
+              prestation === PrestationType.RETOUCHE ? 'Retouche' : prestation;
+            
+            const statusMessage = appointmentStatus === 'PENDING' 
+              ? `Votre demande de rendez-vous a bien été enregistrée et est en attente de confirmation par le salon.`
+              : `Votre rendez-vous a été confirmé automatiquement !`;
+            
+            this.logger.log(`[Appointment] Creating conversation for clientUserId=${conversationClientUserId}, appointment=${newAppointment.id}`);
+            console.log('[Appointment] Creating conversation for', conversationClientUserId, 'appointment', newAppointment.id);
+            await this.conversationsService.createConversation(userId, {
+              clientUserId: conversationClientUserId,
+              appointmentId: newAppointment.id,
+              subject: `RDV ${prestationLabel} - ${newAppointment.start.toLocaleDateString('fr-FR')}`,
+              firstMessage: `Bonjour ${client.firstName}, ${statusMessage} N'hésitez pas à nous contacter pour toute question.`,
+            });
+            this.logger.log(`[Appointment] Conversation created successfully for appointment ${newAppointment.id}`);
+            console.log('[Appointment] Conversation created successfully for appointment', newAppointment.id);
+          } catch (conversationError) {
           
-          const statusMessage = appointmentStatus === 'PENDING' 
-            ? `Votre demande de rendez-vous a bien été enregistrée et est en attente de confirmation par le salon.`
-            : `Votre rendez-vous a été confirmé automatiquement !`;
-          
-          await this.conversationsService.createConversation(userId, {
-            clientUserId: clientUser.id,
-            appointmentId: newAppointment.id,
-            subject: `RDV ${prestationLabel} - ${newAppointment.start.toLocaleDateString('fr-FR')}`,
-            firstMessage: `Bonjour ${client.firstName}, ${statusMessage} N'hésitez pas à nous contacter pour toute question.`,
-          });
-        } catch (conversationError) {
-          console.error('⚠️ Erreur lors de la création de la conversation:', conversationError);
-          // Ne pas faire échouer la création du RDV si la conversation échoue
+            console.error('⚠️ Erreur lors de la création de la conversation:', conversationError);
+            // Ne pas faire échouer la création du RDV si la conversation échoue
+          }
         }
+      } else {
+        this.logger.warn(`[Appointment] Aucun clientUserId résolu, conversation non créée (appointment=${newAppointment.id})`);
       }
 
       return {
@@ -1023,6 +1127,7 @@ export class AppointmentsService {
         status: appointmentStatus,
       };
     } catch (error: unknown) {
+      this.logger.error('createByClient failed', error as any);
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       return {
         error: true,
@@ -1393,6 +1498,53 @@ export class AppointmentsService {
     };
   }
 }
+
+  //! ------------------------------------------------------------------------------
+
+  //! RECUPERER LES RDV D'UN SALON PAR DATE 
+
+  //! ------------------------------------------------------------------------------
+  async getAppointmentsBySalonRange(salonId: string, startDate: string, endDate: string) {
+    try {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+
+      const appointments = await this.prisma.appointment.findMany({
+        where: {
+          userId: salonId,
+          status: {
+            not: 'CANCELED' // Exclure les rendez-vous annulés
+          },
+          start: {
+            gte: start,
+            lt: end,
+          },
+        },
+        select: {
+          id: true,
+          start: true,
+          end: true,
+          title: true,
+          prestation: true,
+          status: true,
+          tatoueur: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      });
+
+      return appointments ?? [];
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
 
   //! ------------------------------------------------------------------------------
 
@@ -1900,16 +2052,32 @@ export class AppointmentsService {
       },
       });
 
+      // Récupérer les informations du salon
+      const salon = await this.prisma.user.findUnique({
+        where: { id: existingAppointment.userId },
+        select: { salonName: true, email: true }
+      });
 
+      // Créer une conversation si le client connecté existe (clientUserId)
+      if (existingAppointment.clientUserId) {
+        try {
+          await this.conversationsService.createConversation(
+            existingAppointment.userId, // salonId
+            {
+              clientUserId: existingAppointment.clientUserId,
+              appointmentId: appointment.id,
+              subject: `Rendez-vous ${appointment.prestation}`,
+              firstMessage: `Bonjour ${appointment.client?.firstName}, votre rendez-vous a été confirmé ! N'hésitez pas à nous contacter pour toute question.`,
+            }
+          );
+        } catch (conversationError) {
+          // Log mais ne bloque pas la confirmation du RDV
+          console.error('Erreur lors de la création de la conversation:', conversationError);
+        }
+      }
 
       // Envoi d'un mail de confirmation au client (si le client existe)
       if (appointment.client) {
-        // Récupérer les informations du salon
-        const salon = await this.prisma.user.findUnique({
-          where: { id: existingAppointment.userId },
-          select: { salonName: true, email: true }
-        });
-
         await this.mailService.sendAppointmentConfirmation(
           appointment.client.email,
           {
@@ -1994,6 +2162,48 @@ export class AppointmentsService {
       tatoueur: true,
     },
   });
+
+  // Gérer la conversation associée au RDV annulé
+  try {
+    const conversation = await this.prisma.conversation.findFirst({
+      where: { appointmentId: id },
+      include: {
+        messages: {
+          select: { id: true },
+        },
+      },
+    });
+
+    if (conversation) {
+      const messageCount = conversation.messages.length;
+
+      if (messageCount < 5) {
+        // Supprimer la conversation si elle a moins de 5 messages
+        await this.prisma.conversation.delete({
+          where: { id: conversation.id },
+        });
+      } else {
+        // Archiver la conversation et ajouter un message système
+        await this.prisma.conversation.update({
+          where: { id: conversation.id },
+          data: { status: 'ARCHIVED' },
+        });
+
+        // Ajouter un message système
+        await this.prisma.message.create({
+          data: {
+            conversationId: conversation.id,
+            senderId: existingAppointment.userId,
+            content: 'Ce rendez-vous a été annulé.',
+            type: 'SYSTEM',
+          },
+        });
+      }
+    }
+  } catch (conversationError) {
+    console.error('⚠️ Erreur lors de la gestion de la conversation:', conversationError);
+    // Ne pas bloquer l'annulation du RDV si la conversation échoue
+  }
 
   // Envoyer un email d'annulation au client (si le client existe)
   if (appointment.client) {
@@ -2122,6 +2332,48 @@ async cancelAppointmentByClient(appointmentId: string, clientUserId: string, rea
         status: 'CANCELED'
       }
     });
+
+    // Gérer la conversation associée au RDV annulé
+    try {
+      const conversation = await this.prisma.conversation.findFirst({
+        where: { appointmentId: appointmentId },
+        include: {
+          messages: {
+            select: { id: true },
+          },
+        },
+      });
+
+      if (conversation) {
+        const messageCount = conversation.messages.length;
+
+        if (messageCount < 5) {
+          // Supprimer la conversation si elle a moins de 5 messages
+          await this.prisma.conversation.delete({
+            where: { id: conversation.id },
+          });
+        } else {
+          // Archiver la conversation et ajouter un message système
+          await this.prisma.conversation.update({
+            where: { id: conversation.id },
+            data: { status: 'ARCHIVED' },
+          });
+
+          // Ajouter un message système
+          await this.prisma.message.create({
+            data: {
+              conversationId: conversation.id,
+              senderId: appointment.userId,
+              content: 'Ce rendez-vous a été annulé.',
+              type: 'SYSTEM',
+            },
+          });
+        }
+      }
+    } catch (conversationError) {
+      console.error('⚠️ Erreur lors de la gestion de la conversation:', conversationError);
+      // Ne pas bloquer l'annulation du RDV si la conversation échoue
+    }
 
     // Envoyer un email au salon pour l'informer de l'annulation
     try {

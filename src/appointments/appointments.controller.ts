@@ -24,12 +24,22 @@ export class AppointmentsController {
   }
 
   @Post('by-client')
-  async createByClient(@Body() body: { userId: string; rdvBody: CreateAppointmentDto }) {
-    console.log('Creating appointment by client with body:', body);
-    const { userId, rdvBody } = body;
-    console.log('User ID:', userId);
-    console.log('RDV Body:', rdvBody);
-    return await this.appointmentsService.createByClient({ userId, rdvBody });
+  async createByClient(
+    @Body()
+    body: {
+      userId: string;
+      rdvBody: CreateAppointmentDto & { clientUserId?: string };
+      clientUserId?: string;
+    },
+  ) {
+    const { userId, rdvBody, clientUserId } = body;
+    const resolvedClientUserId = clientUserId ?? rdvBody?.clientUserId;
+    
+    return await this.appointmentsService.createByClient({
+      userId,
+      rdvBody,
+      clientUserId: resolvedClientUserId,
+    });
   }
 
   //! DEMANDE DE RDV CLIENT
@@ -85,6 +95,16 @@ export class AppointmentsController {
       prestation,
       search
     );
+  }
+
+  //! RECUPERER LES RDV D'UN SALON PAR PLAGE DE DATES ✅
+  @Get('salon/:id/range')
+  async getAppointmentsBySalonRange(
+    @Param('id') salonId: string,
+    @Query('start') start: string,
+    @Query('end') end: string
+  ) {
+    return await this.appointmentsService.getAppointmentsBySalonRange(salonId, start, end);
   }
 
   //! VOIR LES RDV DU JOUR POUR DASHBOARD ✅
