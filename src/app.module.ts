@@ -65,9 +65,7 @@ import { MessagingModule } from './messaging/messaging.module';
         host: process.env.REDIS_HOST || 'localhost',
         port: Number(process.env.REDIS_PORT) || 6379,
         password: process.env.REDIS_PASSWORD || undefined,
-        // Configuration pour la stabilité
         connectTimeout: 10000,
-        lazyConnect: true,
       },
     }),
     RedisModule,

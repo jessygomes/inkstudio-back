@@ -1,12 +1,32 @@
-import { Process, Processor } from '@nestjs/bull';
-import { Logger } from '@nestjs/common';
+import { Process, Processor, OnQueueActive, OnQueueCompleted, OnQueueFailed } from '@nestjs/bull';
+import { Logger, OnModuleInit } from '@nestjs/common';
+import { Job } from 'bull';
 import { EmailNotificationService } from '../notifications/email-notification.service';
 
 @Processor('email-notifications')
-export class SendEmailNotificationsJob {
+export class SendEmailNotificationsJob implements OnModuleInit {
   private readonly logger = new Logger('SendEmailNotificationsJob');
 
   constructor(private readonly emailNotificationService: EmailNotificationService) {}
+
+  onModuleInit() {
+    this.logger.log('✅ SendEmailNotificationsJob processor initialized and ready to consume jobs');
+  }
+
+  @OnQueueActive()
+  onActive(job: Job) {
+    this.logger.log(`▶️ Processing job ${job.id} - ${job.name}`);
+  }
+
+  @OnQueueCompleted()
+  onCompleted(job: Job, result: any) {
+    this.logger.log(`✅ Job ${job.id} completed - Result: ${JSON.stringify(result)}`);
+  }
+
+  @OnQueueFailed()
+  onFailed(job: Job, error: Error) {
+    this.logger.error(`❌ Job ${job.id} failed - Error: ${error.message}`);
+  }
 
   @Process('send-queued')
   async sendQueued(): Promise<{ sent: number }> {
