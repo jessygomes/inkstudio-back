@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, Get, Post, Query, Request, UseGuards } from '@nestjs/common';
-import { AuthService } from './auth.service';
+import { AuthService, AuthTokenResponse } from './auth.service';
 import { RequestWithUser } from './jwt.strategy';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { UserService } from 'src/user/user.service';
@@ -28,6 +28,25 @@ export class AuthController {
     return await this.authService.login({ authBody });
   }
 
+  @Post('google') // POST /auth/google
+  async googleLogin(@Body() body: {
+    email: string;
+    firstName?: string;
+    lastName?: string;
+    avatar?: string | null;
+    googleId?: string;
+    idToken?: string;
+    accessToken?: string;
+  }): Promise<AuthTokenResponse> {
+    return await this.authService.loginWithGoogle({
+      email: body.email,
+      firstName: body.firstName,
+      lastName: body.lastName,
+      image: body.avatar,
+      access_token: body.accessToken,
+    });
+  }
+
   @Post('register') // POST /auth/register
   async register(@Body() registerBody: CreateUserDto) { // CreateUserDto est un DTO qui permet de valider les données : la fonction sera exécuté uniquement si les données sont valides
     return await this.authService.register({ registerBody });
@@ -35,10 +54,6 @@ export class AuthController {
 
   @Post('register_client') // POST /auth/register_client
   async registerClient(@Body() registerBody: CreateUserClientDto) {
-    console.log("🔍 Données d'inscription client reçues :", registerBody);
-    console.log("🔍 Type de birthDate :", typeof registerBody.birthDate);
-    console.log("🔍 Type de email :", typeof registerBody.email);
-    
     return await this.authService.registerClient({ registerBody });
   }
 

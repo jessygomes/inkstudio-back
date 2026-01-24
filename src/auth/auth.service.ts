@@ -33,6 +33,30 @@ interface AuthenticatedUser {
   } | null;
 }
 
+export type AuthTokenResponse = {
+  access_token: string;
+  id: string;
+  role: string;
+  email: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  image?: string | null;
+  clientProfile?: {
+    id: string;
+    userId: string;
+    pseudo?: string | null;
+    birthDate?: Date | null;
+    city?: string | null;
+    postalCode?: string | null;
+  } | null;
+  salonName?: string | null;
+  saasPlan?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  verifiedSalon?: boolean | null;
+  salonHours?: string | null;
+};
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -428,7 +452,7 @@ export class AuthService {
   }
 
   // Méthode pour générer un token d'authentification
-  private authenticateUser(user: AuthenticatedUser) {
+  private authenticateUser(user: AuthenticatedUser): AuthTokenResponse {
     const payload: UserPayload = {userId: user.id, role: user.role}
     
     const access_token = this.jwtService.sign(payload);
@@ -459,6 +483,50 @@ export class AuthService {
       verifiedSalon: user.verifiedSalon || false,
       salonHours: user.salonHours || null,
     }
+  }
+
+  // GOOGLE OAUTH - Authentifie/crée l'utilisateur puis retourne le token métier
+  async loginWithGoogle(payload: {
+    email: string;
+    firstName?: string;
+    lastName?: string;
+    image?: string | null;
+    access_token?: string;
+  }): Promise<AuthTokenResponse> {
+    const { email, firstName = '', lastName = '', image = null, access_token } = payload;
+
+    const user = await this.validateGoogleUser({
+      email,
+      firstName,
+      lastName,
+      image: image ?? undefined,
+      access_token: access_token ?? '',
+    });
+
+    return this.authenticateUser({
+      id: user.id,
+      role: user.role,
+      salonName: user.salonName ?? null,
+      email: user.email,
+      firstName: user.firstName ?? null,
+      lastName: user.lastName ?? null,
+      image: user.image ?? null,
+      saasPlan: user.saasPlan ?? null,
+      phone: user.phone ?? null,
+      address: user.address ?? null,
+      verifiedSalon: user.verifiedSalon ?? null,
+      salonHours: user.salonHours ?? null,
+      clientProfile: user.clientProfile
+        ? {
+            id: user.clientProfile.id,
+            userId: user.clientProfile.userId,
+            pseudo: user.clientProfile.pseudo ?? null,
+            birthDate: user.clientProfile.birthDate ?? null,
+            city: user.clientProfile.city ?? null,
+            postalCode: user.clientProfile.postalCode ?? null,
+          }
+        : null,
+    });
   }
 
   //! GOOGLE OAUTH - Validation et création d'utilisateur
