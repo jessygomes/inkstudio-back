@@ -10,8 +10,6 @@ export class BlockedTimeSlotsService {
   //! CRÉER UN CRÉNEAU BLOQUÉ
   async createBlockedSlot(blockedSlotData: CreateBlockedSlotDto, userId: string) {
     try {
-      console.log('Données reçues:', blockedSlotData);
-
       const { startDate, endDate, reason, tatoueurId } = blockedSlotData;
 
       // Validation des données requises
@@ -40,9 +38,6 @@ export class BlockedTimeSlotsService {
           message: 'La date de fin doit être postérieure à la date de début.',
         };
       }
-
-      console.log('Dates converties:', { start, end });
-      console.log('Autres données:', { reason, tatoueurId, userId });
 
       // Créer le créneau bloqué
       const blockedSlot = await this.prisma.blockedTimeSlot.create({

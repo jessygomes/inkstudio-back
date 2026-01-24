@@ -238,7 +238,7 @@ export class PiercingPriceService {
       orderBy: { piercingZone: 'asc' }
     });
 
-    return zones.map(zone => ({
+    return (zones || []).map(zone => ({
       id: zone.id,
       piercingZone: zone.piercingZone,
       isActive: zone.isActive,
@@ -270,6 +270,7 @@ export class PiercingPriceService {
     const allZones = ['OREILLE', 'VISAGE', 'BOUCHE', 'CORPS', 'MICRODERMAL', 'AUTRE'];
     const configuredZoneNames = configuredZones.map(z => z.piercingZone);
     
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     return allZones.filter(zone => !configuredZoneNames.includes(zone as any));
   }
 }
