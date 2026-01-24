@@ -1527,6 +1527,11 @@ export class AppointmentsService {
           title: true,
           prestation: true,
           status: true,
+          conversation: {
+            select: {
+              id: true,
+            },
+          },
           tatoueur: {
             select: {
               id: true,
@@ -2752,6 +2757,11 @@ async cancelAppointmentByClient(appointmentId: string, clientUserId: string, rea
         include: {
           tatoueur: true,
           tattooDetail: true,
+          conversation: {
+            select: {
+              id: true,
+            },
+          },
           client: {
             select: {
               firstName: true,
@@ -3276,6 +3286,11 @@ async cancelAppointmentByClient(appointmentId: string, clientUserId: string, rea
             },
           },
           tattooDetail : true,
+          conversation: {
+            select: {
+              id: true,
+            },
+          },
           client: {
             select: {
               firstName: true,
