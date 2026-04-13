@@ -2,10 +2,13 @@ import { SaasPlan } from '@prisma/client';
 import {
   IsEmail,
   IsEnum,
+  IsIn,
   IsNotEmpty,
+  IsOptional,
   IsString,
   MinLength,
 } from 'class-validator';
+import { CHECKOUT_PLANS, CheckoutPlan } from 'src/stripe/stripe.constants';
 
 //! Schema de validation des données pour la création d'un utilisateur
 
@@ -30,6 +33,12 @@ export class CreateUserDto {
 
   @IsEnum(SaasPlan, { message: 'Vous devez fournir un plan SaaS valide' })
   saasPlan: SaasPlan;
+
+  @IsOptional()
+  @IsIn(CHECKOUT_PLANS, {
+    message: 'Vous devez fournir un plan de checkout valide',
+  })
+  checkoutPlan?: CheckoutPlan;
 
   @IsNotEmpty()
   @MinLength(6, {

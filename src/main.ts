@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
+import * as bodyParser from 'body-parser';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -13,12 +14,15 @@ async function bootstrap() {
     }),
   );
 
+  app.use(
+    '/stripe/webhook',
+    bodyParser.raw({ type: 'application/json' }),
+  );
+
   const corsOptions = {
     origin: [
-      process.env.FRONTEND_URL,
-      process.env.FRONTEND_URL_BIS,
-      process.env.FRONTEND_URL_FR,
-      process.env.FRONTEND_URL_FR_BIS,
+    process.env.FRONT_URL,
+    "http://localhost:3001",
     ],
     credentials: true, // Permet d'envoyer des cookies
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],

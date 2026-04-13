@@ -6,6 +6,7 @@ import { PrismaService } from 'src/database/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import { MailService } from 'src/email/mailer.service';
 import { SaasService } from 'src/saas/saas.service';
+import { StripeService } from 'src/stripe/stripe.service';
 import * as bcrypt from 'bcrypt';
 
 jest.mock('bcrypt', () => ({
@@ -38,15 +39,21 @@ const createMailMock = () => ({
   sendPasswordChangeConfirmation: jest.fn(),
 });
 
+const createStripeMock = () => ({
+  createCheckoutSession: jest.fn(),
+});
+
 describe('AuthService', () => {
   let service: AuthService;
   let prisma: ReturnType<typeof createPrismaMock>;
   let mail: ReturnType<typeof createMailMock>;
+  let stripe: ReturnType<typeof createStripeMock>;
   let jwt: { sign: jest.Mock };
 
   beforeEach(async () => {
     prisma = createPrismaMock();
     mail = createMailMock();
+    stripe = createStripeMock();
     jwt = { sign: jest.fn(() => 'jwt-token') };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -56,6 +63,7 @@ describe('AuthService', () => {
         { provide: JwtService, useValue: jwt },
         { provide: MailService, useValue: mail },
         { provide: SaasService, useValue: {} },
+        { provide: StripeService, useValue: stripe },
       ],
     }).compile();
 
@@ -303,6 +311,48 @@ describe('AuthService', () => {
       expect(result).toEqual({
         message:
           'Votre compte a été créé avec succès. Veuillez vérifier vos emails pour confirmer votre adresse.',
+        checkoutUrl: null,
+        checkoutError: null,
+      });
+    });
+
+    it('returns checkout url when a checkout plan is requested', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.user.create.mockResolvedValue({
+        id: 'new-salon-2',
+        email: 'checkout@example.com',
+        salonName: 'Checkout Studio',
+        saasPlan: 'FREE',
+        firstName: 'Chloe',
+        lastName: 'Martin',
+        phone: '0712345678',
+      });
+      stripe.createCheckoutSession.mockResolvedValue(
+        'https://checkout.stripe.test/session_123',
+      );
+
+      const result = await service.register({
+        registerBody: {
+          email: 'checkout@example.com',
+          salonName: 'Checkout Studio',
+          saasPlan: 'FREE',
+          checkoutPlan: 'PRO',
+          password: 'password123',
+          firstName: 'Chloe',
+          lastName: 'Martin',
+          phone: '0712345678',
+        },
+      });
+
+      expect(stripe.createCheckoutSession).toHaveBeenCalledWith(
+        'new-salon-2',
+        'PRO',
+      );
+      expect(result).toEqual({
+        message:
+          'Votre compte a été créé avec succès. Veuillez vérifier vos emails pour confirmer votre adresse.',
+        checkoutUrl: 'https://checkout.stripe.test/session_123',
+        checkoutError: null,
       });
     });
 

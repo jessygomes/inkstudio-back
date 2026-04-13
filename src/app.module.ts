@@ -38,6 +38,7 @@ import { SalonReviewModule } from './salon-review/salon-review.module';
 import { SalonVerificationModule } from './salon-verification/salon-verification.module';
 import { AdminModule } from './admin/admin.module';
 import { MessagingModule } from './messaging/messaging.module';
+import { StripeModule } from './stripe/stripe.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { MessagingModule } from './messaging/messaging.module';
     // Note: Les queues individuelles sont gérées dans leurs modules respectifs
     FollowUpModule,
     SaasModule,
+    StripeModule,
     BlockedTimeSlotsModule,
     VideoCallModule,
     StocksModule,

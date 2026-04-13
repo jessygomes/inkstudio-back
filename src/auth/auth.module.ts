@@ -8,6 +8,7 @@ import { UserService } from 'src/user/user.service';
 import { MailModule } from 'src/email/mail.module';
 import { SaasModule } from 'src/saas/saas.module';
 import { CacheService } from 'src/redis/cache.service';
+import { StripeModule } from 'src/stripe/stripe.module';
 // import googleOauthConfig from './google-oauth.config';
 // import { ConfigModule } from '@nestjs/config';
 // import { GoogleStrategy } from './google.strategy';
@@ -21,6 +22,7 @@ import { CacheService } from 'src/redis/cache.service';
     }),
     SaasModule,
     MailModule,
+    StripeModule,
     // ConfigModule.forFeature(googleOauthConfig),
   ],
   controllers: [AuthController],

@@ -1,6 +1,5 @@
-import { Controller, Get, Post, Body, UseGuards, Param, Patch } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Patch } from '@nestjs/common';
 import { SaasService } from './saas.service';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('saas')
 // @UseGuards(JwtAuthGuard)

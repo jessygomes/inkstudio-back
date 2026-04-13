@@ -520,9 +520,9 @@ export class UserService {
     // Invalider le cache après update
     await this.cacheService.del(`user:${userId}`);
     // Invalider aussi tous les caches de listes d'utilisateurs
-    this.cacheService.delPattern('users:list:*');
+    await this.cacheService.delPattern('users:list:*');
     // Invalider les caches de slug qui pourraient être affectés
-    this.cacheService.delPattern('user:slug:*');
+    await this.cacheService.delPattern('user:slug:*');
 
     return user;
   }
@@ -587,8 +587,8 @@ export class UserService {
 
     // Invalider le cache après update
     await this.cacheService.del(`user:${userId}`);
-    this.cacheService.delPattern('users:list:*');
-    this.cacheService.delPattern('user:slug:*');
+    await this.cacheService.delPattern('users:list:*');
+    await this.cacheService.delPattern('user:slug:*');
 
     return user;
   }
@@ -608,9 +608,9 @@ export class UserService {
 
     // Invalider le cache après update
     await this.cacheService.del(`user:${userId}`);
-    this.cacheService.delPattern('users:list:*');
+    await this.cacheService.delPattern('users:list:*');
     // Invalider les caches de slug car les horaires peuvent affecter l'affichage
-    this.cacheService.delPattern('user:slug:*');
+    await this.cacheService.delPattern('user:slug:*');
 
     return user;
   }
@@ -655,9 +655,9 @@ export class UserService {
     // Invalider le cache après update
     await this.cacheService.del(`user:${userId}`);
     await this.cacheService.del(`user:photos:${userId}`); // Invalider spécifiquement le cache des photos
-    this.cacheService.delPattern('users:list:*');
+    await this.cacheService.delPattern('users:list:*');
     // Invalider les caches de slug car les photos peuvent affecter l'affichage
-    this.cacheService.delPattern('user:slug:*');
+    await this.cacheService.delPattern('user:slug:*');
     return user;
   }
 
@@ -1166,8 +1166,8 @@ export class UserService {
       await this.cacheService.del(`user:${userId}`);
       await this.cacheService.del(`user:color-profile:${userId}`);
       // Invalider les caches de listes et de slug car les couleurs peuvent affecter l'affichage
-      this.cacheService.delPattern('users:list:*');
-      this.cacheService.delPattern('user:slug:*');
+      await this.cacheService.delPattern('users:list:*');
+      await this.cacheService.delPattern('user:slug:*');
 
       return {
         error: false,

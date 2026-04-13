@@ -50,6 +50,9 @@ model User {
   colorProfile              String?              @default("default")
   colorProfileBis           String?              @default("default")
 
+  stripeCustomerId          String?              
+  stripeSubscriptionId      String?              
+
   appointments              Appointment[]
   AppointmentRequest        AppointmentRequest[]
   blockedTimeSlots          BlockedTimeSlot[]

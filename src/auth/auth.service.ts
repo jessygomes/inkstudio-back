@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import {compare, hash} from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
@@ -9,6 +9,7 @@ import { MailService } from 'src/email/mailer.service';
 import { randomBytes } from 'crypto';
 import { SaasService } from 'src/saas/saas.service';
 import { CreateUserClientDto } from './dto/create-userClient.dto';
+import { StripeService } from 'src/stripe/stripe.service';
 
 interface AuthenticatedUser {
   id: string;
@@ -59,11 +60,14 @@ export type AuthTokenResponse = {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService, 
     private readonly jwtService : JwtService, 
     private readonly mailService: MailService,
-    private readonly saasService: SaasService
+    private readonly saasService: SaasService,
+    private readonly stripeService: StripeService,
   ) {}
 
   //! CONNEXION
@@ -91,6 +95,7 @@ export class AuthService {
       }
 
       if (!existingUser.emailVerified) {
+        console.log("Email non vérifié, envoi d'un nouveau token de vérification...");
         // Supprimer tout token de vérification existant pour cet email
         await this.prisma.verificationToken.deleteMany({
           where: {
@@ -151,7 +156,16 @@ export class AuthService {
   //! INSCRIPTION
   async register({ registerBody }: { registerBody: CreateUserDto }) {
     try {
-      const { email, salonName, saasPlan, password, firstName, lastName, phone } = registerBody;
+      const {
+        email,
+        salonName,
+        saasPlan,
+        checkoutPlan,
+        password,
+        firstName,
+        lastName,
+        phone,
+      } = registerBody;
 
       // Convertir TESTEUR en FREE
       // const finalSaasPlan = saasPlan === "TESTEUR" ? "FREE" : saasPlan;
@@ -222,11 +236,35 @@ export class AuthService {
           },
           createdUser.salonName || undefined
         );
+
+      let checkoutUrl: string | null = null;
+      let checkoutError: string | null = null;
+
+      if (checkoutPlan) {
+        try {
+          checkoutUrl = await this.stripeService.createCheckoutSession(
+            createdUser.id,
+            checkoutPlan,
+          );
+        } catch (error: unknown) {
+          checkoutError =
+            error instanceof Error
+              ? error.message
+              : 'Impossible de créer la session Stripe.';
+
+          this.logger.error(
+            `Création de session Stripe impossible pour ${createdUser.id}`,
+            error instanceof Error ? error.stack : undefined,
+          );
+        }
+      }
   
       // // Authentifier directement le nouvel utilisateur
       // return this.authenticateUser({userId: createdUser.id});
       return {
         message: "Votre compte a été créé avec succès. Veuillez vérifier vos emails pour confirmer votre adresse.",
+        checkoutUrl,
+        checkoutError,
       };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
