@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { AgendaMode, SaasPlan } from '@prisma/client';
 import { addMinutes, isBefore } from 'date-fns';
 import { PrismaService } from 'src/database/prisma.service';
 
@@ -15,17 +16,52 @@ interface BlockedTimeSlotWhereCondition {
     endDate?: { gt: Date };
   }>;
   OR?: Array<{ tatoueurId: string | null }>;
+  tatoueurId?: null;
   userId?: string;
 }
 
 @Injectable()
 export class TimeSlotService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private resolveAgendaMode({
+    plan,
+    agendaMode,
+  }: {
+    plan?: SaasPlan | null;
+    agendaMode?: AgendaMode | null;
+  }) {
+    return plan === SaasPlan.BUSINESS && agendaMode === AgendaMode.PAR_TATOUEUR
+      ? AgendaMode.PAR_TATOUEUR
+      : AgendaMode.GLOBAL;
+  }
+
+  private async getSalonAgendaMode(userId: string): Promise<AgendaMode> {
+    const salon = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        saasPlan: true,
+        saasPlanDetails: {
+          select: {
+            currentPlan: true,
+            agendaMode: true,
+          },
+        },
+      },
+    });
+
+    return this.resolveAgendaMode({
+      plan: salon?.saasPlanDetails?.currentPlan ?? salon?.saasPlan,
+      agendaMode: salon?.saasPlanDetails?.agendaMode,
+    });
+  }
   
   async generateTimeSlotsForDate(
     date: Date,
     salonHoursJson: string,
-    userId?: string
+    userId?: string,
+    tatoueurId?: string,
+    includeUnavailable = false,
   ): Promise<{ start: Date, end: Date }[]> {
     let salonHours: SalonHours;
 
@@ -55,6 +91,10 @@ export class TimeSlotService {
 
     if (!hours) return []; // Jour fermé ou non défini
 
+    const agendaMode = userId
+      ? await this.getSalonAgendaMode(userId)
+      : AgendaMode.GLOBAL;
+
     const slots: { start: Date, end: Date }[] = [];
 
     const [startHour, startMinute] = hours.start.split(':').map(Number);
@@ -71,13 +111,17 @@ export class TimeSlotService {
       const slotEnd = addMinutes(slotStart, 30);
 
       if (isBefore(slotEnd, end) || slotEnd.getTime() === end.getTime()) {
-        // Vérifier si ce créneau n'est pas bloqué (si userId fourni)
-        let isBlocked = false;
-        if (userId) {
-          isBlocked = await this.isTimeSlotBlocked(slotStart, slotEnd, undefined, userId);
-        }
+        const isUnavailable = userId
+          ? await this.isTimeSlotUnavailable({
+              startDate: slotStart,
+              endDate: slotEnd,
+              userId,
+              agendaMode,
+              tatoueurId,
+            })
+          : false;
 
-        if (!isBlocked) {
+        if (includeUnavailable || !isUnavailable) {
           slots.push({ start: slotStart, end: slotEnd });
         }
       }
@@ -88,7 +132,7 @@ export class TimeSlotService {
     return slots;
   }
 
-  async generateTatoueurTimeSlots(date: Date, tatoueurId: string) {
+  async generateTatoueurTimeSlots(date: Date, tatoueurId: string, includeUnavailable = false) {
     const tatoueur = await this.prisma.tatoueur.findUnique({
       where: { id: tatoueurId },
       include: { user: { select: { id: true } } }
@@ -96,19 +140,100 @@ export class TimeSlotService {
 
     if (!tatoueur || !tatoueur.hours) return [];
 
-    const baseSlots = await this.generateTimeSlotsForDate(date, tatoueur.hours, tatoueur.userId);
-    
-    // Filtrer les créneaux bloqués pour ce tatoueur spécifiquement
-    const availableSlots: { start: Date, end: Date }[] = [];
-    
-    for (const slot of baseSlots) {
-      const isBlocked = await this.isTimeSlotBlocked(slot.start, slot.end, tatoueurId, tatoueur.userId);
-      if (!isBlocked) {
-        availableSlots.push(slot);
-      }
+    const salonContext = await this.prisma.user.findUnique({
+      where: { id: tatoueur.userId },
+      select: {
+        salonHours: true,
+        saasPlan: true,
+        saasPlanDetails: {
+          select: {
+            currentPlan: true,
+            agendaMode: true,
+          },
+        },
+      },
+    });
+
+    const agendaMode = salonContext
+      ? this.resolveAgendaMode({
+          plan: salonContext.saasPlanDetails?.currentPlan ?? salonContext.saasPlan,
+          agendaMode: salonContext.saasPlanDetails?.agendaMode,
+        })
+      : AgendaMode.PAR_TATOUEUR;
+
+    const hoursJson = agendaMode === AgendaMode.GLOBAL
+      ? salonContext?.salonHours ?? '{}'
+      : tatoueur.hours;
+
+    const scopedTatoueurId = agendaMode === AgendaMode.PAR_TATOUEUR
+      ? tatoueurId
+      : undefined;
+
+    return this.generateTimeSlotsForDate(
+      date,
+      hoursJson,
+      tatoueur.userId,
+      scopedTatoueurId,
+      includeUnavailable,
+    );
+  }
+
+  private async isTimeSlotUnavailable({
+    startDate,
+    endDate,
+    userId,
+    agendaMode,
+    tatoueurId,
+  }: {
+    startDate: Date;
+    endDate: Date;
+    userId: string;
+    agendaMode: AgendaMode;
+    tatoueurId?: string;
+  }): Promise<boolean> {
+    const isBlocked = await this.isTimeSlotBlocked(
+      startDate,
+      endDate,
+      agendaMode === AgendaMode.PAR_TATOUEUR ? tatoueurId : undefined,
+      userId,
+    );
+
+    if (isBlocked) {
+      return true;
     }
 
-    return availableSlots;
+    return this.isTimeSlotOccupied(startDate, endDate, userId, agendaMode, tatoueurId);
+  }
+
+  private async isTimeSlotOccupied(
+    startDate: Date,
+    endDate: Date,
+    userId: string,
+    agendaMode: AgendaMode,
+    tatoueurId?: string,
+  ): Promise<boolean> {
+    try {
+      const whereConditions: Record<string, any> = {
+        userId,
+        status: { in: ['PENDING', 'CONFIRMED', 'RESCHEDULING'] },
+        start: { lt: endDate },
+        end: { gt: startDate },
+      };
+
+      if (agendaMode === AgendaMode.PAR_TATOUEUR && tatoueurId) {
+        whereConditions.tatoueurId = tatoueurId;
+      }
+
+      const appointment = await this.prisma.appointment.findFirst({
+        where: whereConditions,
+        select: { id: true },
+      });
+
+      return !!appointment;
+    } catch (error) {
+      console.error('Erreur lors de la vérification des créneaux occupés:', error);
+      return false;
+    }
   }
 
   //! VÉRIFIER SI UN CRÉNEAU EST BLOQUÉ
@@ -141,8 +266,9 @@ export class TimeSlotService {
           whereConditions.userId = userId; // S'assurer qu'on reste dans le bon salon
         }
       } else if (userId) {
-        // Si on cherche pour le salon en général
+        // Si on cherche pour le salon en général, seuls les blocages globaux comptent
         whereConditions.userId = userId;
+        whereConditions.tatoueurId = null;
       }
 
       // Vérifier s'il existe un créneau bloqué qui chevauche avec le créneau demandé

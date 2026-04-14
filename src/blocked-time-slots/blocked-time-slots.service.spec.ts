@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call */
 import { Test, TestingModule } from '@nestjs/testing';
+import { AgendaMode, SaasPlan } from '@prisma/client';
 import { BlockedTimeSlotsService } from './blocked-time-slots.service';
 import { PrismaService } from 'src/database/prisma.service';
 
@@ -12,6 +13,9 @@ const createPrismaMock = () => ({
     findUnique: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),
+  },
+  tatoueur: {
+    findUnique: jest.fn(),
   },
   proposedSlot: {
     findMany: jest.fn(),
@@ -315,6 +319,16 @@ describe('BlockedTimeSlotsService', () => {
         buildBlockedSlot(),
         buildBlockedSlot({ id: 'blocked-slot-2' }),
       ];
+      prismaMock.tatoueur.findUnique.mockResolvedValue({
+        userId: 'salon-1',
+        user: {
+          saasPlan: SaasPlan.BUSINESS,
+          saasPlanDetails: {
+            currentPlan: SaasPlan.BUSINESS,
+            agendaMode: AgendaMode.PAR_TATOUEUR,
+          },
+        },
+      });
       prismaMock.blockedTimeSlot.findMany.mockResolvedValue(slots);
 
       const result = await service.getBlockedSlotsByTatoueur('tatoueur-1');
@@ -322,7 +336,10 @@ describe('BlockedTimeSlotsService', () => {
       expect(result.error).toBe(false);
       expect(result.blockedSlots).toEqual(slots);
       expect(prismaMock.blockedTimeSlot.findMany).toHaveBeenCalledWith({
-        where: { tatoueurId: 'tatoueur-1' },
+        where: {
+          userId: 'salon-1',
+          OR: [{ tatoueurId: 'tatoueur-1' }, { tatoueurId: null }],
+        },
         include: {
           tatoueur: {
             select: {
@@ -336,6 +353,16 @@ describe('BlockedTimeSlotsService', () => {
     });
 
     it('should return empty array when tattoo artist has no blocked slots', async () => {
+      prismaMock.tatoueur.findUnique.mockResolvedValue({
+        userId: 'salon-1',
+        user: {
+          saasPlan: SaasPlan.BUSINESS,
+          saasPlanDetails: {
+            currentPlan: SaasPlan.BUSINESS,
+            agendaMode: AgendaMode.PAR_TATOUEUR,
+          },
+        },
+      });
       prismaMock.blockedTimeSlot.findMany.mockResolvedValue([]);
 
       const result = await service.getBlockedSlotsByTatoueur('tatoueur-1');
@@ -345,6 +372,16 @@ describe('BlockedTimeSlotsService', () => {
     });
 
     it('should handle database errors gracefully', async () => {
+      prismaMock.tatoueur.findUnique.mockResolvedValue({
+        userId: 'salon-1',
+        user: {
+          saasPlan: SaasPlan.BUSINESS,
+          saasPlanDetails: {
+            currentPlan: SaasPlan.BUSINESS,
+            agendaMode: AgendaMode.PAR_TATOUEUR,
+          },
+        },
+      });
       prismaMock.blockedTimeSlot.findMany.mockRejectedValue(
         new Error('Database error'),
       );
@@ -353,6 +390,40 @@ describe('BlockedTimeSlotsService', () => {
 
       expect(result.error).toBe(true);
       expect(result.message).toBe('Database error');
+    });
+
+    it('should return salon-wide blocked slots only in GLOBAL mode', async () => {
+      prismaMock.tatoueur.findUnique.mockResolvedValue({
+        userId: 'salon-1',
+        user: {
+          saasPlan: SaasPlan.PRO,
+          saasPlanDetails: {
+            currentPlan: SaasPlan.PRO,
+            agendaMode: AgendaMode.GLOBAL,
+          },
+        },
+      });
+      prismaMock.blockedTimeSlot.findMany.mockResolvedValue([
+        buildBlockedSlot({ tatoueurId: null }),
+      ]);
+
+      await service.getBlockedSlotsByTatoueur('tatoueur-1');
+
+      expect(prismaMock.blockedTimeSlot.findMany).toHaveBeenCalledWith({
+        where: {
+          userId: 'salon-1',
+          tatoueurId: null,
+        },
+        include: {
+          tatoueur: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+        orderBy: { startDate: 'asc' },
+      });
     });
   });
 

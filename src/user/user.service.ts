@@ -1,3 +1,4 @@
+import { AgendaMode, SaasPlan } from '@prisma/client';
 import {Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CacheService } from 'src/redis/cache.service';
@@ -9,6 +10,23 @@ export class UserService {
   // Injecter le service Prisma dans le service User
   constructor(private prisma: PrismaService, 
     private cacheService: CacheService) {}
+
+  private buildAppointmentBookingSettings({
+    plan,
+    agendaMode,
+  }: {
+    plan?: SaasPlan | null;
+    agendaMode?: AgendaMode | null;
+  }) {
+    const effectiveAgendaMode =
+      plan === SaasPlan.BUSINESS && agendaMode === AgendaMode.PAR_TATOUEUR
+        ? AgendaMode.PAR_TATOUEUR
+        : AgendaMode.GLOBAL;
+
+    return {
+      agendaMode: effectiveAgendaMode,
+    };
+  }
 
   async getUsers(
     query?: string,
@@ -729,6 +747,7 @@ export class UserService {
         },
       });
 
+      console.log(`Updated confirmation setting for user ${userId}: ${addConfirmationEnabled}`);
 
       // Invalider le cache après update
       await this.cacheService.del(`user:${userId}`);
@@ -752,7 +771,7 @@ export class UserService {
 
     //! ------------------------------------------------------------------------------
 
-  //! RECUPERER LE PARAMÈTRE DE CONFIRMATION DES RDV
+  //! AGENDA GLOBAL OU AGENDA TATOUEUR
 
   //! ------------------------------------------------------------------------------
   async getAppointmentBooking({userId}: {userId: string}) {
@@ -760,7 +779,9 @@ export class UserService {
       const cacheKey = `user:appointment-booking:${userId}`;
 
       // 1. Vérifier dans Redis
-      const cachedSetting = await this.cacheService.get<{appointmentBookingEnabled: boolean}>(cacheKey);
+      const cachedSetting = await this.cacheService.get<{
+        agendaMode: AgendaMode;
+      }>(cacheKey);
       
       if (cachedSetting) {
         return {
@@ -775,18 +796,31 @@ export class UserService {
           id: userId,
         },
         select: {
-          appointmentBookingEnabled: true,
+          saasPlan: true,
+          saasPlanDetails: {
+            select: {
+              currentPlan: true,
+              agendaMode: true,
+            },
+          },
         },
       });
 
+      const setting = user
+        ? this.buildAppointmentBookingSettings({
+            plan: user.saasPlanDetails?.currentPlan ?? user.saasPlan,
+            agendaMode: user.saasPlanDetails?.agendaMode,
+          })
+        : null;
+
       // 3. Mettre en cache (TTL 1 heure pour les settings)
-      if (user) {
-        await this.cacheService.set(cacheKey, user, 3600);
+      if (setting) {
+        await this.cacheService.set(cacheKey, setting, 3600);
       }
 
       return {
         error: false,
-        user,
+        user: setting,
       };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
@@ -799,22 +833,47 @@ export class UserService {
 
   //! ------------------------------------------------------------------------------
 
-  //! METTRE À JOUR LE PARAMÈTRE DE CONFIRMATION DES RDV
+  //! METTRE À JOUR : AGENDA GLOBAL OU AGENDA TATOUEUR
 
   //! ------------------------------------------------------------------------------
-  async updateAppointmentBooking({userId, appointmentBookingEnabled}: {userId: string, appointmentBookingEnabled: boolean}) {
+  async updateAppointmentBooking({userId, agendaMode}: {userId: string, agendaMode: AgendaMode}) {
     try {
-      const user = await this.prisma.user.update({
+      const existingUser = await this.prisma.user.findUnique({
         where: {
           id: userId,
         },
-        data: {
-          appointmentBookingEnabled,
-        },
         select: {
-          id: true,
-          appointmentBookingEnabled: true,
-          salonName: true,
+          saasPlan: true,
+          saasPlanDetails: {
+            select: {
+              currentPlan: true,
+            },
+          },
+        },
+      });
+
+      if (!existingUser) {
+        return {
+          error: true,
+          message: 'Utilisateur introuvable',
+        };
+      }
+
+      const effectivePlan = existingUser.saasPlanDetails?.currentPlan ?? existingUser.saasPlan;
+      const nextSettings = this.buildAppointmentBookingSettings({
+        plan: effectivePlan,
+        agendaMode,
+      });
+
+      await this.prisma.saasPlanDetails.upsert({
+        where: { userId },
+        update: {
+          agendaMode: nextSettings.agendaMode,
+        },
+        create: {
+          userId,
+          currentPlan: effectivePlan,
+          agendaMode: nextSettings.agendaMode,
         },
       });
 
@@ -824,10 +883,14 @@ export class UserService {
 
       return {
         error: false,
-        message: appointmentBookingEnabled 
-          ? 'Confirmation manuelle activée - Les nouveaux RDV devront être confirmés'
-          : 'Confirmation automatique activée - Les nouveaux RDV seront directement confirmés',
-        user,
+        message: effectivePlan !== SaasPlan.BUSINESS && agendaMode === AgendaMode.PAR_TATOUEUR
+          ? 'Le mode agenda par tatoueur est réservé au plan BUSINESS. Votre agenda reste en mode global.'
+          : nextSettings.agendaMode === AgendaMode.PAR_TATOUEUR
+            ? 'Agenda par tatoueur activé avec succès.'
+            : 'Agenda global activé avec succès.',
+        user: {
+          agendaMode: nextSettings.agendaMode,
+        },
       };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';

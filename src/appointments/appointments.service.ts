@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
+import { AgendaMode, SaasPlan } from '@prisma/client';
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CreateAppointmentDto, PrestationType } from './dto/create-appointment.dto';
@@ -26,6 +27,54 @@ export class AppointmentsService {
     private cacheService: CacheService,
     private readonly conversationsService: ConversationsService
   ) {}
+
+  private resolveAppointmentAgendaMode({
+    plan,
+    agendaMode,
+  }: {
+    plan?: SaasPlan | null;
+    agendaMode?: AgendaMode | null;
+  }) {
+    return plan === SaasPlan.BUSINESS && agendaMode === AgendaMode.PAR_TATOUEUR
+      ? AgendaMode.PAR_TATOUEUR
+      : AgendaMode.GLOBAL;
+  }
+
+  private async findAppointmentConflict({
+    userId,
+    start,
+    end,
+    tatoueurId,
+    agendaMode,
+    excludedAppointmentId,
+  }: {
+    userId: string;
+    start: Date;
+    end: Date;
+    tatoueurId?: string | null;
+    agendaMode: AgendaMode;
+    excludedAppointmentId?: string;
+  }) {
+    const where: Record<string, any> = {
+      userId,
+      status: { in: ['PENDING', 'CONFIRMED', 'RESCHEDULING'] },
+      start: { lt: end },
+      end: { gt: start },
+    };
+
+    if (excludedAppointmentId) {
+      where.id = { not: excludedAppointmentId };
+    }
+
+    if (agendaMode === AgendaMode.PAR_TATOUEUR && tatoueurId) {
+      where.tatoueurId = tatoueurId;
+    }
+
+    return this.prisma.appointment.findFirst({
+      where,
+      select: { id: true },
+    });
+  }
 
   //! ------------------------------------------------------------------------------
 
@@ -119,27 +168,6 @@ export class AppointmentsService {
         };
       }
 
-      // Vérifier si il y a deja un rendez-vous à ce créneau horaire avec ce tatoueur
-      const existingAppointment = await this.prisma.appointment.findFirst({
-        where: {
-          tatoueurId: tatoueurId,
-          status: { in: ['PENDING', 'CONFIRMED', 'RESCHEDULING'] }, // Exclure les rendez-vous annulés
-          OR: [
-            {
-              start: { lt: new Date(end) },
-              end: { gt: new Date(start) },
-            },
-          ],
-        },
-      });
-
-      if (existingAppointment) {
-        return {
-          error: true,
-          message: 'Ce créneau horaire est déjà réservé.',
-        };
-      }
-
       // Vérifier s'il existe un utilisateur connecté avec cet email (role="client")
       const clientUser = await this.prisma.user.findUnique({
         where: {
@@ -159,6 +187,47 @@ export class AppointmentsService {
           }
         }
       });
+
+      const salonConfig = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          salonName: true,
+          saasPlan: true,
+          saasPlanDetails: {
+            select: {
+              currentPlan: true,
+              agendaMode: true,
+            },
+          },
+        },
+      });
+
+      if (!salonConfig) {
+        return {
+          error: true,
+          message: 'Salon introuvable.',
+        };
+      }
+
+      const agendaMode = this.resolveAppointmentAgendaMode({
+        plan: salonConfig.saasPlanDetails?.currentPlan ?? salonConfig.saasPlan,
+        agendaMode: salonConfig.saasPlanDetails?.agendaMode,
+      });
+
+      const existingAppointment = await this.findAppointmentConflict({
+        userId,
+        start: new Date(start),
+        end: new Date(end),
+        tatoueurId,
+        agendaMode,
+      });
+
+      if (existingAppointment) {
+        return {
+          error: true,
+          message: 'Ce créneau horaire est déjà réservé.',
+        };
+      }
 
       let client = await this.prisma.client.findFirst({
         where: {
@@ -202,7 +271,7 @@ export class AppointmentsService {
           }
 
           // Mettre à jour les infos de la fiche client avec celles du compte utilisateur
-          const updatedData: any = {};
+          const updatedData: Record<string, string | Date> = {};
           
           // Synchroniser les données si elles sont différentes ou manquantes
           if (clientUser.firstName && (!client.firstName || client.firstName !== clientUser.firstName)) {
@@ -234,15 +303,9 @@ export class AppointmentsService {
       // Générer le lien de visioconférence si nécessaire
       let generatedVisioRoom = visioRoom;
       if (visio && !visioRoom) {
-        // Récupérer le nom du salon pour personnaliser le lien
-        const salon = await this.prisma.user.findUnique({
-          where: { id: userId },
-          select: { salonName: true }
-        });
-        
         // Générer un ID temporaire pour créer le lien vidéo
         const tempAppointmentId = crypto.randomBytes(8).toString('hex');
-        generatedVisioRoom = this.videoCallService.generateVideoCallLink(tempAppointmentId, salon?.salonName || undefined);
+        generatedVisioRoom = this.videoCallService.generateVideoCallLink(tempAppointmentId, salonConfig?.salonName || undefined);
       }
 
       if (prestation === PrestationType.PROJET || prestation === PrestationType.TATTOO || prestation === PrestationType.PIERCING || prestation === PrestationType.RETOUCHE) {
@@ -269,13 +332,6 @@ export class AppointmentsService {
             }
           }
         });
-
-        // Récupérer les informations du salon pour le nom
-        const salon = await this.prisma.user.findUnique({
-          where: { id: userId },
-          select: { salonName: true }
-        });
-
         // Gérer les détails spécifiques selon le type de prestation
         if (prestation === PrestationType.PIERCING) {
           // Pour les piercings, récupérer le prix automatiquement si possible
@@ -386,7 +442,7 @@ export class AppointmentsService {
                 visioRoom: visio ? `${process.env.FRONTEND_URL || '#'}/meeting/${newAppointment.id}` : generatedVisioRoom
               }
             },
-            salon?.salonName || undefined, // Passer le nom du salon
+            salonConfig?.salonName || undefined, // Passer le nom du salon
             undefined, // salonEmail
             userId // Passer l'ID utilisateur pour les couleurs
           );
@@ -557,49 +613,6 @@ export class AppointmentsService {
       // Convertir la date de naissance en objet Date si elle est fournie
       const parsedBirthdate = clientBirthdate ? new Date(clientBirthdate) : null;
 
-      // Vérifier si le tatoueur existe (seulement si un tatoueurId est fourni)
-      let artist: { id: string; name: string } | null = null;
-      if (tatoueurId) {
-        artist = await this.prisma.tatoueur.findUnique({
-          where: {
-            id: tatoueurId,
-          },
-          select: {
-            id: true,
-            name: true,
-          },
-        });
-
-        if (!artist) {
-          return {
-            error: true,
-            message: 'Tatoueur introuvable.',
-          };
-        }
-
-        // Vérifier si il y a deja un rendez-vous à ce créneau horaire avec ce tatoueur
-        const existingAppointment = await this.prisma.appointment.findFirst({
-          where: {
-            tatoueurId: tatoueurId,
-            status: { in: ['PENDING', 'CONFIRMED', 'RESCHEDULING'] }, // Exclure les rendez-vous annulés
-            OR: [
-              {
-                start: { lt: new Date(end) },
-                end: { gt: new Date(start) },
-              },
-            ],
-          },
-        });
-
-        if (existingAppointment) {
-          return {
-            error: true,
-            message: 'Ce créneau horaire est déjà réservé.',
-          };
-        }
-      }
-
-      // Vérifier s'il existe un utilisateur connecté avec cet email (role="client")
       const effectiveClientUserId = clientUserId ?? rdvBody?.clientUserId;
       const clientUser = effectiveClientUserId
         ? await this.prisma.user.findUnique({
@@ -635,6 +648,70 @@ export class AppointmentsService {
               },
             },
           });
+
+      const salonConfig = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          addConfirmationEnabled: true,
+          salonName: true,
+          email: true,
+          saasPlan: true,
+          saasPlanDetails: {
+            select: {
+              currentPlan: true,
+              agendaMode: true,
+            },
+          },
+        },
+      });
+
+      if (!salonConfig) {
+        return {
+          error: true,
+          message: 'Salon introuvable.',
+        };
+      }
+
+      const agendaMode = this.resolveAppointmentAgendaMode({
+        plan: salonConfig.saasPlanDetails?.currentPlan ?? salonConfig.saasPlan,
+        agendaMode: salonConfig.saasPlanDetails?.agendaMode,
+      });
+
+      // Vérifier si le tatoueur existe (seulement si un tatoueurId est fourni)
+      let artist: { id: string; name: string } | null = null;
+      if (tatoueurId) {
+        artist = await this.prisma.tatoueur.findUnique({
+          where: {
+            id: tatoueurId,
+          },
+          select: {
+            id: true,
+            name: true,
+          },
+        });
+
+        if (!artist) {
+          return {
+            error: true,
+            message: 'Tatoueur introuvable.',
+          };
+        }
+      }
+
+      const existingAppointment = await this.findAppointmentConflict({
+        userId,
+        start: new Date(start),
+        end: new Date(end),
+        tatoueurId,
+        agendaMode,
+      });
+
+      if (existingAppointment) {
+        return {
+          error: true,
+          message: 'Ce créneau horaire est déjà réservé.',
+        };
+      }
 
       // Chercher le client dans la base de données
       // Chaque salon doit avoir sa propre fiche client
@@ -699,28 +776,15 @@ export class AppointmentsService {
         });
       }
 
-      // Récupérer les informations du salon pour vérifier addConfirmationEnabled
-      const salon = await this.prisma.user.findUnique({
-        where: { id: userId },
-        select: { addConfirmationEnabled: true, salonName: true, email: true, appointmentBookingEnabled: true },
-      });
-
-      if (!salon) {
-        return {
-          error: true,
-          message: 'Salon introuvable.',
-        };
-      }
-
       // Déterminer le statut du rendez-vous selon addConfirmationEnabled
-      const appointmentStatus = salon.addConfirmationEnabled ? 'PENDING' : 'CONFIRMED';
+      const appointmentStatus = salonConfig.addConfirmationEnabled ? 'PENDING' : 'CONFIRMED';
 
       // Générer le lien de visioconférence si nécessaire
       let generatedVisioRoom = visioRoom;
       if (visio && !visioRoom) {
         // Générer un ID temporaire pour créer le lien vidéo
         const tempAppointmentId = crypto.randomBytes(8).toString('hex');
-        generatedVisioRoom = this.videoCallService.generateVideoCallLink(tempAppointmentId, salon?.salonName || undefined);
+        generatedVisioRoom = this.videoCallService.generateVideoCallLink(tempAppointmentId, salonConfig?.salonName || undefined);
       }
 
       if (prestation === PrestationType.PROJET || prestation === PrestationType.TATTOO || prestation === PrestationType.PIERCING || prestation === PrestationType.RETOUCHE) {
@@ -826,10 +890,10 @@ export class AppointmentsService {
         }
 
         // Gestion des emails selon le statut
-        if (salon.addConfirmationEnabled) {
+        if (salonConfig.addConfirmationEnabled) {
           // RDV en attente : mail au tatoueur uniquement
           await this.mailService.sendPendingAppointmentNotification(
-            salon.email,
+            salonConfig.email,
             {
               recipientName: `${client.firstName} ${client.lastName}`,
               appointmentDetails: {
@@ -854,7 +918,7 @@ export class AppointmentsService {
                 visioRoom: generatedVisioRoom
               }
             },
-            salon.salonName || undefined
+            salonConfig.salonName || undefined
           );
         } else {
           // RDV confirmé : mail au client et au tatoueur
@@ -884,12 +948,12 @@ export class AppointmentsService {
                 visioRoom: generatedVisioRoom
               }
             },
-            salon.salonName || undefined
+            salonConfig.salonName || undefined
           );
 
           // Mail au tatoueur
           await this.mailService.sendNewAppointmentNotification(
-            salon.email,
+            salonConfig.email,
             {
               recipientName: `${client.firstName} ${client.lastName}`,
               appointmentDetails: {
@@ -915,7 +979,7 @@ export class AppointmentsService {
                 visioRoom: visio ? `${process.env.FRONTEND_URL || '#'}/meeting/${newAppointment.id}` : generatedVisioRoom
               }
             },
-            salon.salonName || undefined
+            salonConfig.salonName || undefined
           );
         }
 
@@ -954,7 +1018,7 @@ export class AppointmentsService {
       
         return {
           error: false,
-          message: salon.addConfirmationEnabled 
+          message: salonConfig.addConfirmationEnabled 
             ? `Rendez-vous ${prestation.toLowerCase()} créé en attente de confirmation.` 
             : `Rendez-vous ${prestation.toLowerCase()} créé avec succès.`,
           appointment: newAppointment,
@@ -981,10 +1045,10 @@ export class AppointmentsService {
       });
 
       // Gestion des emails selon le statut
-      if (salon.addConfirmationEnabled) {
+      if (salonConfig.addConfirmationEnabled) {
         // RDV en attente : mail au tatoueur uniquement
         await this.mailService.sendPendingAppointmentNotification(
-          salon.email,
+          salonConfig.email,
           {
             recipientName: `${client.firstName} ${client.lastName}`,
             appointmentDetails: {
@@ -1009,7 +1073,7 @@ export class AppointmentsService {
               visioRoom: generatedVisioRoom
             }
           },
-          salon.salonName || undefined
+          salonConfig.salonName || undefined
         );
       } else {
         // RDV confirmé : mail au client et au tatoueur
@@ -1039,12 +1103,12 @@ export class AppointmentsService {
               visioRoom: generatedVisioRoom
             }
           },
-          salon.salonName || undefined
+          salonConfig.salonName || undefined
         );
 
         // Mail au tatoueur
         await this.mailService.sendNewAppointmentNotification(
-          salon.email,
+          salonConfig.email,
           {
             recipientName: `${client.firstName} ${client.lastName}`,
             appointmentDetails: {
@@ -1070,7 +1134,7 @@ export class AppointmentsService {
               visioRoom: visio ? `${process.env.FRONTEND_URL || '#'}/meeting/${newAppointment.id}` : generatedVisioRoom
             }
           },
-          salon.salonName || undefined
+          salonConfig.salonName || undefined
         );
       }
 
@@ -1120,7 +1184,7 @@ export class AppointmentsService {
 
       return {
         error: false,
-        message: salon.addConfirmationEnabled 
+        message: salonConfig.addConfirmationEnabled 
           ? `Rendez-vous créé en attente de confirmation.` 
           : `Rendez-vous créé avec succès.`,
         appointment: newAppointment,
@@ -1472,17 +1536,51 @@ export class AppointmentsService {
       const start = new Date(startDate);
       const end = new Date(endDate);
 
-      const appointments = await this.prisma.appointment.findMany({
-        where: {
-          tatoueurId,
-          status: {
-            not: 'CANCELED' // Exclure les rendez-vous annulés
-          },
-          start: {
-            gte: start,
-            lt: end,
+      const tatoueurContext = await this.prisma.tatoueur.findUnique({
+        where: { id: tatoueurId },
+        select: {
+          userId: true,
+          user: {
+            select: {
+              saasPlan: true,
+              saasPlanDetails: {
+                select: {
+                  currentPlan: true,
+                  agendaMode: true,
+                },
+              },
+            },
           },
         },
+      });
+
+      if (!tatoueurContext) {
+        return [];
+      }
+
+      const agendaMode = this.resolveAppointmentAgendaMode({
+        plan: tatoueurContext.user?.saasPlanDetails?.currentPlan ?? tatoueurContext.user?.saasPlan,
+        agendaMode: tatoueurContext.user?.saasPlanDetails?.agendaMode,
+      });
+
+      const whereConditions: Record<string, any> = {
+        status: {
+          not: 'CANCELED', // Exclure les rendez-vous annulés
+        },
+        start: {
+          gte: start,
+          lt: end,
+        },
+      };
+
+      if (agendaMode === AgendaMode.GLOBAL) {
+        whereConditions.userId = tatoueurContext.userId;
+      } else {
+        whereConditions.tatoueurId = tatoueurId;
+      }
+
+      const appointments = await this.prisma.appointment.findMany({
+        where: whereConditions,
         select: {
           start: true,
           end: true,
@@ -1692,6 +1790,40 @@ export class AppointmentsService {
         };
       }
 
+      const salon = await this.prisma.user.findUnique({
+        where: { id: existingAppointment.userId },
+        select: {
+          saasPlan: true,
+          saasPlanDetails: {
+            select: {
+              currentPlan: true,
+              agendaMode: true,
+            },
+          },
+        },
+      });
+
+      const agendaMode = this.resolveAppointmentAgendaMode({
+        plan: salon?.saasPlanDetails?.currentPlan ?? salon?.saasPlan,
+        agendaMode: salon?.saasPlanDetails?.agendaMode,
+      });
+
+      const conflictingAppointment = await this.findAppointmentConflict({
+        userId: existingAppointment.userId,
+        start: new Date(start),
+        end: new Date(end),
+        tatoueurId,
+        agendaMode,
+        excludedAppointmentId: id,
+      });
+
+      if (conflictingAppointment) {
+        return {
+          error: true,
+          message: 'Ce créneau horaire est déjà réservé.',
+        };
+      }
+
       // Mettre à jour le rendez-vous
       const updatedAppointment = await this.prisma.appointment.update({
         where: {
@@ -1824,6 +1956,13 @@ export class AppointmentsService {
               salonName: true,
               email: true,
               addConfirmationEnabled: true,
+              saasPlan: true,
+              saasPlanDetails: {
+                select: {
+                  currentPlan: true,
+                  agendaMode: true,
+                },
+              },
             },
           },
         },
@@ -1866,6 +2005,27 @@ export class AppointmentsService {
             message: 'Tatoueur introuvable.',
           };
         }
+      }
+
+      const agendaMode = this.resolveAppointmentAgendaMode({
+        plan: existingAppointment.user?.saasPlanDetails?.currentPlan ?? existingAppointment.user?.saasPlan,
+        agendaMode: existingAppointment.user?.saasPlanDetails?.agendaMode,
+      });
+
+      const conflictingAppointment = await this.findAppointmentConflict({
+        userId: existingAppointment.userId,
+        start: new Date(start),
+        end: new Date(end),
+        tatoueurId: tatoueurId || existingAppointment.tatoueurId,
+        agendaMode,
+        excludedAppointmentId: appointmentId,
+      });
+
+      if (conflictingAppointment) {
+        return {
+          error: true,
+          message: 'Ce créneau horaire est déjà réservé.',
+        };
       }
 
       // Déterminer le nouveau statut selon le paramètre addConfirmationEnabled du salon

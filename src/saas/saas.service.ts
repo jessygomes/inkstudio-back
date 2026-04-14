@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
-import { SaasPlan, SaasPlanStatus } from '@prisma/client';
+import { AgendaMode, SaasPlan, SaasPlanStatus } from '@prisma/client';
 import { freePlan, proPlan, businessPlan } from '../../utils/data';
 
 @Injectable()
@@ -279,6 +279,7 @@ export class SaasService {
     switch (plan) {
       case SaasPlan.FREE:
         return {
+          agendaMode: AgendaMode.GLOBAL,
           maxAppointments: 5,   // 5 RDV par mois
           maxClients: 5,        // 5 clients max
           maxTattooeurs: 1,
@@ -292,6 +293,7 @@ export class SaasService {
       
       case SaasPlan.PRO:
         return {
+          agendaMode: AgendaMode.GLOBAL,
           maxAppointments: 150,
           maxClients: 200,
           maxTattooeurs: 3,
@@ -305,6 +307,7 @@ export class SaasService {
       
       case SaasPlan.BUSINESS:
         return {
+          agendaMode: AgendaMode.PAR_TATOUEUR,
           maxAppointments: -1, // Illimité
           maxClients: -1,      // Illimité
           maxTattooeurs: -1,   // Illimité
@@ -354,6 +357,7 @@ export class SaasService {
         portfolioImages: limits.limits.portfolioImages === -1 ? 0 : Math.round((limits.usage.portfolioImages / limits.limits.portfolioImages) * 100),
       },
       features: {
+        agendaMode: limits.planDetails.agendaMode,
         advancedStats: limits.planDetails.hasAdvancedStats,
         emailReminders: limits.planDetails.hasEmailReminders,
         customBranding: limits.planDetails.hasCustomBranding,

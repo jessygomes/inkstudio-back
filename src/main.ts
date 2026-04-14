@@ -22,7 +22,7 @@ async function bootstrap() {
   const corsOptions = {
     origin: [
     process.env.FRONT_URL,
-    "http://localhost:3001",
+    "http://localhost:3000",
     ],
     credentials: true, // Permet d'envoyer des cookies
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -44,7 +44,7 @@ async function bootstrap() {
     // WebSocket est actif, les gateways utiliseront la configuration définie dans @WebSocketGateway
   }
 
-  await app.listen(process.env.PORT ?? 3000);
+  await app.listen(process.env.PORT ?? 4000);
 }
 
 bootstrap().catch((error) => {

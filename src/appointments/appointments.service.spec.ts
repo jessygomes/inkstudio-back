@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
+import { AgendaMode, SaasPlan } from '@prisma/client';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AppointmentsService } from './appointments.service';
 import { PrismaService } from 'src/database/prisma.service';
@@ -124,6 +125,17 @@ describe('AppointmentsService', () => {
     };
 
     it('should return error when tatoueur does not exist', async () => {
+      prisma.user.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({
+        id: userId,
+        addConfirmationEnabled: false,
+        salonName: 'Salon Test',
+        email: 'salon@example.com',
+        saasPlan: SaasPlan.PRO,
+        saasPlanDetails: {
+          currentPlan: SaasPlan.PRO,
+          agendaMode: AgendaMode.GLOBAL,
+        },
+      });
       prisma.tatoueur.findUnique.mockResolvedValue(null);
 
       const result = await service.create({
@@ -143,6 +155,15 @@ describe('AppointmentsService', () => {
         id: tatoueurId,
         name: 'John Doe',
       });
+      prisma.user.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({
+        id: userId,
+        salonName: 'Tattoo Studio Pro',
+        saasPlan: SaasPlan.PRO,
+        saasPlanDetails: {
+          currentPlan: SaasPlan.PRO,
+          agendaMode: AgendaMode.GLOBAL,
+        },
+      });
       prisma.appointment.findFirst.mockResolvedValue({
         id: 'apt-existing',
         start: new Date(createAppointmentDto.start),
@@ -157,6 +178,39 @@ describe('AppointmentsService', () => {
 
       expect(result.error).toBe(true);
       expect(result.message).toBe('Ce créneau horaire est déjà réservé.');
+    });
+
+    it('should check conflicts globally when salon agenda mode is GLOBAL', async () => {
+      prisma.tatoueur.findUnique.mockResolvedValue({
+        id: tatoueurId,
+        name: 'John Doe',
+      });
+      prisma.user.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({
+        id: userId,
+        salonName: 'Tattoo Studio Pro',
+        saasPlan: SaasPlan.PRO,
+        saasPlanDetails: {
+          currentPlan: SaasPlan.PRO,
+          agendaMode: AgendaMode.GLOBAL,
+        },
+      });
+      prisma.appointment.findFirst.mockResolvedValue({ id: 'apt-existing' });
+
+      const result = await service.create({
+        userId,
+        rdvBody: createAppointmentDto,
+      });
+
+      expect(result.error).toBe(true);
+      expect(prisma.appointment.findFirst).toHaveBeenCalledWith({
+        where: {
+          userId,
+          status: { in: ['PENDING', 'CONFIRMED', 'RESCHEDULING'] },
+          start: { lt: new Date(createAppointmentDto.end) },
+          end: { gt: new Date(createAppointmentDto.start) },
+        },
+        select: { id: true },
+      });
     });
 
     it('should create appointment with new client (not connected)', async () => {
@@ -771,6 +825,17 @@ describe('AppointmentsService', () => {
     });
 
     it('should return error when tatoueur does not exist', async () => {
+      prisma.user.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({
+        id: userId,
+        addConfirmationEnabled: false,
+        salonName: 'Salon Test',
+        email: 'salon@example.com',
+        saasPlan: SaasPlan.PRO,
+        saasPlanDetails: {
+          currentPlan: SaasPlan.PRO,
+          agendaMode: AgendaMode.GLOBAL,
+        },
+      });
       prisma.tatoueur.findUnique.mockResolvedValue(null);
 
       const result = await service.createByClient({
@@ -787,6 +852,17 @@ describe('AppointmentsService', () => {
         id: tatoueurId,
         name: 'Jane Artist',
       });
+      prisma.user.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({
+        id: userId,
+        addConfirmationEnabled: false,
+        salonName: 'Business Tattoo',
+        email: 'business@example.com',
+        saasPlan: SaasPlan.BUSINESS,
+        saasPlanDetails: {
+          currentPlan: SaasPlan.BUSINESS,
+          agendaMode: AgendaMode.PAR_TATOUEUR,
+        },
+      });
       prisma.appointment.findFirst.mockResolvedValue({
         id: 'existing-apt',
         status: 'CONFIRMED',
@@ -799,6 +875,42 @@ describe('AppointmentsService', () => {
 
       expect(result.error).toBe(true);
       expect(result.message).toContain('créneau horaire');
+    });
+
+    it('should scope conflicts to the selected tatoueur when salon agenda mode is PAR_TATOUEUR', async () => {
+      prisma.tatoueur.findUnique.mockResolvedValue({
+        id: tatoueurId,
+        name: 'Jane Artist',
+      });
+      prisma.user.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({
+        id: userId,
+        addConfirmationEnabled: false,
+        salonName: 'Business Tattoo',
+        email: 'business@example.com',
+        saasPlan: SaasPlan.BUSINESS,
+        saasPlanDetails: {
+          currentPlan: SaasPlan.BUSINESS,
+          agendaMode: AgendaMode.PAR_TATOUEUR,
+        },
+      });
+      prisma.appointment.findFirst.mockResolvedValue({ id: 'existing-apt' });
+
+      const result = await service.createByClient({
+        userId,
+        rdvBody: createByClientDto,
+      });
+
+      expect(result.error).toBe(true);
+      expect(prisma.appointment.findFirst).toHaveBeenCalledWith({
+        where: {
+          userId,
+          status: { in: ['PENDING', 'CONFIRMED', 'RESCHEDULING'] },
+          start: { lt: new Date(createByClientDto.end) },
+          end: { gt: new Date(createByClientDto.start) },
+          tatoueurId,
+        },
+        select: { id: true },
+      });
     });
 
     it('should return error when salon not found', async () => {
@@ -1115,6 +1227,17 @@ describe('AppointmentsService', () => {
     });
 
     it('should catch errors and return error response', async () => {
+      prisma.user.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({
+        id: userId,
+        addConfirmationEnabled: false,
+        salonName: 'Salon Test',
+        email: 'salon@example.com',
+        saasPlan: SaasPlan.PRO,
+        saasPlanDetails: {
+          currentPlan: SaasPlan.PRO,
+          agendaMode: AgendaMode.GLOBAL,
+        },
+      });
       prisma.tatoueur.findUnique.mockRejectedValue(
         new Error('Tatoueur service error'),
       );
@@ -1400,6 +1523,16 @@ describe('AppointmentsService', () => {
   });
 
   it('returns empty array when tatoueur appointments query is null', async () => {
+    prisma.tatoueur.findUnique.mockResolvedValue({
+      userId: 'salon1',
+      user: {
+        saasPlan: SaasPlan.BUSINESS,
+        saasPlanDetails: {
+          currentPlan: SaasPlan.BUSINESS,
+          agendaMode: AgendaMode.PAR_TATOUEUR,
+        },
+      },
+    });
     prisma.appointment.findMany.mockResolvedValue(null as any);
 
     const result = await service.getAppointmentsByTatoueurRange(
@@ -1409,6 +1542,62 @@ describe('AppointmentsService', () => {
     );
 
     expect(result).toEqual([]);
+  });
+
+  it('uses salon scope for tatoueur range in GLOBAL mode', async () => {
+    prisma.tatoueur.findUnique.mockResolvedValue({
+      userId: 'salon1',
+      user: {
+        saasPlan: SaasPlan.PRO,
+        saasPlanDetails: {
+          currentPlan: SaasPlan.PRO,
+          agendaMode: AgendaMode.GLOBAL,
+        },
+      },
+    });
+    prisma.appointment.findMany.mockResolvedValue([]);
+
+    await service.getAppointmentsByTatoueurRange(
+      't1',
+      '2024-01-01T00:00:00.000Z',
+      '2024-01-02T00:00:00.000Z',
+    );
+
+    expect(prisma.appointment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          userId: 'salon1',
+        }),
+      }),
+    );
+  });
+
+  it('uses tatoueur scope for tatoueur range in PAR_TATOUEUR mode', async () => {
+    prisma.tatoueur.findUnique.mockResolvedValue({
+      userId: 'salon1',
+      user: {
+        saasPlan: SaasPlan.BUSINESS,
+        saasPlanDetails: {
+          currentPlan: SaasPlan.BUSINESS,
+          agendaMode: AgendaMode.PAR_TATOUEUR,
+        },
+      },
+    });
+    prisma.appointment.findMany.mockResolvedValue([]);
+
+    await service.getAppointmentsByTatoueurRange(
+      't1',
+      '2024-01-01T00:00:00.000Z',
+      '2024-01-02T00:00:00.000Z',
+    );
+
+    expect(prisma.appointment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tatoueurId: 't1',
+        }),
+      }),
+    );
   });
 
   it('returns cached appointment when available', async () => {

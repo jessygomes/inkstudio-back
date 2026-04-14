@@ -1,4 +1,5 @@
-import { IsBoolean } from 'class-validator';
+import { AgendaMode } from '@prisma/client';
+import { IsBoolean, IsEnum } from 'class-validator';
 
 export class UpdateConfirmationSettingDto {
   @IsBoolean()
@@ -6,6 +7,6 @@ export class UpdateConfirmationSettingDto {
 }
 
 export class UpdateAppointmentBookingDto {
-  @IsBoolean()
-  appointmentBookingEnabled: boolean;
+  @IsEnum(AgendaMode)
+  agendaMode: AgendaMode;
 }

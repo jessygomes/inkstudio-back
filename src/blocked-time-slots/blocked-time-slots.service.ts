@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { AgendaMode, SaasPlan } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma.service';
 import { CreateBlockedSlotDto } from './dto/create-blocked-slot.dto';
 import { UpdateBlockedSlotDto } from './dto/update-blocked-slot.dto';
@@ -6,6 +7,18 @@ import { UpdateBlockedSlotDto } from './dto/update-blocked-slot.dto';
 @Injectable()
 export class BlockedTimeSlotsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private resolveAgendaMode({
+    plan,
+    agendaMode,
+  }: {
+    plan?: SaasPlan | null;
+    agendaMode?: AgendaMode | null;
+  }) {
+    return plan === SaasPlan.BUSINESS && agendaMode === AgendaMode.PAR_TATOUEUR
+      ? AgendaMode.PAR_TATOUEUR
+      : AgendaMode.GLOBAL;
+  }
 
   //! CRÉER UN CRÉNEAU BLOQUÉ
   async createBlockedSlot(blockedSlotData: CreateBlockedSlotDto, userId: string) {
@@ -105,8 +118,48 @@ export class BlockedTimeSlotsService {
   //! VOIR TOUS LES CRÉNEAUX BLOQUÉS D'UN TATOUEUR
   async getBlockedSlotsByTatoueur(tatoueurId: string) {
     try {
+      const tatoueurContext = await this.prisma.tatoueur.findUnique({
+        where: { id: tatoueurId },
+        select: {
+          userId: true,
+          user: {
+            select: {
+              saasPlan: true,
+              saasPlanDetails: {
+                select: {
+                  currentPlan: true,
+                  agendaMode: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!tatoueurContext) {
+        return {
+          error: false,
+          blockedSlots: [],
+        };
+      }
+
+      const agendaMode = this.resolveAgendaMode({
+        plan: tatoueurContext.user?.saasPlanDetails?.currentPlan ?? tatoueurContext.user?.saasPlan,
+        agendaMode: tatoueurContext.user?.saasPlanDetails?.agendaMode,
+      });
+
+      const whereConditions = agendaMode === AgendaMode.GLOBAL
+        ? {
+            userId: tatoueurContext.userId,
+            tatoueurId: null,
+          }
+        : {
+            userId: tatoueurContext.userId,
+            OR: [{ tatoueurId }, { tatoueurId: null }],
+          };
+
       const blockedSlots = await this.prisma.blockedTimeSlot.findMany({
-        where: { tatoueurId },
+        where: whereConditions,
         include: {
           tatoueur: {
             select: {

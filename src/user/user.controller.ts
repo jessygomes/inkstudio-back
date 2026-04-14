@@ -87,10 +87,9 @@ export class UserController {
   @Patch('appointment-setting')
   updateAppointmentBooking(@Body() body: UpdateAppointmentBookingDto, @Request() req: RequestWithUser) {
     const userId = req.user.userId;
-    console.log("userId dans le controller:", body, userId);
     return this.userService.updateAppointmentBooking({
       userId,
-      appointmentBookingEnabled: body.appointmentBookingEnabled,
+      agendaMode: body.agendaMode,
     });
   }
 

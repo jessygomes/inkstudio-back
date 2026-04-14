@@ -1,23 +1,31 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
+import { AgendaMode, SaasPlan } from '@prisma/client';
 import { Test, TestingModule } from '@nestjs/testing';
 import { UserService } from './user.service';
 import { PrismaService } from 'src/database/prisma.service';
 import { CacheService } from 'src/redis/cache.service';
 
 // Mock factories
-const createPrismaMock = () => ({
-  user: {
-    findMany: jest.fn(),
-    findUnique: jest.fn(),
-    update: jest.fn(),
-    count: jest.fn(),
-  },
-  tatoueur: {
-    findMany: jest.fn(),
-  },
-  $transaction: jest.fn(),
-});
+const createPrismaMock = () => {
+  const prisma = {
+    user: {
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+      update: jest.fn(),
+      count: jest.fn(),
+    },
+    tatoueur: {
+      findMany: jest.fn(),
+    },
+    saasPlanDetails: {
+      upsert: jest.fn(),
+    },
+    $transaction: jest.fn(),
+  };
+
+  return prisma;
+};
 
 const createCacheMock = () => ({
   get: jest.fn(),
@@ -744,7 +752,9 @@ describe('UserService', () => {
 
   describe('getAppointmentBooking', () => {
     it('should return appointment booking setting from cache', async () => {
-      const cachedSetting = { appointmentBookingEnabled: true };
+      const cachedSetting = {
+        agendaMode: AgendaMode.PAR_TATOUEUR,
+      };
       cache.get.mockResolvedValue(cachedSetting);
 
       const result = await service.getAppointmentBooking({
@@ -756,7 +766,13 @@ describe('UserService', () => {
     });
 
     it('should fetch appointment booking setting from database', async () => {
-      const mockUser = { appointmentBookingEnabled: false };
+      const mockUser = {
+        saasPlan: SaasPlan.BUSINESS,
+        saasPlanDetails: {
+          currentPlan: SaasPlan.BUSINESS,
+          agendaMode: AgendaMode.GLOBAL,
+        },
+      };
       cache.get.mockResolvedValue(null);
       prisma.user.findUnique.mockResolvedValue(mockUser);
 
@@ -765,7 +781,36 @@ describe('UserService', () => {
       });
 
       expect(result.error).toBe(false);
-      expect(cache.set).toHaveBeenCalled();
+      expect(result.user).toEqual({
+        agendaMode: AgendaMode.GLOBAL,
+      });
+      expect(cache.set).toHaveBeenCalledWith(
+        'user:appointment-booking:user-1',
+        {
+          agendaMode: AgendaMode.GLOBAL,
+        },
+        3600,
+      );
+    });
+
+    it('should force global agenda for non-business plans', async () => {
+      cache.get.mockResolvedValue(null);
+      prisma.user.findUnique.mockResolvedValue({
+        saasPlan: SaasPlan.PRO,
+        saasPlanDetails: {
+          currentPlan: SaasPlan.PRO,
+          agendaMode: AgendaMode.GLOBAL,
+        },
+      });
+
+      const result = await service.getAppointmentBooking({
+        userId: 'user-1',
+      });
+
+      expect(result.error).toBe(false);
+      expect(result.user).toEqual({
+        agendaMode: AgendaMode.GLOBAL,
+      });
     });
 
     it('should handle database error', async () => {
@@ -781,29 +826,88 @@ describe('UserService', () => {
   });
 
   describe('updateAppointmentBooking', () => {
-    it('should update appointment booking setting', async () => {
-      const mockUser = {
-        id: 'user-1',
-        appointmentBookingEnabled: true,
-        salonName: 'Test Salon',
-      };
-      prisma.user.update.mockResolvedValue(mockUser);
+    it('should update appointment booking setting for business plan', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        saasPlan: SaasPlan.BUSINESS,
+        saasPlanDetails: {
+          currentPlan: SaasPlan.BUSINESS,
+        },
+      });
+      prisma.saasPlanDetails.upsert.mockResolvedValue({
+        userId: 'user-1',
+        agendaMode: AgendaMode.PAR_TATOUEUR,
+      });
 
       const result = await service.updateAppointmentBooking({
         userId: 'user-1',
-        appointmentBookingEnabled: true,
+        agendaMode: AgendaMode.PAR_TATOUEUR,
       });
 
       expect(result.error).toBe(false);
+      expect(prisma.saasPlanDetails.upsert).toHaveBeenCalledWith({
+        where: { userId: 'user-1' },
+        update: {
+          agendaMode: AgendaMode.PAR_TATOUEUR,
+        },
+        create: {
+          userId: 'user-1',
+          currentPlan: SaasPlan.BUSINESS,
+          agendaMode: AgendaMode.PAR_TATOUEUR,
+        },
+      });
       expect(cache.del).toHaveBeenCalledWith('user:appointment-booking:user-1');
     });
 
-    it('should handle update error', async () => {
-      prisma.user.update.mockRejectedValue(new Error('Update error'));
+    it('should force global agenda for non-business plans', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        saasPlan: SaasPlan.PRO,
+        saasPlanDetails: {
+          currentPlan: SaasPlan.PRO,
+        },
+      });
+      prisma.saasPlanDetails.upsert.mockResolvedValue({
+        userId: 'user-1',
+        agendaMode: AgendaMode.GLOBAL,
+      });
 
       const result = await service.updateAppointmentBooking({
         userId: 'user-1',
-        appointmentBookingEnabled: true,
+        agendaMode: AgendaMode.PAR_TATOUEUR,
+      });
+
+      expect(result.error).toBe(false);
+      expect(result.message).toContain('réservé au plan BUSINESS');
+      expect(prisma.saasPlanDetails.upsert).toHaveBeenCalledWith({
+        where: { userId: 'user-1' },
+        update: {
+          agendaMode: AgendaMode.GLOBAL,
+        },
+        create: {
+          userId: 'user-1',
+          currentPlan: SaasPlan.PRO,
+          agendaMode: AgendaMode.GLOBAL,
+        },
+      });
+    });
+
+    it('should handle update error', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        saasPlan: SaasPlan.BUSINESS,
+        saasPlanDetails: {
+          currentPlan: SaasPlan.BUSINESS,
+        },
+      });
+      prisma.saasPlanDetails.upsert.mockResolvedValue({
+        userId: 'user-1',
+        agendaMode: AgendaMode.PAR_TATOUEUR,
+      });
+      prisma.saasPlanDetails.upsert.mockRejectedValue(
+        new Error('Update error'),
+      );
+
+      const result = await service.updateAppointmentBooking({
+        userId: 'user-1',
+        agendaMode: AgendaMode.PAR_TATOUEUR,
       });
 
       expect(result.error).toBe(true);

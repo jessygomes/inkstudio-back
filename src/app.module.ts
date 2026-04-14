@@ -39,6 +39,7 @@ import { SalonVerificationModule } from './salon-verification/salon-verification
 import { AdminModule } from './admin/admin.module';
 import { MessagingModule } from './messaging/messaging.module';
 import { StripeModule } from './stripe/stripe.module';
+import { FlashModule } from './flash/flash.module';
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { StripeModule } from './stripe/stripe.module';
     TimeSlotModule,
     MailModule,
     PortfolioModule,
+    FlashModule,
     ProductSalonModule,
     // Note: Les queues individuelles sont gérées dans leurs modules respectifs
     FollowUpModule,

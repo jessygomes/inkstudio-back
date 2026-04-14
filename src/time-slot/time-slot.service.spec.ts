@@ -1,3 +1,4 @@
+import { AgendaMode, SaasPlan } from '@prisma/client';
 import { Test, TestingModule } from '@nestjs/testing';
 import { TimeSlotService } from './time-slot.service';
 import { PrismaService } from 'src/database/prisma.service';
@@ -6,6 +7,12 @@ import { PrismaService } from 'src/database/prisma.service';
 const createPrismaMock = () => ({
   tatoueur: {
     findUnique: jest.fn(),
+  },
+  user: {
+    findUnique: jest.fn(),
+  },
+  appointment: {
+    findFirst: jest.fn(),
   },
   blockedTimeSlot: {
     findFirst: jest.fn(),
@@ -101,7 +108,15 @@ describe('TimeSlotService', () => {
       const userId = 'user-1';
 
       // Mock: all slots are available (no blocks)
+      prisma.user.findUnique.mockResolvedValue({
+        saasPlan: SaasPlan.PRO,
+        saasPlanDetails: {
+          currentPlan: SaasPlan.PRO,
+          agendaMode: AgendaMode.GLOBAL,
+        },
+      });
       prisma.blockedTimeSlot.findFirst.mockResolvedValue(null);
+      prisma.appointment.findFirst.mockResolvedValue(null);
 
       const slots = await service.generateTimeSlotsForDate(
         date,
@@ -111,7 +126,88 @@ describe('TimeSlotService', () => {
 
       // Should have 18 total slots when no blocks exist
       expect(prisma.blockedTimeSlot.findFirst).toHaveBeenCalled();
+      expect(prisma.appointment.findFirst).toHaveBeenCalled();
       expect(slots.length).toBe(18);
+    });
+
+    it('should filter occupied salon slots in GLOBAL agenda mode', async () => {
+      const date = new Date('2026-01-26');
+      const salonHours = buildSalonHours({
+        monday: { start: '09:00', end: '10:00' },
+      });
+      const firstSlotStart = new Date(date);
+      firstSlotStart.setHours(9, 0, 0, 0);
+      const firstSlotEnd = new Date(date);
+      firstSlotEnd.setHours(9, 30, 0, 0);
+      const secondSlotStart = new Date(date);
+      secondSlotStart.setHours(9, 30, 0, 0);
+      const secondSlotEnd = new Date(date);
+      secondSlotEnd.setHours(10, 0, 0, 0);
+
+      prisma.user.findUnique.mockResolvedValue({
+        saasPlan: SaasPlan.PRO,
+        saasPlanDetails: {
+          currentPlan: SaasPlan.PRO,
+          agendaMode: AgendaMode.GLOBAL,
+        },
+      });
+      prisma.blockedTimeSlot.findFirst.mockResolvedValue(null);
+      prisma.appointment.findFirst
+        .mockResolvedValueOnce({ id: 'apt-1' })
+        .mockResolvedValueOnce(null);
+
+      const slots = await service.generateTimeSlotsForDate(
+        date,
+        salonHours,
+        'user-1',
+      );
+
+      expect(slots).toHaveLength(1);
+      expect(prisma.appointment.findFirst).toHaveBeenNthCalledWith(1, {
+        where: {
+          userId: 'user-1',
+          status: { in: ['PENDING', 'CONFIRMED', 'RESCHEDULING'] },
+          start: { lt: firstSlotEnd },
+          end: { gt: firstSlotStart },
+        },
+        select: { id: true },
+      });
+      expect(prisma.appointment.findFirst).toHaveBeenNthCalledWith(2, {
+        where: {
+          userId: 'user-1',
+          status: { in: ['PENDING', 'CONFIRMED', 'RESCHEDULING'] },
+          start: { lt: secondSlotEnd },
+          end: { gt: secondSlotStart },
+        },
+        select: { id: true },
+      });
+    });
+
+    it('should keep unavailable slots when includeUnavailable is true', async () => {
+      const date = new Date('2026-01-26');
+      const salonHours = buildSalonHours({
+        monday: { start: '09:00', end: '10:00' },
+      });
+
+      prisma.user.findUnique.mockResolvedValue({
+        saasPlan: SaasPlan.PRO,
+        saasPlanDetails: {
+          currentPlan: SaasPlan.PRO,
+          agendaMode: AgendaMode.GLOBAL,
+        },
+      });
+      prisma.blockedTimeSlot.findFirst.mockResolvedValue(null);
+      prisma.appointment.findFirst.mockResolvedValue({ id: 'apt-1' });
+
+      const slots = await service.generateTimeSlotsForDate(
+        date,
+        salonHours,
+        'user-1',
+        undefined,
+        true,
+      );
+
+      expect(slots).toHaveLength(2);
     });
 
     it('should generate slots with correct duration (30 minutes)', async () => {
@@ -147,7 +243,15 @@ describe('TimeSlotService', () => {
       const tatoueur = buildTatoueur();
 
       prisma.tatoueur.findUnique.mockResolvedValue(tatoueur);
+      prisma.user.findUnique.mockResolvedValue({
+        saasPlan: SaasPlan.BUSINESS,
+        saasPlanDetails: {
+          currentPlan: SaasPlan.BUSINESS,
+          agendaMode: AgendaMode.PAR_TATOUEUR,
+        },
+      });
       prisma.blockedTimeSlot.findFirst.mockResolvedValue(null);
+      prisma.appointment.findFirst.mockResolvedValue(null);
 
       const slots = await service.generateTatoueurTimeSlots(date, tatoueur.id);
 
@@ -155,6 +259,96 @@ describe('TimeSlotService', () => {
       expect(prisma.tatoueur.findUnique).toHaveBeenCalledWith({
         where: { id: tatoueur.id },
         include: { user: { select: { id: true } } },
+      });
+    });
+
+    it('should use salon hours and salon-wide occupancy in GLOBAL mode', async () => {
+      const date = new Date('2026-01-26');
+      const tatoueur = buildTatoueur({
+        hours: buildSalonHours({
+          monday: { start: '11:00', end: '12:00' },
+        }),
+      });
+      const salonHours = buildSalonHours({
+        monday: { start: '09:00', end: '10:00' },
+      });
+
+      prisma.tatoueur.findUnique.mockResolvedValue(tatoueur);
+      prisma.user.findUnique.mockResolvedValue({
+        salonHours,
+        saasPlan: SaasPlan.PRO,
+        saasPlanDetails: {
+          currentPlan: SaasPlan.PRO,
+          agendaMode: AgendaMode.GLOBAL,
+        },
+      });
+      prisma.blockedTimeSlot.findFirst.mockResolvedValue(null);
+      prisma.appointment.findFirst.mockResolvedValue(null);
+
+      const slots = await service.generateTatoueurTimeSlots(date, tatoueur.id);
+
+      expect(slots).toHaveLength(2);
+      expect(slots[0].start.getHours()).toBe(9);
+
+      const firstAppointmentCall = prisma.appointment.findFirst.mock
+        .calls[0][0] as {
+        where: Record<string, unknown>,
+      };
+      expect(firstAppointmentCall.where.tatoueurId).toBeUndefined();
+      expect(firstAppointmentCall.where.userId).toBe(tatoueur.userId);
+    });
+
+    it('should filter occupied slots only for the selected tatoueur in PAR_TATOUEUR mode', async () => {
+      const date = new Date('2026-01-26');
+      const tatoueur = buildTatoueur({
+        hours: buildSalonHours({
+          monday: { start: '09:00', end: '10:00' },
+        }),
+      });
+      const firstSlotStart = new Date(date);
+      firstSlotStart.setHours(9, 0, 0, 0);
+      const firstSlotEnd = new Date(date);
+      firstSlotEnd.setHours(9, 30, 0, 0);
+      const secondSlotStart = new Date(date);
+      secondSlotStart.setHours(9, 30, 0, 0);
+      const secondSlotEnd = new Date(date);
+      secondSlotEnd.setHours(10, 0, 0, 0);
+
+      prisma.tatoueur.findUnique.mockResolvedValue(tatoueur);
+      prisma.user.findUnique.mockResolvedValue({
+        saasPlan: SaasPlan.BUSINESS,
+        saasPlanDetails: {
+          currentPlan: SaasPlan.BUSINESS,
+          agendaMode: AgendaMode.PAR_TATOUEUR,
+        },
+      });
+      prisma.blockedTimeSlot.findFirst.mockResolvedValue(null);
+      prisma.appointment.findFirst
+        .mockResolvedValueOnce({ id: 'apt-1' })
+        .mockResolvedValueOnce(null);
+
+      const slots = await service.generateTatoueurTimeSlots(date, tatoueur.id);
+
+      expect(slots).toHaveLength(1);
+      expect(prisma.appointment.findFirst).toHaveBeenNthCalledWith(1, {
+        where: {
+          userId: tatoueur.userId,
+          status: { in: ['PENDING', 'CONFIRMED', 'RESCHEDULING'] },
+          start: { lt: firstSlotEnd },
+          end: { gt: firstSlotStart },
+          tatoueurId: tatoueur.id,
+        },
+        select: { id: true },
+      });
+      expect(prisma.appointment.findFirst).toHaveBeenNthCalledWith(2, {
+        where: {
+          userId: tatoueur.userId,
+          status: { in: ['PENDING', 'CONFIRMED', 'RESCHEDULING'] },
+          start: { lt: secondSlotEnd },
+          end: { gt: secondSlotStart },
+          tatoueurId: tatoueur.id,
+        },
+        select: { id: true },
       });
     });
 
@@ -255,6 +449,14 @@ describe('TimeSlotService', () => {
       const userId = 'user-1';
 
       prisma.blockedTimeSlot.findFirst.mockRejectedValue(new Error('DB error'));
+      prisma.user.findUnique.mockResolvedValue({
+        saasPlan: SaasPlan.PRO,
+        saasPlanDetails: {
+          currentPlan: SaasPlan.PRO,
+          agendaMode: AgendaMode.GLOBAL,
+        },
+      });
+      prisma.appointment.findFirst.mockResolvedValue(null);
 
       // Should not throw, error is caught and slot considered not blocked
       const slots = await service.generateTimeSlotsForDate(
