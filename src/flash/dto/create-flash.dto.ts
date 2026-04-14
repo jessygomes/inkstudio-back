@@ -18,6 +18,10 @@ export class CreateFlashDto {
   description?: string;
 
   @IsOptional()
+  @IsString()
+  dimension?: string;
+
+  @IsOptional()
   @IsBoolean()
   isAvailable?: boolean;
 }

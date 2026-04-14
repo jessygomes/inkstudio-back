@@ -24,10 +24,13 @@ export class FlashService {
         };
       }
 
+      const dimension = (createFlashDto as { dimension?: string }).dimension;
+
       const flash = await this.prisma.flash.create({
         data: {
           userId,
           title: createFlashDto.title,
+          dimension,
           imageUrl: createFlashDto.imageUrl,
           price: createFlashDto.price,
           description: createFlashDto.description,
@@ -59,6 +62,7 @@ export class FlashService {
         {
           id: string;
           title: string;
+          dimension: string | null;
           imageUrl: string;
           description: string | null;
           price: number;
