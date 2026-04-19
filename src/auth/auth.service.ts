@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
-import {compare, hash} from 'bcrypt';
+import {compare, hash} from 'bcryptjs';
 import { JwtService } from '@nestjs/jwt';
 import { UserPayload } from './jwt.strategy';
 import { CreateUserDto } from './dto/create-user.dto';

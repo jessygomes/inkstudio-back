@@ -7,9 +7,9 @@ import { JwtService } from '@nestjs/jwt';
 import { MailService } from 'src/email/mailer.service';
 import { SaasService } from 'src/saas/saas.service';
 import { StripeService } from 'src/stripe/stripe.service';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 
-jest.mock('bcrypt', () => ({
+jest.mock('bcryptjs', () => ({
   compare: jest.fn(() => true),
   hash: jest.fn((value: string) => `hashed-${value}`),
 }));

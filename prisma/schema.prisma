@@ -186,6 +186,7 @@ model Appointment {
   tatoueurId         String?
   clientId           String?             // Client existant dans la fiche salon (table Client)
   clientUserId       String?             // NOUVEAU: Client connecté (table User avec role="client")
+  skin               String?
   tattooDetailId     String?
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt

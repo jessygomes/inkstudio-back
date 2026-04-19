@@ -8,6 +8,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { TattooDetailDto } from './tattoo-detail.dto';
+import { SkinTone } from '../constants/skin-tone.constants';
 
 export enum PrestationType {
   TATTOO = 'TATTOO',
@@ -43,6 +44,11 @@ export class UpdateAppointmentDto {
   @IsDateString()
   @IsOptional()
   end: string;
+
+  @IsString()
+  @IsOptional()
+  @IsEnum(SkinTone)
+  skin?: SkinTone;
 
   // @IsString()
   // @IsNotEmpty()

@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import Mailgun from 'mailgun.js';
-import * as formData from 'form-data';
+import FormData from 'form-data';
 
 const prisma = new PrismaClient();
 
@@ -45,7 +45,7 @@ async function sendEmailNotifications() {
   }
 
   // Configuration Mailgun
-  const mailgun = new Mailgun(formData);
+  const mailgun = new Mailgun(FormData);
   const mg = mailgun.client({
     username: 'api',
     key: process.env.MAILGUN_API_KEY || '',

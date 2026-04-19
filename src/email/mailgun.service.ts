@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import Mailgun from 'mailgun.js';
-import * as FormData from 'form-data';
+import FormData from 'form-data';
 
 interface MailgunConfig {
   apiKey: string;

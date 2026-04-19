@@ -10,7 +10,11 @@ import { SaasService } from 'src/saas/saas.service';
 import { VideoCallService } from 'src/video-call/video-call.service';
 import { CacheService } from 'src/redis/cache.service';
 import { ConversationsService } from 'src/messaging/conversations/conversations.service';
-import { PrestationType } from './dto/create-appointment.dto';
+import {
+  CreateAppointmentDto,
+  PrestationType,
+} from './dto/create-appointment.dto';
+import { SkinTone } from './constants/skin-tone.constants';
 
 const createPrismaMock = () => ({
   appointment: {
@@ -106,7 +110,7 @@ describe('AppointmentsService', () => {
     const tatoueurId = 'tatoueur-456';
     const clientEmail = 'client@example.com';
 
-    const createAppointmentDto = {
+    const createAppointmentDto: CreateAppointmentDto = {
       title: 'Tatouage Personnalisé',
       prestation: PrestationType.TATTOO,
       start: '2025-02-01T10:00:00Z',
@@ -116,6 +120,7 @@ describe('AppointmentsService', () => {
       clientEmail,
       clientPhone: '0612345678',
       clientBirthdate: '1990-05-15',
+      skin: SkinTone.CLAIRE,
       tatoueurId,
       visio: false,
       zone: 'bras',
@@ -178,6 +183,36 @@ describe('AppointmentsService', () => {
 
       expect(result.error).toBe(true);
       expect(result.message).toBe('Ce créneau horaire est déjà réservé.');
+    });
+
+    it('should return error when skin is missing for tattoo prestation', async () => {
+      const result = await service.create({
+        userId,
+        rdvBody: {
+          ...createAppointmentDto,
+          skin: undefined,
+        },
+      });
+
+      expect(result.error).toBe(true);
+      expect(result.message).toBe(
+        'La teinte de peau est requise pour un rendez-vous tattoo, retouche ou projet.',
+      );
+      expect(prisma.tatoueur.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('should return error when skin is invalid for tattoo prestation', async () => {
+      const result = await service.create({
+        userId,
+        rdvBody: {
+          ...createAppointmentDto,
+          skin: 'invalide' as never,
+        },
+      });
+
+      expect(result.error).toBe(true);
+      expect(result.message).toBe('La teinte de peau fournie est invalide.');
+      expect(prisma.tatoueur.findUnique).not.toHaveBeenCalled();
     });
 
     it('should check conflicts globally when salon agenda mode is GLOBAL', async () => {
@@ -264,6 +299,13 @@ describe('AppointmentsService', () => {
       expect(result.message).toContain('créé');
       expect(result.clientLinked).toBe(false);
       expect(prisma.client.create).toHaveBeenCalled();
+      expect(prisma.appointment.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            skin: 'claire',
+          }),
+        }),
+      );
       expect(mailService.sendAppointmentConfirmation).toHaveBeenCalled();
       expect(cache.delPattern).toHaveBeenCalledWith(
         `appointments:salon:${userId}:*`,
@@ -784,6 +826,20 @@ describe('AppointmentsService', () => {
     });
   });
 
+  describe('getSkinTones()', () => {
+    it('should return the predefined skin tone options', () => {
+      const result = service.getSkinTones();
+
+      expect(result).toHaveLength(6);
+      expect(result).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ value: 'tres_claire' }),
+          expect.objectContaining({ value: 'tres_foncee' }),
+        ]),
+      );
+    });
+  });
+
   // ============================================================================
   // TESTS POUR LA FONCTION CREATEBYCLIENT
   // ============================================================================
@@ -793,7 +849,7 @@ describe('AppointmentsService', () => {
     const tatoueurId = 'tatoueur-456';
     const clientEmail = 'client@example.com';
 
-    const createByClientDto = {
+    const createByClientDto: CreateAppointmentDto = {
       title: 'Projet Tatouage Personnalisé',
       prestation: PrestationType.PROJET,
       start: '2025-02-15T14:00:00Z',
@@ -803,6 +859,7 @@ describe('AppointmentsService', () => {
       clientEmail,
       clientPhone: '0687654321',
       clientBirthdate: '1995-03-20',
+      skin: SkinTone.MATE,
       tatoueurId,
       visio: false,
       zone: 'épaule',
@@ -1157,6 +1214,13 @@ describe('AppointmentsService', () => {
       });
 
       expect(result.error).toBe(false);
+      expect(prisma.appointment.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            skin: 'mate',
+          }),
+        }),
+      );
       expect(prisma.tattooDetail.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
           zone: 'épaule',

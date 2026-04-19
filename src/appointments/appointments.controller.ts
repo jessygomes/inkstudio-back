@@ -118,6 +118,11 @@ export class AppointmentsController {
     return await this.appointmentsService.getTodaysAppointments(userId, targetDate);
   }
 
+  @Get('skin-tones')
+  getSkinTones() {
+    return this.appointmentsService.getSkinTones();
+  }
+
   //! VOIR LES DEMANDES DE RDV D'UN SALON ✅
   @UseGuards(JwtAuthGuard)
   @Get('appointment-requests')

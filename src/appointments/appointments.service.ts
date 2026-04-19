@@ -14,6 +14,7 @@ import { CreateAppointmentRequestDto } from './dto/create-appointment-request.dt
 import { VideoCallService } from 'src/video-call/video-call.service';
 import { CacheService } from 'src/redis/cache.service';
 import { ConversationsService } from 'src/messaging/conversations/conversations.service';
+import { SKIN_REQUIRED_PRESTATIONS, SKIN_TONE_OPTIONS, SkinTone } from './constants/skin-tone.constants';
 
 @Injectable()
 export class AppointmentsService {
@@ -38,6 +39,26 @@ export class AppointmentsService {
     return plan === SaasPlan.BUSINESS && agendaMode === AgendaMode.PAR_TATOUEUR
       ? AgendaMode.PAR_TATOUEUR
       : AgendaMode.GLOBAL;
+  }
+
+  getSkinTones() {
+    return SKIN_TONE_OPTIONS;
+  }
+
+  private validateSkinToneForPrestation(prestation: string, skin?: string | null) {
+    if (!skin) {
+      if (SKIN_REQUIRED_PRESTATIONS.includes(prestation)) {
+        return 'La teinte de peau est requise pour un rendez-vous tattoo, retouche ou projet.';
+      }
+
+      return null;
+    }
+
+    if (!Object.values(SkinTone).includes(skin as SkinTone)) {
+      return 'La teinte de peau fournie est invalide.';
+    }
+
+    return null;
   }
 
   private async findAppointmentConflict({
@@ -147,7 +168,15 @@ export class AppointmentsService {
   //! ------------------------------------------------------------------------------
   async create({ userId, rdvBody }: {userId: string, rdvBody: CreateAppointmentDto}) {
     try {
-      const {  title, prestation, start, end, clientFirstname, clientLastname, clientEmail, clientPhone, clientBirthdate, tatoueurId, visio, visioRoom } = rdvBody;
+      const {  title, prestation, start, end, clientFirstname, clientLastname, clientEmail, clientPhone, clientBirthdate, tatoueurId, visio, visioRoom, skin } = rdvBody;
+
+      const skinValidationError = this.validateSkinToneForPrestation(prestation, skin);
+      if (skinValidationError) {
+        return {
+          error: true,
+          message: skinValidationError,
+        };
+      }
 
       // S'assurer que title a toujours une valeur
       const appointmentTitle = title || `${prestation} - ${clientFirstname} ${clientLastname}`;
@@ -320,10 +349,11 @@ export class AppointmentsService {
             tatoueurId,
             clientId: client.id,
             clientUserId: clientUser?.id, // Lier au client connecté si applicable
+            skin,
             status: 'CONFIRMED',
             visio: visio || false,
             visioRoom: generatedVisioRoom
-          },
+          } as any,
           include: {
             tatoueur: {
               select: {
@@ -437,7 +467,7 @@ export class AppointmentsService {
                   minute: '2-digit' 
                 })}`,
                 service: newAppointment.prestation,
-                tatoueur: newAppointment.tatoueur?.name || 'Non assigné',
+                tatoueur: artist.name || 'Non assigne',
                 visio: visio || false,
                 visioRoom: visio ? `${process.env.FRONTEND_URL || '#'}/meeting/${newAppointment.id}` : generatedVisioRoom
               }
@@ -605,7 +635,15 @@ export class AppointmentsService {
         };
       }
 
-      const { title, prestation, start, end, clientFirstname, clientLastname, clientEmail, clientPhone, clientBirthdate, tatoueurId, visio, visioRoom } = rdvBody;
+      const { title, prestation, start, end, clientFirstname, clientLastname, clientEmail, clientPhone, clientBirthdate, tatoueurId, visio, visioRoom, skin } = rdvBody;
+
+      const skinValidationError = this.validateSkinToneForPrestation(prestation, skin);
+      if (skinValidationError) {
+        return {
+          error: true,
+          message: skinValidationError,
+        };
+      }
 
       // S'assurer que title a toujours une valeur
       const appointmentTitle = title || `${prestation} - ${clientFirstname} ${clientLastname}`;
@@ -776,6 +814,13 @@ export class AppointmentsService {
         });
       }
 
+      if (!client) {
+        return {
+          error: true,
+          message: 'Impossible de créer ou récupérer le client.',
+        };
+      }
+
       // Déterminer le statut du rendez-vous selon addConfirmationEnabled
       const appointmentStatus = salonConfig.addConfirmationEnabled ? 'PENDING' : 'CONFIRMED';
 
@@ -798,10 +843,11 @@ export class AppointmentsService {
             tatoueurId,
             clientId: client.id,
             clientUserId: clientUser?.id, // Lier au client connecté si applicable
+            skin,
             status: appointmentStatus,
             visio: visio || false,
             visioRoom: generatedVisioRoom
-          },
+          } as any,
         });
       
         // Gérer les détails spécifiques selon le type de prestation
@@ -1624,6 +1670,7 @@ export class AppointmentsService {
           end: true,
           title: true,
           prestation: true,
+          skin: true,
           status: true,
           conversation: {
             select: {
@@ -1636,7 +1683,7 @@ export class AppointmentsService {
               name: true,
             },
           },
-        },
+        } as any,
       });
 
       return appointments ?? [];
@@ -1756,7 +1803,7 @@ export class AppointmentsService {
   //! ------------------------------------------------------------------------------
   async updateAppointment(id: string, rdvBody: UpdateAppointmentDto) {
     try {
-      const { title, prestation, start, end, tatoueurId } = rdvBody;
+      const { title, prestation, start, end, tatoueurId, skin } = rdvBody;
       const tattooDetail: Partial<UpdateAppointmentDto['tattooDetail']> = rdvBody.tattooDetail || {};
       const { description = '', zone = '', size = '', colorStyle = '', reference = '', sketch = '', estimatedPrice = 0, price = 0 } = tattooDetail;
 
@@ -1773,6 +1820,17 @@ export class AppointmentsService {
         return {
           error: true,
           message: 'Rendez-vous introuvable.',
+        };
+      }
+
+      const resolvedPrestation = prestation ?? existingAppointment.prestation;
+      const existingSkin = 'skin' in existingAppointment ? (existingAppointment as { skin?: string | null }).skin : undefined;
+      const resolvedSkin = skin ?? existingSkin;
+      const skinValidationError = this.validateSkinToneForPrestation(resolvedPrestation, resolvedSkin);
+      if (skinValidationError) {
+        return {
+          error: true,
+          message: skinValidationError,
         };
       }
 
@@ -1835,7 +1893,8 @@ export class AppointmentsService {
           start: new Date(start),
           end: new Date(end),
           tatoueurId,
-        },
+          skin,
+        } as any,
         include: {
         client: true,
         tatoueur: true,
@@ -1878,7 +1937,7 @@ export class AppointmentsService {
       const newEnd = new Date(end).toISOString();
 
       // Envoi d'un mail de confirmation si les horaires ont changé
-      if ((originalStart !== newStart || originalEnd !== newEnd) && updatedAppointment.client) {
+      if ((originalStart !== newStart || originalEnd !== newEnd) && existingAppointment.client?.email) {
         // Récupérer les informations du salon
         const salon = await this.prisma.user.findUnique({
           where: { id: existingAppointment.userId },
@@ -1886,9 +1945,9 @@ export class AppointmentsService {
         });
 
         await this.mailService.sendAppointmentModification(
-          updatedAppointment.client.email,
+          existingAppointment.client.email,
           {
-            recipientName: `${updatedAppointment.client.firstName} ${updatedAppointment.client.lastName}`,
+            recipientName: `${existingAppointment.client.firstName} ${existingAppointment.client.lastName}`,
             appointmentDetails: {
               date: updatedAppointment.start.toLocaleDateString('fr-FR', { 
                 weekday: 'long', 

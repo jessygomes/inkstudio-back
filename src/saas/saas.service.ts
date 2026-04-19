@@ -242,18 +242,15 @@ export class SaasService {
     }
     
     // Utiliser une transaction pour maintenir la cohérence entre les deux tables
-    return await this.prisma.$transaction(async (prisma) => {
-      // Mettre à jour le plan dans la table User
-      await prisma.user.update({
+    const [, saasPlanDetails] = await this.prisma.$transaction([
+      this.prisma.user.update({
         where: { id: userId },
         data: {
           saasPlan: plan,
           saasPlanUntil: endDate,
         },
-      });
-
-      // Mettre à jour ou créer les détails du plan SaaS
-      return await prisma.saasPlanDetails.upsert({
+      }),
+      this.prisma.saasPlanDetails.upsert({
         where: { userId },
         update: {
           currentPlan: plan,
@@ -268,8 +265,10 @@ export class SaasService {
           endDate,
           ...planConfig,
         },
-      });
-    });
+      }),
+    ]);
+
+    return saasPlanDetails;
   }
 
   /**

@@ -8,6 +8,7 @@ import {
   ValidateIf,
 } from 'class-validator';
 import { PiercingZone } from '@prisma/client';
+import { SkinTone } from '../constants/skin-tone.constants';
 
 export enum PrestationType {
   TATTOO = 'TATTOO',
@@ -56,6 +57,10 @@ export class CreateAppointmentDto {
   @IsOptional()
   @IsString()
   clientBirthdate?: string;
+
+  @IsOptional()
+  @IsEnum(SkinTone)
+  skin?: SkinTone;
 
   @IsString()
   @IsNotEmpty()

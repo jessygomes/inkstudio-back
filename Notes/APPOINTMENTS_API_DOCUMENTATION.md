@@ -14,6 +14,35 @@
 
 ## 🔧 Création de rendez-vous
 
+### Champ `skin`
+
+Le champ `skin` représente la teinte de peau du client.
+
+- Il est requis pour les prestations `TATTOO`, `RETOUCHE` et `PROJET`
+- Il est optionnel pour les autres prestations
+- Valeurs autorisées : `tres_claire`, `claire`, `claire_moyenne`, `mate`, `foncee`, `tres_foncee`
+
+Exemple de payload :
+
+```json
+{
+  "title": "Tatouage floral",
+  "prestation": "TATTOO",
+  "start": "2026-04-20T09:00:00.000Z",
+  "end": "2026-04-20T11:00:00.000Z",
+  "clientFirstname": "Lea",
+  "clientLastname": "Martin",
+  "clientEmail": "lea@example.com",
+  "clientPhone": "0601020304",
+  "clientBirthdate": "1996-08-12",
+  "tatoueurId": "tatoueur-123",
+  "skin": "claire_moyenne",
+  "zone": "avant-bras",
+  "size": "medium",
+  "colorStyle": "couleur"
+}
+```
+
 ### 1. Créer un RDV (Salon authentifié)
 **Route :** `POST /appointments`  
 **Authentification :** Requise (JwtAuthGuard)  
@@ -32,6 +61,7 @@ async create(@Request() req: RequestWithUser, @Body() rdvBody: CreateAppointment
 - Vérifie les limites SaaS pour les rendez-vous
 - Valide l'existence du tatoueur
 - Vérifie les conflits de créneaux horaires
+- Valide la teinte de peau pour les prestations tattoo, retouche et projet
 - Crée ou récupère le client
 - Crée le rendez-vous avec statut "CONFIRMED"
 - Envoie un email de confirmation au client
@@ -52,6 +82,7 @@ async createByClient(@Body() rdvBody: CreateAppointmentDto) {
 - Vérifie les limites SaaS
 - Valide l'existence du tatoueur
 - Vérifie les conflits de créneaux
+- Valide la teinte de peau pour les prestations tattoo, retouche et projet
 - Crée ou récupère le client
 - **Logique conditionnelle :** Vérifie `addConfirmationEnabled` du salon
   - Si `true` : Statut "PENDING" + Email au salon
@@ -73,6 +104,47 @@ async createAppointmentRequest(@Body() dto: CreateAppointmentRequestDto) {
 - Crée une demande de rendez-vous (différent d'un RDV direct)
 - Statut initial : "PENDING"
 - Le salon doit proposer des créneaux
+
+### 4. Récupérer les teintes de peau disponibles
+**Route :** `GET /appointments/skin-tones`  
+**Authentification :** Non requise
+
+**Réponse :**
+
+```json
+[
+  {
+    "value": "tres_claire",
+    "label": "Tres claire",
+    "previewHex": "#F6E1D3"
+  },
+  {
+    "value": "claire",
+    "label": "Claire",
+    "previewHex": "#EAC8AF"
+  },
+  {
+    "value": "claire_moyenne",
+    "label": "Claire moyenne",
+    "previewHex": "#D7A889"
+  },
+  {
+    "value": "mate",
+    "label": "Mate",
+    "previewHex": "#B8815E"
+  },
+  {
+    "value": "foncee",
+    "label": "Foncee",
+    "previewHex": "#8C5A3C"
+  },
+  {
+    "value": "tres_foncee",
+    "label": "Tres foncee",
+    "previewHex": "#5F3B28"
+  }
+]
+```
 
 ---
 
@@ -117,6 +189,7 @@ async getByDateRange(
 **Service associé :** `getAppointmentsByDateRange()`
 - Filtre par dates avec pagination
 - Inclut : client, tattooDetail, tatoueur
+- Retourne aussi le champ `skin` lorsque présent
 - Tri : Par date décroissante
 - Retourne : appointments + métadonnées de pagination
 
@@ -141,6 +214,7 @@ async getAllAppointmentsBySalon(
 **Service associé :** `getAllAppointmentsBySalon()`
 - Pagination complète des RDV d'un salon
 - Inclut : tatoueur, tattooDetail, client
+- Retourne aussi le champ `skin` lorsque présent
 - Tri : Par date décroissante
 
 ### 7. RDV du jour pour dashboard
@@ -161,6 +235,7 @@ async getTodaysAppointments(
 
 **Service associé :** `getTodaysAppointments()`
 - RDV d'une date spécifique (par défaut : aujourd'hui)
+- Retourne aussi le champ `skin` lorsque présent
 - Optimisé pour l'affichage dashboard
 
 ### 8. RDV d'un tatoueur par plage de dates
@@ -195,7 +270,7 @@ async getOneAppointment(@Param('id') appointmentId: string) {
 
 **Service associé :** `getOneAppointment()`
 - Détails complets d'un RDV
-- Inclut : tatoueur, tattooDetail
+- Inclut : tatoueur, tattooDetail, `skin`
 
 ### 10. RDV d'un tatoueur
 **Route :** `GET /appointments/tatoueur/:id`  
@@ -230,6 +305,8 @@ async updateAppointment(@Param('id') appointmentId: string, @Body() rdvBody: Upd
 
 **Service associé :** `updateAppointment()`
 - Met à jour les informations du RDV
+- Permet de modifier le champ `skin`
+- Revalide `skin` pour les prestations tattoo, retouche et projet
 - Gère les détails du tatouage (upsert)
 - **Logique importante :** Utilise `upsert` pour tattooDetail avec `clientId`
 - Envoie un email si les horaires changent

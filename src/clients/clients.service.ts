@@ -592,49 +592,36 @@ async searchClients(query: string, userId: string) {
         throw new Error('Client introuvable.');
       }
 
-      // Utiliser une transaction pour supprimer toutes les relations liées
-      await this.prisma.$transaction(async (prisma) => {
-        // 1. Supprimer l'historique médical s'il existe
-        await prisma.medicalHistory.deleteMany({
+      // Utiliser une transaction atomique pour supprimer les relations liées puis le client
+      await this.prisma.$transaction([
+        this.prisma.medicalHistory.deleteMany({
           where: { clientId },
-        });
-
-        // 2. Supprimer l'historique des tatouages
-        await prisma.tattooHistory.deleteMany({
+        }),
+        this.prisma.tattooHistory.deleteMany({
           where: { clientId },
-        });
-
-        // 3. Supprimer les enregistrements de suivi (aftercare)
-        await prisma.aftercare.deleteMany({
+        }),
+        this.prisma.aftercare.deleteMany({
           where: { clientId },
-        });
-
-        // 4. Supprimer les soumissions de suivi
-        await prisma.followUpSubmission.deleteMany({
+        }),
+        this.prisma.followUpSubmission.deleteMany({
           where: { clientId },
-        });
-
-        // 5. Détacher le client des rendez-vous (mettre clientId à null au lieu de supprimer les RDV)
-        await prisma.appointment.updateMany({
+        }),
+        this.prisma.appointment.updateMany({
           where: { clientId },
           data: { clientId: null },
-        });
-
-        // 6. Supprimer les détails de tatouage liés au client
-        await prisma.tattooDetail.deleteMany({
+        }),
+        this.prisma.tattooDetail.deleteMany({
           where: { clientId },
-        });
-
-        // 7. Enfin, supprimer le client
-        await prisma.client.delete({
+        }),
+        this.prisma.client.delete({
           where: { id: clientId },
-        });
-      });
+        }),
+      ]);
 
       // Invalider le cache après suppression
       await this.cacheService.del(`client:${clientId}`);
-      this.cacheService.delPattern(`clients:salon:${clientToDelete.userId}:*`);
-      this.cacheService.delPattern(`clients:search:${clientToDelete.userId}:*`);
+      await this.cacheService.delPattern(`clients:salon:${clientToDelete.userId}:*`);
+      await this.cacheService.delPattern(`clients:search:${clientToDelete.userId}:*`);
 
       return {
         error: false,
