@@ -22,6 +22,9 @@ async function bootstrap() {
   const corsOptions = {
     origin: [
     process.env.FRONT_URL,
+    process.env.FRONTEND_URL,
+    process.env.FRONTEND_URL_BIS,
+    process.env.WEB_URL,
     "http://localhost:3000",
     ],
     credentials: true, // Permet d'envoyer des cookies
