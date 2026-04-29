@@ -19,6 +19,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { RedisService } from '../../redis/redis.service';
 import { RedisOnlineStatusService } from '../../redis/redis-online-status.service';
 import { WebSocketAuthService } from './websocket-auth.service';
+import { corsOriginDelegate } from '../../config/cors.config';
 import {
   CreateMessagePayload,
   MarkAsReadPayload,
@@ -40,7 +41,7 @@ import {
 @WebSocketGateway({
   namespace: '/messaging',
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:3001',
+    origin: corsOriginDelegate,
     credentials: true,
   },
   transports: ['websocket', 'polling'],

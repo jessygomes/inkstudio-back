@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import * as bodyParser from 'body-parser';
+import { corsOriginDelegate } from './config/cors.config';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -20,13 +21,7 @@ async function bootstrap() {
   );
 
   const corsOptions = {
-    origin: [
-    process.env.FRONT_URL,
-    process.env.FRONTEND_URL,
-    process.env.FRONTEND_URL_BIS,
-    process.env.WEB_URL,
-    "http://localhost:3000",
-    ],
+    origin: corsOriginDelegate,
     credentials: true, // Permet d'envoyer des cookies
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
