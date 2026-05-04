@@ -40,8 +40,9 @@ function withHostVariants(origin: string): string[] {
 }
 
 function buildAllowedOrigins(): string[] {
-  const expanded = ENV_ORIGINS
-    .filter((value): value is string => Boolean(value && value.trim()))
+  const expanded = ENV_ORIGINS.filter((value): value is string =>
+    Boolean(value && value.trim()),
+  )
     .flatMap(withHostVariants)
     .map(normalizeOrigin);
 
