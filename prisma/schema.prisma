@@ -426,6 +426,19 @@ model Flash {
   @@index([isAvailable])
 }
 
+//! MODEL POUR LES ARTICLES DU SITE PUBLIC (gérés par l'admin)
+model Article {
+  id          String    @id @default(cuid())
+  title       String
+  content     String    @db.Text
+  author      String?
+  imageUrls   String[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([createdAt])
+}
+
 //! MODEL POUR LA GESTION DU STOCK DE PRODUITS
 model StockItem {
   id           String   @id @default(cuid())
