@@ -56,34 +56,68 @@ export class ProductSalonService {
   }
 
   //! RÉCUPÉRER TOUS LES PRODUITS
-  async getAllProducts(userId: string) {
+  async getAllProducts(userId: string, page: number = 1) {
     try {
-      const cacheKey = `products:salon:${userId}`;
+      const pageSize = 10;
+      const currentPage = Number.isNaN(page) || page < 1 ? 1 : page;
+      const skip = (currentPage - 1) * pageSize;
+      const cacheKey = `products:salon:${userId}:page:${currentPage}`;
 
       // 1. Vérifier dans Redis
       const cachedProducts = await this.cacheService.get<{
-        id: string;
-        name: string;
-        description: string;
-        price: number;
-        imageUrl: string;
-        [key: string]: any;
-      }[]>(cacheKey);
+        products: {
+          id: string;
+          name: string;
+          description: string;
+          price: number;
+          imageUrl: string;
+          [key: string]: any;
+        }[];
+        pagination: {
+          page: number;
+          pageSize: number;
+          total: number;
+          totalPages: number;
+          hasNextPage: boolean;
+          hasPreviousPage: boolean;
+        };
+      }>(cacheKey);
       
       if (cachedProducts) {
         return cachedProducts;
       }
 
-      // 2. Sinon, aller chercher en DB
-      const products = await this.prisma.productSalon.findMany({
-        where: { userId },
-        orderBy: { createdAt: 'desc' }, // Optionnel : trier par date de création
+      const whereClause = { userId };
+
+      const total = await this.prisma.productSalon.count({
+        where: whereClause,
       });
 
-      // 3. Mettre en cache (TTL 20 minutes pour les produits salon)
-      await this.cacheService.set(cacheKey, products, 1200);
+      // 2. Sinon, aller chercher en DB
+      const products = await this.prisma.productSalon.findMany({
+        where: whereClause,
+        orderBy: { createdAt: 'desc' }, // Optionnel : trier par date de création
+        skip,
+        take: pageSize,
+      });
 
-      return products;
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+      const response = {
+        products,
+        pagination: {
+          page: currentPage,
+          pageSize,
+          total,
+          totalPages,
+          hasNextPage: currentPage < totalPages,
+          hasPreviousPage: currentPage > 1,
+        },
+      };
+
+      // 3. Mettre en cache (TTL 20 minutes pour les produits salon)
+      await this.cacheService.set(cacheKey, response, 1200);
+
+      return response;
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       return {

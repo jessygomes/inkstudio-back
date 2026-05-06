@@ -9,9 +9,9 @@ export class AddPhotoDto {
 
   @IsOptional()
   @IsString()
-  description: string; // Description optionnelle de la photo
+  description?: string; // Description optionnelle de la photo
 
   @IsOptional()
   @IsString()
-  tatoueurId: string; // ID du tatoueur qui a réalisé le tatouage, si applicable
+  tatoueurId?: string; // ID du tatoueur qui a réalisé le tatouage, si applicable
 }

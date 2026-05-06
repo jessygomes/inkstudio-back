@@ -54,39 +54,73 @@ export class FlashService {
     }
   }
 
-  async getAvailableFlashsByUser(userId: string) {
+  async getAvailableFlashsByUser(userId: string, page: number = 1) {
     try {
-      const cacheKey = `flashs:salon:${userId}:available`;
+      const pageSize = 10;
+      const currentPage = Number.isNaN(page) || page < 1 ? 1 : page;
+      const skip = (currentPage - 1) * pageSize;
+      const cacheKey = `flashs:salon:${userId}:available:page:${currentPage}`;
 
       const cached = await this.cacheService.get<
         {
-          id: string;
-          title: string;
-          dimension: string | null;
-          imageUrl: string;
-          description: string | null;
-          price: number;
-          isAvailable: boolean;
-        }[]
+          flashs: {
+            id: string;
+            title: string;
+            dimension: string | null;
+            imageUrl: string;
+            description: string | null;
+            price: number;
+            isAvailable: boolean;
+          }[];
+          pagination: {
+            page: number;
+            pageSize: number;
+            total: number;
+            totalPages: number;
+            hasNextPage: boolean;
+            hasPreviousPage: boolean;
+          };
+        }
       >(cacheKey);
 
       if (cached) {
         return cached;
       }
 
+      const whereClause = {
+        userId,
+        isAvailable: true,
+      };
+
+      const total = await this.prisma.flash.count({
+        where: whereClause,
+      });
+
       const flashs = await this.prisma.flash.findMany({
-        where: {
-          userId,
-          isAvailable: true,
-        },
+        where: whereClause,
         orderBy: {
           createdAt: 'desc',
         },
+        skip,
+        take: pageSize,
       });
 
-      await this.cacheService.set(cacheKey, flashs, 1200);
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+      const response = {
+        flashs,
+        pagination: {
+          page: currentPage,
+          pageSize,
+          total,
+          totalPages,
+          hasNextPage: currentPage < totalPages,
+          hasPreviousPage: currentPage > 1,
+        },
+      };
 
-      return flashs;
+      await this.cacheService.set(cacheKey, response, 1200);
+
+      return response;
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       return {

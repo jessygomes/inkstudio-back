@@ -19,6 +19,7 @@ model User {
   lastName                  String?
   salonName                 String?
   image                     String?
+  profileImage              String?
   phone                     String?
   address                   String?
   city                      String?

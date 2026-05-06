@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query, Request, UseGuards } from '@nestjs/common';
 import { PortfolioService } from './portfolio.service';
 import { AddPhotoDto } from './dto/add-photo.dto';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
@@ -18,21 +18,32 @@ export class PortfolioController {
 
   //! VOIR TOUTES LES PHOTOS D'UN PORTFOLIO
   @Get(':userId')
-  async getPortfolioPhotos(@Param('userId') userId: string) {
-    return this.portfolioService.getPortfolioPhotos(userId);
+  async getPortfolioPhotos(
+    @Param('userId') userId: string,
+    @Query('tatoueurId') tatoueurId?: string,
+    @Query('page') page?: string,
+  ) {
+    const pageNumber = page ? Number.parseInt(page, 10) : 1;
+    return this.portfolioService.getPortfolioPhotos(userId, tatoueurId, pageNumber);
   }
 
   //! MODIFIER UNE PHOTO DU PORTFOLIO
   @UseGuards(JwtAuthGuard)
   @Put(':id')
-  async updatePortfolioPhoto(@Param('id') id: string, @Body() updateData: Partial<AddPhotoDto>) {
-    return this.portfolioService.updatePortfolioPhoto(id, updateData);
+  async updatePortfolioPhoto(
+    @Request() req: RequestWithUser,
+    @Param('id') id: string,
+    @Body() updateData: Partial<AddPhotoDto>,
+  ) {
+    const userId = req.user.userId;
+    return this.portfolioService.updatePortfolioPhoto(id, updateData, userId);
   }
 
   //! SUPPRIMER UNE PHOTO DU PORTFOLIO
   @UseGuards(JwtAuthGuard)
   @Delete(':id')
-  async deletePortfolioPhoto(@Param('id') id: string) {
-    return this.portfolioService.deletePortfolioPhoto(id);
+  async deletePortfolioPhoto(@Request() req: RequestWithUser, @Param('id') id: string) {
+    const userId = req.user.userId;
+    return this.portfolioService.deletePortfolioPhoto(id, userId);
   }
 }

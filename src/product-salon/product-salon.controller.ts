@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Request, UseGuards } from '@nestjs/common';
 import { ProductSalonService } from './product-salon.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
@@ -18,8 +18,9 @@ export class ProductSalonController {
 
   //! RÉCUPÉRER TOUS LES PRODUITS
   @Get(':userId')
-  async getAllProducts(@Param('userId') userId: string) {
-    return this.productSalonService.getAllProducts(userId);
+  async getAllProducts(@Param('userId') userId: string, @Query('page') page?: string) {
+    const pageNumber = page ? Number.parseInt(page, 10) : 1;
+    return this.productSalonService.getAllProducts(userId, pageNumber);
   }
 
   //! MODIFIER UN PRODUIT

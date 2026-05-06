@@ -93,6 +93,7 @@ export class UserService {
             email: true,
             salonName: true,
             image: true,
+            profileImage: true,
             firstName: true,
             lastName: true,
             phone: true,
@@ -177,6 +178,7 @@ export class UserService {
           email: true,
           salonName: true,
           image: true,
+          profileImage: true,
           firstName: true,
           lastName: true,
           phone: true,
@@ -260,6 +262,7 @@ export class UserService {
           salonName: true,
           description: true,
           image: true,
+          profileImage: true,
           firstName: true,
           lastName: true,
           phone: true,
@@ -350,12 +353,8 @@ export class UserService {
   async getUserById({userId} : {userId: string}): Promise<CachedUser | null> {
     const cacheKey = `user:${userId}`;
 
-    // 1. Vérifier dans Redis
-    const cachedUser = await this.cacheService.get<CachedUser>(cacheKey);
-    
-    if (cachedUser) {
-      return cachedUser;
-    }
+    // Toujours invalider avant lecture pour forcer un profil à jour.
+    await this.cacheService.del(cacheKey);
 
     // 2. D'abord récupérer le rôle de l'utilisateur
     const userRole = await this.prisma.user.findUnique({
@@ -417,6 +416,7 @@ export class UserService {
           website: true,
           description: true,
           image: true,
+          profileImage: true,
           role: true,
           verifiedSalon: true,
           prestations: true,
@@ -499,7 +499,7 @@ export class UserService {
   }
 
   //! UPDATE USER
-  async updateUser({userId, userBody} : {userId: string; userBody: { salonName: string; firstName: string; lastName: string; phone: string; address: string; city: string; postalCode: string; instagram: string; facebook: string; tiktok: string; website: string; description: string; image: string; prestations?: string[]; }}): Promise<Record<string, any>> {
+  async updateUser({userId, userBody} : {userId: string; userBody: { salonName: string; firstName: string; lastName: string; phone: string; address: string; city: string; postalCode: string; instagram: string; facebook: string; tiktok: string; website: string; description: string; image: string; profileImage?: string; prestations?: string[]; }}): Promise<Record<string, any>> {
     
     // Vérifier que userId est défini
     if (!userId) {
@@ -531,6 +531,7 @@ export class UserService {
         website: userBody.website,
         description: userBody.description,
         image: userBody.image, // Assurez-vous que l'image est gérée correctement
+        profileImage: userBody.profileImage,
         prestations: safePrestations
       },
     });
@@ -541,6 +542,8 @@ export class UserService {
     await this.cacheService.delPattern('users:list:*');
     // Invalider les caches de slug qui pourraient être affectés
     await this.cacheService.delPattern('user:slug:*');
+    // Invalider les caches de RDV client qui exposent l'image du salon
+    await this.cacheService.delPattern('client:appointments:*');
 
     return user;
   }
@@ -607,6 +610,7 @@ export class UserService {
     await this.cacheService.del(`user:${userId}`);
     await this.cacheService.delPattern('users:list:*');
     await this.cacheService.delPattern('user:slug:*');
+    await this.cacheService.delPattern('client:appointments:*');
 
     return user;
   }

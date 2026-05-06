@@ -12,6 +12,25 @@ export class PortfolioService {
     private cacheService: CacheService
   ) {}
 
+  private async validateTatoueurForSalon(tatoueurId: string, userId: string) {
+    const tatoueur = await this.prisma.tatoueur.findFirst({
+      where: {
+        id: tatoueurId,
+        userId,
+      },
+      select: { id: true },
+    });
+
+    if (!tatoueur) {
+      return {
+        error: true,
+        message: 'Le tatoueur sélectionné est introuvable pour ce salon.',
+      };
+    }
+
+    return null;
+  }
+
    //! AJOUTER UNE PHOTO AU PORTFOLIO
   async addPhotoToPortfolio({portfolioBody, userId}: {portfolioBody: AddPhotoDto, userId: string}) {
     try {
@@ -40,6 +59,13 @@ export class PortfolioService {
         };
       }
 
+      if (tatoueurId) {
+        const tatoueurValidation = await this.validateTatoueurForSalon(tatoueurId, userId);
+        if (tatoueurValidation) {
+          return tatoueurValidation;
+        }
+      }
+
       // Ajouter la photo au portfolio
       const newPhoto = await this.prisma.portfolio.create({
         data: {
@@ -52,7 +78,7 @@ export class PortfolioService {
       });
 
       // Invalider le cache après ajout
-      await this.cacheService.del(`portfolio:photos:${userId}`);
+      await this.cacheService.delPattern(`portfolio:photos:${userId}:*`);
 
       return {
         error: false,
@@ -69,40 +95,77 @@ export class PortfolioService {
   }
 
   //! VOIR TOUTES LES PHOTOS D'UN PORTFOLIO
-  async getPortfolioPhotos(userId: string) {
+  async getPortfolioPhotos(userId: string, tatoueurId?: string, page: number = 1) {
     try {
-      const cacheKey = `portfolio:photos:${userId}`;
+      const pageSize = 10;
+      const currentPage = Number.isNaN(page) || page < 1 ? 1 : page;
+      const skip = (currentPage - 1) * pageSize;
+      const cacheKey = `portfolio:photos:${userId}:${tatoueurId ?? 'all'}:page:${currentPage}`;
 
       // 1. Vérifier dans Redis
       const cachedPhotos = await this.cacheService.get<{
-        id: string;
-        title: string;
-        imageUrl: string;
-        description: string;
-        [key: string]: any;
-      }[]>(cacheKey);
+        photos: {
+          id: string;
+          title: string;
+          imageUrl: string;
+          description: string;
+          [key: string]: any;
+        }[];
+        pagination: {
+          page: number;
+          pageSize: number;
+          total: number;
+          totalPages: number;
+          hasNextPage: boolean;
+          hasPreviousPage: boolean;
+        };
+      }>(cacheKey);
       
       if (cachedPhotos) {
         return cachedPhotos;
       }
 
-      // 2. Sinon, aller chercher en DB
-      const photos = await this.prisma.portfolio.findMany({
-        where: { userId },
-        orderBy: { createdAt: 'desc' }, // Optionnel : trier par date de création
+      const whereClause = {
+        userId,
+        ...(tatoueurId ? { tatoueurId } : {}),
+      };
+
+      const total = await this.prisma.portfolio.count({
+        where: whereClause,
       });
 
-      // 3. Mettre en cache (TTL 15 minutes pour les photos portfolio)
-      await this.cacheService.set(cacheKey, photos, 900);
+      // 2. Sinon, aller chercher en DB
+      const photos = await this.prisma.portfolio.findMany({
+        where: whereClause,
+        orderBy: { createdAt: 'desc' }, // Optionnel : trier par date de création
+        skip,
+        take: pageSize,
+      });
 
-      return photos;
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+      const response = {
+        photos,
+        pagination: {
+          page: currentPage,
+          pageSize,
+          total,
+          totalPages,
+          hasNextPage: currentPage < totalPages,
+          hasPreviousPage: currentPage > 1,
+        },
+      };
+
+      // 3. Mettre en cache (TTL 15 minutes pour les photos portfolio)
+      await this.cacheService.set(cacheKey, response, 900);
+
+      return response;
     } catch (error) {
       throw new Error('Erreur lors de la récupération des photos du portfolio : ' + error);
     }
   }
 
   //! MODIFIER UNE PHOTO DU PORTFOLIO
-  async updatePortfolioPhoto(id: string, updateData: Partial<AddPhotoDto>) {
+  async updatePortfolioPhoto(id: string, updateData: Partial<AddPhotoDto>, userId: string) {
     try {
       // Vérifier si la photo existe
       const existingPhoto = await this.prisma.portfolio.findUnique({
@@ -116,6 +179,20 @@ export class PortfolioService {
         };
       }
 
+      if (existingPhoto.userId !== userId) {
+        return {
+          error: true,
+          message: 'Non autorisé à modifier cette photo.',
+        };
+      }
+
+      if (updateData.tatoueurId) {
+        const tatoueurValidation = await this.validateTatoueurForSalon(updateData.tatoueurId, userId);
+        if (tatoueurValidation) {
+          return tatoueurValidation;
+        }
+      }
+
       // Mettre à jour la photo
       const updatedPhoto = await this.prisma.portfolio.update({
         where: { id },
@@ -123,7 +200,7 @@ export class PortfolioService {
       });
 
       // Invalider le cache après mise à jour
-      await this.cacheService.del(`portfolio:photos:${existingPhoto.userId}`);
+      await this.cacheService.delPattern(`portfolio:photos:${existingPhoto.userId}:*`);
 
       return {
         error: false,
@@ -140,7 +217,7 @@ export class PortfolioService {
   }
 
   //! SUPPRIMER UNE PHOTO DU PORTFOLIO
-  async deletePortfolioPhoto(id: string) {
+  async deletePortfolioPhoto(id: string, userId: string) {
     try {
       // Vérifier si la photo existe
       const existingPhoto = await this.prisma.portfolio.findUnique({
@@ -151,13 +228,20 @@ export class PortfolioService {
         throw new Error('Photo non trouvée');
       }
 
+      if (existingPhoto.userId !== userId) {
+        return {
+          error: true,
+          message: 'Non autorisé à supprimer cette photo.',
+        };
+      }
+
       // Supprimer la photo
       await this.prisma.portfolio.delete({
         where: { id },
       });
 
       // Invalider le cache après suppression
-      await this.cacheService.del(`portfolio:photos:${existingPhoto.userId}`);
+      await this.cacheService.delPattern(`portfolio:photos:${existingPhoto.userId}:*`);
 
       return { message: 'Photo supprimée avec succès' };
     } catch (error) {

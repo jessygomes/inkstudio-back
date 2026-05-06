@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Request, UseGuards } from '@nestjs/common';
 import { FlashService } from './flash.service';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { RequestWithUser } from 'src/auth/jwt.strategy';
@@ -17,8 +17,9 @@ export class FlashController {
   }
 
   @Get(':userId')
-  async getAvailableFlashsByUser(@Param('userId') userId: string) {
-    return this.flashService.getAvailableFlashsByUser(userId);
+  async getAvailableFlashsByUser(@Param('userId') userId: string, @Query('page') page?: string) {
+    const pageNumber = page ? Number.parseInt(page, 10) : 1;
+    return this.flashService.getAvailableFlashsByUser(userId, pageNumber);
   }
 
   @UseGuards(JwtAuthGuard)

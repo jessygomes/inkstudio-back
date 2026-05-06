@@ -15,6 +15,10 @@ export class UpdateUserDto {
   image: string;
 
   @IsString()
+  @IsOptional()
+  profileImage: string;
+
+  @IsString()
   phone: string;
 
   @IsString()
