@@ -41,6 +41,7 @@ import { MessagingModule } from './messaging/messaging.module';
 import { StripeModule } from './stripe/stripe.module';
 import { FlashModule } from './flash/flash.module';
 import { ArticlesModule } from './articles/articles.module';
+import { MoodboardModule } from './moodboard/moodboard.module';
 
 @Module({
   imports: [
@@ -57,6 +58,7 @@ import { ArticlesModule } from './articles/articles.module';
     PortfolioModule,
     FlashModule,
     ArticlesModule,
+    MoodboardModule,
     ProductSalonModule,
     // Note: Les queues individuelles sont gérées dans leurs modules respectifs
     FollowUpModule,

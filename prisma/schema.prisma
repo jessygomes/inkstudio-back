@@ -97,16 +97,47 @@ model User {
 
 //! MODEL POUR STOCKER LES INFOS D'UN CLIENT CONNECTÉ
 model ClientProfile {
-  id          String   @id @default(cuid())
-  userId      String   @unique
+  id          String      @id @default(cuid())
+  userId      String      @unique
   pseudo      String?
   birthDate   DateTime?
   city        String?
   postalCode  String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
 
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  moodboards  Moodboard[]
+}
+
+//! MODEL POUR LES MOODBOARDS (inspirations tattoo du client)
+model Moodboard {
+  id              String           @id @default(cuid())
+  clientProfileId String
+  name            String
+  description     String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  clientProfile   ClientProfile    @relation(fields: [clientProfileId], references: [id], onDelete: Cascade)
+  images          MoodboardImage[]
+  appointments    Appointment[]
+
+  @@index([clientProfileId])
+}
+
+//! MODEL POUR LES IMAGES D'UN MOODBOARD
+model MoodboardImage {
+  id          String    @id @default(cuid())
+  moodboardId String
+  url         String
+  caption     String?
+  position    Int       @default(0)
+  createdAt   DateTime  @default(now())
+
+  moodboard   Moodboard @relation(fields: [moodboardId], references: [id], onDelete: Cascade)
+
+  @@index([moodboardId])
 }
 
 //! MODEL POUR LES FAVORIS (clients qui ajoutent des salons en favoris)
@@ -195,6 +226,7 @@ model Appointment {
   visioRoom          String?
   followUp7SentAt    DateTime?
   followUp30SentAt   DateTime?
+  moodboardId        String?             // Moodboard connecté au rdv par le client
 
   conversation              Conversation?
   
@@ -205,7 +237,10 @@ model Appointment {
   
   // NOUVELLE relation pour client connecté
   clientUser         User?               @relation("ClientUserAppointments", fields: [clientUserId], references: [id])
-  
+
+  // Moodboard connecté au rdv
+  moodboard          Moodboard?          @relation(fields: [moodboardId], references: [id], onDelete: SetNull)
+
   FollowUpRequest    FollowUpRequest?
   FollowUpSubmission FollowUpSubmission?
   rescheduleRequests RescheduleRequest[]
