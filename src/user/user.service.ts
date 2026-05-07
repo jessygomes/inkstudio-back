@@ -1425,6 +1425,9 @@ export class UserService {
                 salonResponse: true,
                 salonRespondedAt: true
               }
+            },
+            moodboard: {
+              select: { id: true, name: true, description: true }
             }
           },
           orderBy: {
@@ -1508,6 +1511,11 @@ export class UserService {
           createdAt: appointment.salonReview.createdAt,
           salonResponse: appointment.salonReview.salonResponse,
           salonRespondedAt: appointment.salonReview.salonRespondedAt
+        } : null,
+        moodboard: appointment.moodboard ? {
+          id: appointment.moodboard.id,
+          name: appointment.moodboard.name,
+          description: appointment.moodboard.description
         } : null
       }));
 

@@ -61,6 +61,45 @@ export class AppointmentsService {
     return null;
   }
 
+  private async resolveValidatedMoodboardId({
+    moodboardId,
+    clientUserId,
+  }: {
+    moodboardId?: string;
+    clientUserId?: string;
+  }) {
+    if (!moodboardId) {
+      return { moodboardId: undefined, errorMessage: null as string | null };
+    }
+
+    if (!clientUserId) {
+      return {
+        moodboardId: undefined,
+        errorMessage:
+          'Vous devez être connecté en tant que client pour lier un moodboard au rendez-vous.',
+      };
+    }
+
+    const moodboard = await this.prisma.moodboard.findFirst({
+      where: {
+        id: moodboardId,
+        clientProfile: {
+          userId: clientUserId,
+        },
+      },
+      select: { id: true },
+    });
+
+    if (!moodboard) {
+      return {
+        moodboardId: undefined,
+        errorMessage: 'Moodboard introuvable ou non autorisé pour ce client.',
+      };
+    }
+
+    return { moodboardId: moodboard.id, errorMessage: null as string | null };
+  }
+
   private async findAppointmentConflict({
     userId,
     start,
@@ -168,7 +207,7 @@ export class AppointmentsService {
   //! ------------------------------------------------------------------------------
   async create({ userId, rdvBody }: {userId: string, rdvBody: CreateAppointmentDto}) {
     try {
-      const {  title, prestation, start, end, clientFirstname, clientLastname, clientEmail, clientPhone, clientBirthdate, tatoueurId, visio, visioRoom, skin } = rdvBody;
+      const {  title, prestation, start, end, clientFirstname, clientLastname, clientEmail, clientPhone, clientBirthdate, tatoueurId, visio, visioRoom, skin, moodboardId } = rdvBody;
 
       const skinValidationError = this.validateSkinToneForPrestation(prestation, skin);
       if (skinValidationError) {
@@ -337,6 +376,18 @@ export class AppointmentsService {
         generatedVisioRoom = this.videoCallService.generateVideoCallLink(tempAppointmentId, salonConfig?.salonName || undefined);
       }
 
+      const moodboardValidation = await this.resolveValidatedMoodboardId({
+        moodboardId,
+        clientUserId: clientUser?.id,
+      });
+
+      if (moodboardValidation.errorMessage) {
+        return {
+          error: true,
+          message: moodboardValidation.errorMessage,
+        };
+      }
+
       if (prestation === PrestationType.PROJET || prestation === PrestationType.TATTOO || prestation === PrestationType.PIERCING || prestation === PrestationType.RETOUCHE) {
         // Créer le rendez-vous
         const newAppointment = await this.prisma.appointment.create({
@@ -349,6 +400,7 @@ export class AppointmentsService {
             tatoueurId,
             clientId: client.id,
             clientUserId: clientUser?.id, // Lier au client connecté si applicable
+            moodboardId: moodboardValidation.moodboardId,
             skin,
             status: 'CONFIRMED',
             visio: visio || false,
@@ -525,6 +577,7 @@ export class AppointmentsService {
           tatoueurId,
           clientId: client.id,
           clientUserId: clientUser?.id, // Lier au client connecté si applicable
+          moodboardId: moodboardValidation.moodboardId,
           visio: visio || false,
           visioRoom: generatedVisioRoom
         },
@@ -635,7 +688,7 @@ export class AppointmentsService {
         };
       }
 
-      const { title, prestation, start, end, clientFirstname, clientLastname, clientEmail, clientPhone, clientBirthdate, tatoueurId, visio, visioRoom, skin } = rdvBody;
+      const { title, prestation, start, end, clientFirstname, clientLastname, clientEmail, clientPhone, clientBirthdate, tatoueurId, visio, visioRoom, skin, moodboardId } = rdvBody;
 
       const skinValidationError = this.validateSkinToneForPrestation(prestation, skin);
       if (skinValidationError) {
@@ -832,6 +885,18 @@ export class AppointmentsService {
         generatedVisioRoom = this.videoCallService.generateVideoCallLink(tempAppointmentId, salonConfig?.salonName || undefined);
       }
 
+      const moodboardValidation = await this.resolveValidatedMoodboardId({
+        moodboardId,
+        clientUserId: effectiveClientUserId,
+      });
+
+      if (moodboardValidation.errorMessage) {
+        return {
+          error: true,
+          message: moodboardValidation.errorMessage,
+        };
+      }
+
       if (prestation === PrestationType.PROJET || prestation === PrestationType.TATTOO || prestation === PrestationType.PIERCING || prestation === PrestationType.RETOUCHE) {
         const newAppointment = await this.prisma.appointment.create({
           data: {
@@ -843,6 +908,7 @@ export class AppointmentsService {
             tatoueurId,
             clientId: client.id,
             clientUserId: clientUser?.id, // Lier au client connecté si applicable
+            moodboardId: moodboardValidation.moodboardId,
             skin,
             status: appointmentStatus,
             visio: visio || false,
@@ -1084,6 +1150,7 @@ export class AppointmentsService {
           tatoueurId,
           clientId: client.id,
           clientUserId: clientUser?.id, // Lier au client connecté si applicable
+          moodboardId: moodboardValidation.moodboardId,
           status: appointmentStatus,
           visio: visio || false,
           visioRoom: generatedVisioRoom
@@ -1342,6 +1409,9 @@ export class AppointmentsService {
               name: true,
             },
           },
+          moodboard: {
+            select: { id: true, name: true, description: true },
+          },
         },
         orderBy: {
           start: 'desc', // Trier par date décroissante
@@ -1502,6 +1572,9 @@ export class AppointmentsService {
               select: {
                 id: true,
               },
+            },
+            moodboard: {
+              select: { id: true, name: true, description: true },
             },
           },
           orderBy: {
@@ -1727,6 +1800,9 @@ export class AppointmentsService {
           tatoueur: true,
           tattooDetail: true,
           salonReview: true,
+          moodboard: {
+            select: { id: true, name: true, description: true },
+          },
         },
       });
 
@@ -2988,6 +3064,9 @@ async cancelAppointmentByClient(appointmentId: string, clientUserId: string, rea
               email: true,
               phone: true,
             },
+          },
+          moodboard: {
+            select: { id: true, name: true, description: true },
           },
         },
         orderBy: {

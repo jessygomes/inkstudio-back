@@ -78,6 +78,10 @@ export class CreateAppointmentDto {
   @IsOptional()
   visioRoom?: string;
 
+  @IsOptional()
+  @IsString()
+  moodboardId?: string;
+
   // Infos projet (facultatif)
   @IsOptional() @IsString() description?: string;
   @IsOptional() @IsString() zone?: string;
