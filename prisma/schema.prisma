@@ -93,6 +93,9 @@ model User {
   messagesSent              Message[]
   messageNotifications      MessageNotification[]
   notificationPreference    NotificationPreference?
+
+  // Statistiques visites profil public
+  salonProfileViews         SalonProfileView[]    @relation("SalonProfileViews")
 }
 
 //! MODEL POUR STOCKER LES INFOS D'UN CLIENT CONNECTÉ
@@ -179,6 +182,25 @@ model SalonReview {
   @@index([rating])
   @@index([createdAt])
   @@index([isVisible])
+}
+
+//! MODEL POUR TRACKER LES VISITES DU PROFIL PUBLIC SALON
+model SalonProfileView {
+  id                String    @id @default(cuid())
+  salonId           String    // ID du salon (User)
+  viewerIpHash      String?   // Hash de l'IP du visiteur (pour anonymiser)
+  referrer          String?   // Source du trafic (google, direct, etc.)
+  userAgent         String?   // User-Agent du navigateur
+  country           String?   // Pays détecté (optionnel)
+  city              String?   // Ville détectée (optionnel)
+  deviceType        String?   // DESKTOP, MOBILE, TABLET
+  createdAt         DateTime  @default(now())
+  
+  salon             User      @relation("SalonProfileViews", fields: [salonId], references: [id], onDelete: Cascade)
+  
+  @@index([salonId, createdAt])
+  @@index([createdAt])
+  @@index([deviceType])
 }
 
 //! MODEL POUR LES TATOUEURS DANS LE SALON

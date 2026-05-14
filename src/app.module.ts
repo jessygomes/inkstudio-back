@@ -42,6 +42,7 @@ import { StripeModule } from './stripe/stripe.module';
 import { FlashModule } from './flash/flash.module';
 import { ArticlesModule } from './articles/articles.module';
 import { MoodboardModule } from './moodboard/moodboard.module';
+import { SalonAnalyticsModule } from './salon-analytics/salon-analytics.module';
 
 @Module({
   imports: [
@@ -81,6 +82,7 @@ import { MoodboardModule } from './moodboard/moodboard.module';
     SalonVerificationModule,
     AdminModule,
     MessagingModule,
+    SalonAnalyticsModule,
   ],
   controllers: [
     UserController,
