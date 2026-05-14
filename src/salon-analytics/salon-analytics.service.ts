@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { SalonProfileView } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma.service';
 import { CreateSalonProfileViewDto } from './dto/create-salon-profile-view.dto';
@@ -11,8 +11,19 @@ export class SalonAnalyticsService {
 
   /**
    * Enregistre une visite du profil public d'un salon
+    * Retourne: la ligne SalonProfileView créée en base (id, salonId, viewerIpHash,
+    * referrer, userAgent, deviceType, country, city, createdAt).
    */
-  trackProfileView(createViewDto: CreateSalonProfileViewDto) {
+  async trackProfileView(createViewDto: CreateSalonProfileViewDto) {
+    const salon = await this.prisma.user.findUnique({
+      where: { id: createViewDto.salonId },
+      select: { id: true },
+    });
+
+    if (!salon) {
+      throw new BadRequestException('salonId invalide.');
+    }
+
     return this.prisma.salonProfileView.create({
       data: {
         salonId: createViewDto.salonId,
@@ -28,6 +39,17 @@ export class SalonAnalyticsService {
 
   /**
    * Récupère les statistiques des visites d'un salon
+    * Retourne: un objet d'analytics agrégé contenant:
+    * - totalViews: nombre total de vues sur la période
+    * - uniqueVisitors: nombre de visiteurs uniques (basé sur viewerIpHash)
+    * - averageViewsPerDay: moyenne des vues par jour
+    * - viewsByDay: dictionnaire { YYYY-MM-DD: count }
+    * - viewsByDeviceType: dictionnaire { deviceType: count } trié décroissant
+    * - viewsByReferrer: dictionnaire { referrer: count } trié décroissant
+    * - viewsByCountry: dictionnaire { country: count } trié décroissant
+    * - viewsByCity: dictionnaire { city: count } trié décroissant
+    * - period: { startDate, endDate, days }
+    * - lastUpdated: date de génération de la réponse
    */
   async getSalonAnalytics(salonId: string, days: number = 30) {
     const startDate = new Date();
@@ -74,6 +96,10 @@ export class SalonAnalyticsService {
 
   /**
    * Récupère les statistiques en temps réel (dernières 24h)
+    * Retourne:
+    * - views24h: nombre total de vues sur les 24 dernières heures
+    * - uniqueVisitors24h: nombre de visiteurs uniques sur 24h
+    * - byHour: dictionnaire { "H:00": count }
    */
   async getRealTimeAnalytics(salonId: string) {
     const last24h = new Date();
@@ -97,6 +123,11 @@ export class SalonAnalyticsService {
 
   /**
    * Récupère les statistiques comparatives pour le dashboard
+    * Retourne:
+    * - viewsLast30Days: vues sur les 30 derniers jours
+    * - viewsPrevious30Days: vues sur les 30 jours précédents
+    * - percentageChange: évolution en pourcentage
+    * - trend: 'UP' | 'DOWN' | 'STABLE'
    */
   async getComparativeAnalytics(salonId: string) {
     const now = new Date();
@@ -123,21 +154,39 @@ export class SalonAnalyticsService {
       },
     });
 
-    const percentageChange =
+    const deltaViews = viewsLast30Days - viewsPrevious30Days;
+
+    // Cas limite: évite un faux +100% quand il n'y a aucune vue sur les 2 périodes.
+    const rawPercentageChange =
       viewsPrevious30Days === 0
-        ? 100
-        : ((viewsLast30Days - viewsPrevious30Days) / viewsPrevious30Days) * 100;
+        ? viewsLast30Days === 0
+          ? 0
+          : 100
+        : (deltaViews / viewsPrevious30Days) * 100;
+
+    // Arrondi pour stabiliser l'affichage dashboard (évite le bruit flottant).
+    const percentageChange = Number(rawPercentageChange.toFixed(2));
+    const trendThreshold = 0.01;
 
     return {
       viewsLast30Days,
       viewsPrevious30Days,
+      deltaViews,
       percentageChange,
-      trend: percentageChange > 0 ? 'UP' : percentageChange < 0 ? 'DOWN' : 'STABLE',
+      trend:
+        percentageChange > trendThreshold
+          ? 'UP'
+          : percentageChange < -trendThreshold
+            ? 'DOWN'
+            : 'STABLE',
     };
   }
 
   /**
    * Récupère le top des salons par nombre de visites
+    * Retourne un tableau trié (desc) avec, pour chaque entrée:
+    * - salon: { id, salonName, city } ou null si le salon n'est plus trouvé
+    * - viewCount: nombre de vues sur la période
    */
   async getTopSalonsByViews(limit: number = 10, days: number = 30) {
     const startDate = new Date();
@@ -180,6 +229,9 @@ export class SalonAnalyticsService {
   // HELPERS
   // =====================
 
+  /**
+   * Retourne un dictionnaire par jour: { YYYY-MM-DD: count }.
+   */
   private groupViewsByDay(views: SalonProfileView[]) {
     const grouped: Record<string, number> = {};
 
@@ -191,6 +243,9 @@ export class SalonAnalyticsService {
     return grouped;
   }
 
+  /**
+   * Retourne un dictionnaire par heure: { "H:00": count }.
+   */
   private groupViewsByHour(views: SalonProfileView[]) {
     const grouped: Record<string, number> = {};
 
@@ -203,6 +258,9 @@ export class SalonAnalyticsService {
     return grouped;
   }
 
+  /**
+   * Retourne un dictionnaire { valeurDuChamp: count } trié par volume décroissant.
+   */
   private groupByField(views: SalonProfileView[], field: GroupableField) {
     const grouped: Record<string, number> = {};
 
