@@ -5,6 +5,9 @@ const ENV_ORIGINS = [
   process.env.FRONTEND_URL,
   process.env.FRONTEND_URL_BIS,
   process.env.WEB_URL,
+  // Domaines de production connus — couvre www et non-www via withHostVariants
+  'https://inkera-studio.fr',
+  'https://www.inkera-studio.fr',
   'http://localhost:3000',
   'http://localhost:3001',
   'http://127.0.0.1:3000',
