@@ -106,8 +106,8 @@ export class ClientsService {
       }
 
       // Invalider le cache des listes de clients après création
-      this.cacheService.delPattern(`clients:salon:${userId}:*`);
-      this.cacheService.delPattern(`clients:search:${userId}:*`);
+      await this.cacheService.delPattern(`clients:salon:${userId}:*`);
+      await this.cacheService.delPattern(`clients:search:${userId}:*`);
   
       // eslint-disable-next-line @typescript-eslint/no-unsafe-return
       return result;

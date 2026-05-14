@@ -19,6 +19,7 @@ interface AuthenticatedUser {
   firstName: string | null;
   lastName: string | null;
   image?: string | null;
+  profileImage?: string | null;
   saasPlan: string | null;
   phone: string | null;
   address: string | null;
@@ -42,6 +43,7 @@ export type AuthTokenResponse = {
   firstName?: string | null;
   lastName?: string | null;
   image?: string | null;
+  profileImage?: string | null;
   clientProfile?: {
     id: string;
     userId: string;
@@ -515,6 +517,7 @@ export class AuthService {
       role: user.role,
       email: user.email,
       image: user.image || null,
+      profileImage: user.profileImage || null,
       saasPlan: user.saasPlan,
       phone: user.phone || "",
       address: user.address || "",
