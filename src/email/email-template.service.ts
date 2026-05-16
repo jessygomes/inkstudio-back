@@ -109,13 +109,81 @@ export interface EmailTemplateData {
 
 @Injectable()
 export class EmailTemplateService {
-  
-  
+  private isLocalhostUrl(value: string): boolean {
+    try {
+      const hasProtocol = /^[a-zA-Z][a-zA-Z\d+.-]*:\/\//.test(value);
+      const parsed = new URL(hasProtocol ? value : `https://${value}`);
+      const host = parsed.hostname.toLowerCase();
+      return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+    } catch {
+      const lowered = value.toLowerCase();
+      return lowered.includes('localhost') || lowered.includes('127.0.0.1') || lowered.includes('::1');
+    }
+  }
+
+  private getFrontendBaseUrl(): string {
+    const candidates = [
+      process.env.FRONTEND_URL,
+      process.env.WEB_URL,
+      process.env.FRONT_URL,
+    ]
+      .map((url) => (url || '').trim())
+      .filter((url) => url.length > 0)
+      .map((url) => url.replace(/\/+$/, ''));
+
+    if (candidates.length === 0) {
+      return '#';
+    }
+
+    const isProduction = process.env.NODE_ENV === 'production';
+    if (!isProduction) {
+      return candidates[0];
+    }
+
+    return candidates.find((url) => !this.isLocalhostUrl(url)) || candidates[0];
+  }
+
+  private buildFrontendUrl(path: string): string {
+    const baseUrl = this.getFrontendBaseUrl();
+    if (baseUrl === '#') {
+      return '#';
+    }
+
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    return `${baseUrl}${normalizedPath}`;
+  }
+
+  private sanitizeSiteUrl(rawUrl: string | undefined, fallbackPath: string): string {
+    const safeFallback = this.buildFrontendUrl(fallbackPath);
+
+    if (!rawUrl || rawUrl.trim().length === 0) {
+      return safeFallback;
+    }
+
+    const trimmedUrl = rawUrl.trim();
+    if (trimmedUrl.startsWith('/')) {
+      return this.buildFrontendUrl(trimmedUrl);
+    }
+
+    const isProduction = process.env.NODE_ENV === 'production';
+    if (!isProduction || !this.isLocalhostUrl(trimmedUrl)) {
+      return trimmedUrl;
+    }
+
+    try {
+      const parsed = new URL(trimmedUrl);
+      const pathAndQuery = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+      return this.buildFrontendUrl(pathAndQuery || fallbackPath);
+    } catch {
+      return safeFallback;
+    }
+  }
+
 
   /**
    * Template de base avec le design cohérent du site
    */
-  private getBaseTemplate(content: string, title: string = 'InkStudio', salonName: string = 'InkStudio'): string {
+  private getBaseTemplate(content: string, title: string = 'Inkera Studio', salonName: string = 'Inkera Studio'): string {
     
     return `
       <!DOCTYPE html>
@@ -398,7 +466,7 @@ export class EmailTemplateService {
   //           <div class="footer-content">
   //             <p><strong>${salonName}</strong> - Votre partenaire créatif</p>
   //             <div class="divider"></div>
-  //             <p>Besoin d'aide ? Contactez-nous à <a href="mailto:contact@inkstudio.fr" style="color: #af7e70;">contact@inkstudio.fr</a></p>
+  //             <p>Besoin d'aide ? Contactez-nous à <a href="mailto:contact@inkerastudio.fr" style="color: #af7e70;">contact@inkerastudio.fr</a></p>
   //           </div>
   //           <div class="social-links">
   //             <a href="#" class="social-link">Instagram</a> 
@@ -421,44 +489,44 @@ export class EmailTemplateService {
         </div>
 
         ${data.appointmentDetails ? `
-          <div class="details-card">
-            <div class="details-title">📅 Détails de votre rendez-vous</div>
-            <ul class="details-list">
+          <div style="margin: 25px 0; padding: 0; background: transparent; color: #171717; font-family: 'Exo 2', sans-serif;">
+            <div style="font-family: 'Montserrat Alternates', sans-serif; font-size: 18px; font-weight: 600; margin-bottom: 15px; color: #171717;">📅 Détails de votre rendez-vous</div>
+            <ul style="list-style: none; padding: 0; margin: 0;">
               <li>
-                <span class="detail-label">📅 Date : </span>
-                <span class="detail-value">${data.appointmentDetails.date}</span>
+                <span style="font-weight: 500; color: #171717;">Date : </span>
+                <span style="font-weight: 600; color: #171717;">${data.appointmentDetails.date}</span>
               </li>
               <li>
-                <span class="detail-label">⏰ Heure : </span>
-                <span class="detail-value">${data.appointmentDetails.time}</span>
+                <span style="font-weight: 500; color: #171717;">Heure : </span>
+                <span style="font-weight: 600; color: #171717;">${data.appointmentDetails.time}</span>
               </li>
               ${data.appointmentDetails.duration ? `
                 <li>
-                  <span class="detail-label">⏱️ Durée : </span>
-                  <span class="detail-value">${data.appointmentDetails.duration}</span>
+                  <span style="font-weight: 500; color: #171717;">Durée : </span>
+                  <span style="font-weight: 600; color: #171717;">${data.appointmentDetails.duration}</span>
                 </li>
               ` : ''}
               <li>
-                <span class="detail-label">🎨 Prestation :</span>
-                <span class="detail-value">${data.appointmentDetails.service}</span>
+                <span style="font-weight: 500; color: #171717;">Prestation :</span>
+                <span style="font-weight: 600; color: #171717;">${data.appointmentDetails.service}</span>
               </li>
               ${data.appointmentDetails.tatoueur ? `
                 <li>
-                  <span class="detail-label">👨‍🎨 Artiste : </span>
-                  <span class="detail-value">${data.appointmentDetails.tatoueur}</span>
+                  <span style="font-weight: 500; color: #171717;">Artiste : </span>
+                  <span style="font-weight: 600; color: #171717;">${data.appointmentDetails.tatoueur}</span>
                 </li>
               ` : ''}
               ${data.appointmentDetails.price ? `
                 <li>
-                  <span class="detail-label">💰 Prix : </span>
-                  <span class="detail-value price-highlight">${data.appointmentDetails.price}€</span>
+                  <span style="font-weight: 500; color: #171717;">Prix : </span>
+                  <span style="font-weight: 600; color: #171717;">${data.appointmentDetails.price}€</span>
                 </li>
               ` : ''}
               ${data.appointmentDetails.visio && data.appointmentDetails.visioRoom ? `
                 <li>
-                  <span class="detail-label">🎥 Visioconférence :</span>
+                  <span style="font-weight: 500; color: #171717;">Visioconférence :</span>
                   <span class="detail-value">
-                    <a href="${data.appointmentDetails.visioRoom}" 
+                    <a href="${this.sanitizeSiteUrl(data.appointmentDetails.visioRoom, '/dashboard')}" 
                       style="background: #059669; color: white; padding: 8px 16px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; margin-top: 8px;">
                       🎥 Rejoindre la visioconférence
                     </a>
@@ -504,7 +572,7 @@ export class EmailTemplateService {
         <div class="greeting">Nouveau rendez-vous ! 🎉</div>
         
         <div class="message">
-          <p>Un nouveau rendez-vous vient d'être confirmé dans votre salon <strong>${data.salonName || 'InkStudio'}</strong>.</p>
+          <p>Un nouveau rendez-vous vient d'être confirmé dans votre salon <strong>${data.salonName || 'Inkera Studio'}</strong>.</p>
         </div>
 
         ${data.appointmentDetails ? `
@@ -543,7 +611,7 @@ export class EmailTemplateService {
                 <li>
                   <span class="detail-label" style="color: #3e2c27;">🎥 Visioconférence :</span>
                   <span class="detail-value">
-                    <a href="${data.appointmentDetails.visioRoom}" 
+                    <a href="${this.sanitizeSiteUrl(data.appointmentDetails.visioRoom, '/dashboard')}" 
                       style="background: #059669; color: white; padding: 8px 16px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; margin-top: 8px;">
                       🎥 Rejoindre la visioconférence
                     </a>
@@ -554,7 +622,7 @@ export class EmailTemplateService {
           </div>
         ` : ''}
 
-        <a href="${process.env.FRONTEND_URL || '#'}/dashboard" class="cta-button">
+        <a href="${this.buildFrontendUrl('/dashboard')}" class="cta-button">
           📊 Voir dans le dashboard
         </a>
 
@@ -593,7 +661,7 @@ export class EmailTemplateService {
         
         ${data.verificationUrl ? `
           <div style="text-align: center;">
-            <a href="${data.verificationUrl}" class="cta-button">
+            <a href="${this.sanitizeSiteUrl(data.verificationUrl, '/verifier-email')}" class="cta-button">
               ✅ Confirmer mon adresse email
             </a>
           </div>
@@ -644,11 +712,11 @@ export class EmailTemplateService {
         <div class="greeting">Réinitialisation de votre mot de passe 🔐</div>
         
         <div class="message">
-          <p>Vous avez demandé à réinitialiser votre mot de passe pour votre compte ${data.salonName || 'InkStudio'}.</p>
+          <p>Vous avez demandé à réinitialiser votre mot de passe pour votre compte ${data.salonName || 'Inkera Studio'}.</p>
           <p>Cliquez sur le bouton ci-dessous pour créer un nouveau mot de passe :</p>
         </div>
 
-        <a href="${data.resetUrl}" class="cta-button">
+        <a href="${this.sanitizeSiteUrl(data.resetUrl, '/reset-password')}" class="cta-button">
           🔑 Réinitialiser mon mot de passe
         </a>
 
@@ -770,7 +838,7 @@ export class EmailTemplateService {
                 <li>
                   <span class="detail-label">🎥 Visioconférence :</span>
                   <span class="detail-value">
-                    <a href="${data.appointmentDetails.visioRoom}" 
+                    <a href="${this.sanitizeSiteUrl(data.appointmentDetails.visioRoom, '/dashboard')}" 
                        style="background: #059669; color: white; padding: 8px 16px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; margin-top: 8px;">
                       🎥 Rejoindre la visioconférence
                     </a>
@@ -931,7 +999,7 @@ export class EmailTemplateService {
           </div>
         ` : ''}
 
-        <a href="${process.env.FRONTEND_URL || '#'}/dashboard" class="cta-button">
+        <a href="${this.buildFrontendUrl('/dashboard')}" class="cta-button">
           ✅ Confirmer le rendez-vous
         </a>
 
@@ -1046,7 +1114,7 @@ export class EmailTemplateService {
         ` : ''}
 
         <div style="text-align: center; margin: 32px 0;">
-          <a href="${reschedule.rescheduleUrl}" class="cta-button">
+          <a href="${this.sanitizeSiteUrl(reschedule.rescheduleUrl, '/nouveau-creneau')}" class="cta-button">
             📅 Choisir de nouveaux créneaux
           </a>
         </div>
@@ -1122,8 +1190,8 @@ export class EmailTemplateService {
 
     return this.getBaseTemplate(
       content, 
-      `Reprogrammation acceptée - ${data.salonName || 'InkStudio'}`, 
-      data.salonName || 'InkStudio'
+      `Reprogrammation acceptée - ${data.salonName || 'Inkera Studio'}`, 
+      data.salonName || 'Inkera Studio'
     );
   }
 
@@ -1249,7 +1317,7 @@ export class EmailTemplateService {
         </div>
 
         <div style="text-align: center; margin: 32px 0;">
-          <a href="${details.followUpUrl}" class="cta-button">
+          <a href="${this.sanitizeSiteUrl(details.followUpUrl, '/suivi')}" class="cta-button">
             Envoyer ma photo et mon avis
           </a>
         </div>
@@ -1313,7 +1381,7 @@ export class EmailTemplateService {
         </div>
 
         <div style="text-align: center; margin: 32px 0;">
-          <a href="${details.followupUrl}" class="cta-button">
+          <a href="${this.sanitizeSiteUrl(details.followupUrl, '/suivi')}" class="cta-button">
             💬 Laisser mon avis
           </a>
         </div>
@@ -1388,7 +1456,7 @@ export class EmailTemplateService {
           </ul>
         </div>
 
-        <a href="${process.env.FRONTEND_URL || '#'}/login" class="cta-button">
+        <a href="${this.buildFrontendUrl('/login')}" class="cta-button">
           🔑 Se connecter à mon espace
         </a>
 
@@ -1461,7 +1529,7 @@ export class EmailTemplateService {
           <p>Nous serons ravis de vous accueillir à nouveau pour parfaire votre œuvre d'art ! 🎯</p>
         </div>
 
-        <a href="${process.env.FRONTEND_URL || '#'}/contact" class="cta-button">
+        <a href="${this.buildFrontendUrl('/contact')}" class="cta-button">
           📞 Nous contacter pour une retouche
         </a>
 
@@ -1553,7 +1621,7 @@ export class EmailTemplateService {
           </ul>
         </div>
 
-        <a href="${process.env.FRONTEND_URL || '#'}/admin/users" class="cta-button">
+        <a href="${this.buildFrontendUrl('/admin/users')}" class="cta-button">
           Voir dans l'admin
         </a>
 
@@ -1721,7 +1789,7 @@ export class EmailTemplateService {
     const content = `
       <div class="content">
         <div class="welcome-section">
-          <h2 class="welcome-title">Bienvenue sur InkStudio ! 🎨</h2>
+          <h2 class="welcome-title">Bienvenue sur Inkera ! 🎨</h2>
         </div>
 
         <br/>
@@ -1737,7 +1805,7 @@ export class EmailTemplateService {
         
         ${data.verificationUrl ? `
           <div style="text-align: center;">
-            <a href="${data.verificationUrl}" class="cta-button">
+            <a href="${this.sanitizeSiteUrl(data.verificationUrl, '/verifier-email')}" class="cta-button">
               ✅ Confirmer mon adresse email
             </a>
           </div>
@@ -1786,15 +1854,15 @@ export class EmailTemplateService {
         <div class="message">
           <p class="welcome-subtitle">Si vous n'avez pas créé de compte, vous pouvez ignorer cet email en toute sécurité.</p>
           <br/>
-          <p><strong>Bienvenue dans la communauté InkStudio ! ✨</strong></p>
+          <p><strong>Bienvenue dans la communauté Inkera ! ✨</strong></p>
         </div>
       </div>
     `;
 
     return this.getBaseTemplate(
       content, 
-      'Vérification d\'email - InkStudio', 
-      'InkStudio'
+      'Vérification d\'email - Inkera Studio', 
+      'Inkera Studio'
     );
   }
 }

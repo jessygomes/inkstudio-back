@@ -16,6 +16,46 @@ export class EmailNotificationService {
     private readonly redisRateLimiterService: RedisRateLimiterService,
   ) {}
 
+  private isLocalhostUrl(value: string): boolean {
+    try {
+      const hasProtocol = /^[a-zA-Z][a-zA-Z\d+.-]*:\/\//.test(value);
+      const parsed = new URL(hasProtocol ? value : `https://${value}`);
+      const host = parsed.hostname.toLowerCase();
+      return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+    } catch {
+      const lowered = value.toLowerCase();
+      return lowered.includes('localhost') || lowered.includes('127.0.0.1') || lowered.includes('::1');
+    }
+  }
+
+  private getFrontendBaseUrl(): string {
+    const candidates = [process.env.FRONTEND_URL, process.env.WEB_URL, process.env.FRONT_URL]
+      .map((url) => (url || '').trim())
+      .filter((url) => url.length > 0)
+      .map((url) => url.replace(/\/+$/, ''));
+
+    if (candidates.length === 0) {
+      return '#';
+    }
+
+    const isProduction = process.env.NODE_ENV === 'production';
+    if (!isProduction) {
+      return candidates[0];
+    }
+
+    return candidates.find((url) => !this.isLocalhostUrl(url)) || candidates[0];
+  }
+
+  private buildFrontendUrl(path: string): string {
+    const baseUrl = this.getFrontendBaseUrl();
+    if (baseUrl === '#') {
+      return '#';
+    }
+
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    return `${baseUrl}${normalizedPath}`;
+  }
+
   /**
    * Vérifie si une notification doit être envoyée (hors-ligne, prefs, rate limit)
    */
@@ -121,7 +161,7 @@ export class EmailNotificationService {
       recipientName: recipient.firstName || 'Bonjour',
       senderName: sender.salonName || sender.firstName || 'Un contact',
       messageCount,
-      conversationLink: `${process.env.FRONTEND_URL}/conversations/${conversation.id}`,
+      conversationLink: this.buildFrontendUrl(`/conversations/${conversation.id}`),
       latestMessages: conversation.messages,
     });
 
@@ -217,7 +257,7 @@ export class EmailNotificationService {
           <p style="font-size: 14px; color: #666; margin-bottom: 10px;">
             Vous recevez cet email car vous avez un nouveau message.
           </p>
-          <a href="${process.env.FRONTEND_URL}/parametres" 
+          <a href="${this.buildFrontendUrl('/parametres')}" 
              style="color: #ff9d00; text-decoration: none; font-size: 14px; font-weight: 500;">
             ⚙️ Gérer vos préférences de notification
           </a>

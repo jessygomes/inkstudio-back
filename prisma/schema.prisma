@@ -350,6 +350,17 @@ model Client {
   phone              String
   birthDate          DateTime?
   address            String?
+
+  consentSigned      Boolean   @default(false)
+  consentSignedAt    DateTime?
+  consentFileUrl     String?   // PDF signé stocké
+  isMinor            Boolean   @default(false)
+  guardianName       String?   // Si mineur
+  guardianPhone      String?
+
+  tags                 String[]  // Ex: ["VIP", "habitué", "délicat"]
+  marketingConsent     Boolean   @default(false) // RGPD obligatoire
+
   createdAt          DateTime             @default(now())
   updatedAt          DateTime             @updatedAt
   aftercareRecords   Aftercare[]
@@ -374,6 +385,7 @@ model MedicalHistory {
   healthIssues  String?
   medications   String?
   pregnancy     Boolean
+  previousReactions    String?   // Réactions à des tatouages passés
   tattooHistory String?
   client        Client  @relation(fields: [clientId], references: [id])
 }

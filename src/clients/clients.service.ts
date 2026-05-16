@@ -22,6 +22,14 @@ export class ClientsService {
         phone,
         birthDate,
         address,
+        consentSigned,
+        consentSignedAt,
+        consentFileUrl,
+        isMinor,
+        guardianName,
+        guardianPhone,
+        tags,
+        marketingConsent,
         description,
         zone,
         size,
@@ -33,6 +41,7 @@ export class ClientsService {
         healthIssues,
         medications,
         pregnancy,
+        previousReactions,
         tattooHistory,
       } = clientBody;
 
@@ -56,6 +65,14 @@ export class ClientsService {
           phone,
           birthDate: birthDate ? new Date(birthDate) : undefined,
           address,
+          consentSigned,
+          consentSignedAt: consentSignedAt ? new Date(consentSignedAt) : undefined,
+          consentFileUrl,
+          isMinor,
+          guardianName,
+          guardianPhone,
+          tags,
+          marketingConsent,
           userId,
         },
       });
@@ -74,7 +91,7 @@ export class ClientsService {
         const tattooDetail = await this.prisma.tattooDetail.create({
           data: {
             clientId: newClient.id,
-            description,
+            description: description ?? '',
             zone,
             size,
             colorStyle,
@@ -88,7 +105,7 @@ export class ClientsService {
       }
          // Créer medicalHistory si au moins un champ existe
       const hasMedicalData =
-      allergies || healthIssues || medications || pregnancy !== undefined || tattooHistory;
+      allergies || healthIssues || medications || pregnancy !== undefined || previousReactions || tattooHistory;
 
       if (hasMedicalData) {
         const medicalHistory = await this.prisma.medicalHistory.create({
@@ -98,6 +115,7 @@ export class ClientsService {
             healthIssues,
             medications,
             pregnancy: pregnancy ?? false,
+            previousReactions,
             tattooHistory,
           },
         });
@@ -398,6 +416,14 @@ async searchClients(query: string, userId: string) {
         phone: true,
         birthDate: true,
         address: true,
+        consentSigned: true,
+        consentSignedAt: true,
+        consentFileUrl: true,
+        isMinor: true,
+        guardianName: true,
+        guardianPhone: true,
+        tags: true,
+        marketingConsent: true,
         linkedUserId: true,
         createdAt: true
       },
@@ -446,6 +472,14 @@ async searchClients(query: string, userId: string) {
       email: userClient.email,
       phone: userClient.phone,
       birthDate: userClient.clientProfile?.birthDate || null,
+      consentSigned: false,
+      consentSignedAt: null,
+      consentFileUrl: null,
+      isMinor: false,
+      guardianName: null,
+      guardianPhone: null,
+      tags: [],
+      marketingConsent: false,
       isUserClient: true, // Flag pour identifier les clients connectés
       linkedUserId: userClient.id,
       createdAt: new Date() // Pour le tri
@@ -480,31 +514,45 @@ async searchClients(query: string, userId: string) {
   //! MODIFIER UN CLIENT
   async updateClient(clientId: string, clientBody: CreateClientDto) {
     try {
-      const { firstName, lastName, email, phone, birthDate, address, allergies,
+      const { firstName, lastName, email, phone, birthDate, address,
+        consentSigned,
+        consentSignedAt,
+        consentFileUrl,
+        isMinor,
+        guardianName,
+        guardianPhone,
+        tags,
+        marketingConsent,
+        allergies,
         healthIssues,
         medications,
         pregnancy,
+        previousReactions,
         tattooHistory, } = clientBody;
 
       // Préparer les données à mettre à jour
-      const updateData: {
-        firstName: string;
-        lastName: string;
-        email: string;
-        phone: string;
-        address: string;
-        birthDate?: Date;
-      } = {
+      const updateData: Record<string, unknown> = {
         firstName,
         lastName,
         email,
         phone,
         address,
+        consentSigned,
+        consentFileUrl,
+        isMinor,
+        guardianName,
+        guardianPhone,
+        tags,
+        marketingConsent,
       };
 
       // Ajouter birthDate seulement si elle est fournie et valide
       if (birthDate && birthDate.trim() !== '') {
         updateData.birthDate = new Date(birthDate);
+      }
+
+      if (consentSignedAt && consentSignedAt.trim() !== '') {
+        updateData.consentSignedAt = new Date(consentSignedAt);
       }
 
       const updatedClient = await this.prisma.client.update({
@@ -520,7 +568,7 @@ async searchClients(query: string, userId: string) {
 
       // Gérer l'historique médical : créer ou mettre à jour
       const hasMedicalData =
-        allergies || healthIssues || medications || pregnancy !== undefined || tattooHistory;
+        allergies || healthIssues || medications || pregnancy !== undefined || previousReactions || tattooHistory;
 
       if (hasMedicalData) {
         // Vérifier si un historique médical existe déjà
@@ -537,6 +585,7 @@ async searchClients(query: string, userId: string) {
               healthIssues,
               medications,
               pregnancy: pregnancy ?? false,
+              previousReactions,
               tattooHistory,
             },
           });
@@ -551,6 +600,7 @@ async searchClients(query: string, userId: string) {
               healthIssues,
               medications,
               pregnancy: pregnancy ?? false,
+              previousReactions,
               tattooHistory,
             },
           });
@@ -565,8 +615,8 @@ async searchClients(query: string, userId: string) {
 
       // Invalider le cache après update
       await this.cacheService.del(`client:${clientId}`);
-      this.cacheService.delPattern(`clients:salon:${updatedClient.userId}:*`);
-      this.cacheService.delPattern(`clients:search:${updatedClient.userId}:*`);
+      await this.cacheService.delPattern(`clients:salon:${updatedClient.userId}:*`);
+      await this.cacheService.delPattern(`clients:search:${updatedClient.userId}:*`);
 
       // eslint-disable-next-line @typescript-eslint/no-unsafe-return
       return result;
