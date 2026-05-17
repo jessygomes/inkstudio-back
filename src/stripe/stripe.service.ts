@@ -1,7 +1,16 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import Stripe from 'stripe';
-import { CheckoutPlan, STRIPE_API_VERSION } from './stripe.constants';
+import {
+  CheckoutPlan,
+  STRIPE_API_VERSION,
+  resolveStripeSecretKey,
+} from './stripe.constants';
 
 const URL_SCHEME_REGEX = /^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//;
 const UPDATABLE_SUBSCRIPTION_STATUSES = new Set<Stripe.Subscription.Status>([
@@ -46,6 +55,7 @@ type StripeUserSnapshot = {
 export class StripeService {
   // Instance Stripe initialisée avec la clé secrète
   private stripe: Stripe;
+  private readonly logger = new Logger(StripeService.name);
 
   constructor(private prisma: PrismaService) {
     /*
@@ -53,9 +63,56 @@ export class StripeService {
      * - STRIPE_SECRET_KEY: clé secrète depuis les variables d'env
      * - apiVersion: version d'API supportée par le SDK Stripe installé
      */
-    this.stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+    const stripeSecretKey = resolveStripeSecretKey();
+
+    this.stripe = new Stripe(stripeSecretKey, {
       apiVersion: STRIPE_API_VERSION,
     });
+  }
+
+  private rethrowStripeOperationalError(operation: string, error: unknown): never {
+    if (error instanceof BadRequestException || error instanceof NotFoundException) {
+      throw error;
+    }
+
+    const stripeLikeError = error as {
+      type?: unknown;
+      code?: unknown;
+      message?: unknown;
+      requestId?: unknown;
+    };
+
+    const type = typeof stripeLikeError.type === 'string' ? stripeLikeError.type : '';
+    const code = typeof stripeLikeError.code === 'string' ? stripeLikeError.code : '';
+    const message =
+      typeof stripeLikeError.message === 'string' ? stripeLikeError.message : '';
+    const requestId =
+      typeof stripeLikeError.requestId === 'string' ? stripeLikeError.requestId : undefined;
+
+    const isExpiredKey =
+      code === 'api_key_expired' || /expired\s+api\s+key/i.test(message);
+    const isAuthError =
+      type === 'StripeAuthenticationError' || /api\s+key|authentication/i.test(message);
+
+    if (isExpiredKey) {
+      this.logger.error(
+        `Stripe auth error during ${operation}: API key expired${requestId ? ` (requestId: ${requestId})` : ''}`,
+      );
+      throw new BadRequestException(
+        'Configuration Stripe invalide en production: STRIPE_SECRET_KEY est expirée. Générez une nouvelle clé live dans Stripe Dashboard, mettez à jour le secret en hébergement, puis redéployez.',
+      );
+    }
+
+    if (isAuthError) {
+      this.logger.error(
+        `Stripe auth error during ${operation}${requestId ? ` (requestId: ${requestId})` : ''}`,
+      );
+      throw new BadRequestException(
+        'Configuration Stripe invalide: STRIPE_SECRET_KEY est rejetée par Stripe. Vérifiez la clé active dans les variables d\'environnement du backend.',
+      );
+    }
+
+    throw error;
   }
 
   private getFrontendBaseUrl() {
@@ -273,11 +330,12 @@ export class StripeService {
    * @returns URL de redirection vers le checkout Stripe
    */
   async createCheckoutSession(userId: string, plan: CheckoutPlan): Promise<string> {
-    const frontendBaseUrl = this.getFrontendBaseUrl();
+    try {
+      const frontendBaseUrl = this.getFrontendBaseUrl();
 
-    const user = await this.getUserOrThrow(userId);
-    const customerId = await this.getOrCreateCustomerId(user);
-    const priceId = this.getPriceIdForPlan(plan);
+      const user = await this.getUserOrThrow(userId);
+      const customerId = await this.getOrCreateCustomerId(user);
+      const priceId = this.getPriceIdForPlan(plan);
 
     // ✅ ÉTAPE 4 : Créer la session de checkout Stripe
     /*
@@ -286,7 +344,7 @@ export class StripeService {
      * 2. Traite les informations de paiement de manière sécurisée
      * 3. Revient à success_url ou cancel_url selon le résultat
      */
-    const session = await this.stripe.checkout.sessions.create({
+      const session = await this.stripe.checkout.sessions.create({
       mode: 'subscription', // Mode abonnement (pas one-time payment)
       customer: customerId, // Lier à ce customer Stripe
 
@@ -316,14 +374,17 @@ export class StripeService {
       },
     });
 
-    if (!session.url) {
-      throw new BadRequestException(
-        'Stripe n\'a pas retourné d\'URL de checkout.',
-      );
-    }
+      if (!session.url) {
+        throw new BadRequestException(
+          'Stripe n\'a pas retourné d\'URL de checkout.',
+        );
+      }
 
-    // Retourner l'URL du checkout pour rediriger le client
-    return session.url;
+      // Retourner l'URL du checkout pour rediriger le client
+      return session.url;
+    } catch (error) {
+      this.rethrowStripeOperationalError('createCheckoutSession', error);
+    }
   }
 
   async ensurePaidPlan(
@@ -503,23 +564,27 @@ export class StripeService {
    * @returns URL vers le portail Stripe à ouvrir côté front.
    */
   async createPortalSession(userId: string): Promise<string> {
-    const user = await this.getUserOrThrow(userId);
+    try {
+      const user = await this.getUserOrThrow(userId);
 
-    if (!user.stripeCustomerId) {
-      throw new BadRequestException(
-        'Aucun compte de facturation associé à cet utilisateur.',
-      );
+      if (!user.stripeCustomerId) {
+        throw new BadRequestException(
+          'Aucun compte de facturation associé à cet utilisateur.',
+        );
+      }
+
+      const frontendBaseUrl = this.getFrontendBaseUrl();
+
+      const session = await this.stripe.billingPortal.sessions.create({
+        customer: user.stripeCustomerId,
+        // URL vers laquelle l'utilisateur est redirigé après avoir quitté le portail.
+        return_url: `${frontendBaseUrl}/parametres`,
+      });
+
+      return session.url;
+    } catch (error) {
+      this.rethrowStripeOperationalError('createPortalSession', error);
     }
-
-    const frontendBaseUrl = this.getFrontendBaseUrl();
-
-    const session = await this.stripe.billingPortal.sessions.create({
-      customer: user.stripeCustomerId,
-      // URL vers laquelle l'utilisateur est redirigé après avoir quitté le portail.
-      return_url: `${frontendBaseUrl}/parametres`,
-    });
-
-    return session.url;
   }
 
   async cancelSubscription(userId: string): Promise<CancelSubscriptionResult> {

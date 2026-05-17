@@ -27,6 +27,7 @@ import {
   CheckoutPlan,
   STRIPE_API_VERSION,
   isCheckoutPlan,
+  resolveStripeSecretKey,
 } from './stripe.constants';
 
 interface CreateCheckoutBody {
@@ -74,7 +75,7 @@ export class StripeController {
   private logger = new Logger('StripeController');
 
   // Instance Stripe pour vérifier les webhooks
-  private stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  private stripe = new Stripe(resolveStripeSecretKey(), {
     apiVersion: STRIPE_API_VERSION,
   });
 
