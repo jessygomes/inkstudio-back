@@ -14,7 +14,21 @@ export class StocksService {
 
   async createItemStock({ stockBody, userId }: { stockBody: CreateStockDto, userId: string }) {
     try {
-      const { name, category, quantity, unit, minQuantity, pricePerUnit } = stockBody;
+      const {
+        name,
+        category,
+        type,
+        brand,
+        reference,
+        pigment,
+        lotNumber,
+        expirationDate,
+        notes,
+        quantity,
+        unit,
+        minQuantity,
+        pricePerUnit,
+      }: CreateStockDto = stockBody;
 
 
       // Créer l'élément de stock
@@ -23,6 +37,13 @@ export class StocksService {
           userId,
           name,
           category,
+          type: typeof type === 'string' ? type : undefined,
+          brand,
+          reference,
+          pigment,
+          lotNumber,
+          expirationDate: expirationDate ? new Date(expirationDate) : undefined,
+          notes,
           quantity,
           unit,
           minQuantity,
@@ -77,6 +98,9 @@ export class StocksService {
             OR: [
               { name: { contains: search, mode: 'insensitive' as const } },
               { category: { contains: search, mode: 'insensitive' as const } },
+              { brand: { contains: search, mode: 'insensitive' as const } },
+              { reference: { contains: search, mode: 'insensitive' as const } },
+              { lotNumber: { contains: search, mode: 'insensitive' as const } },
               { unit: { contains: search, mode: 'insensitive' as const } },
             ],
           }
@@ -186,9 +210,18 @@ export class StocksService {
   //! METTRE À JOUR UN ÉLÉMENT DE STOCK
   async updateStockItem(id: string, stockBody: Partial<CreateStockDto>) {
     try {
+      const normalizedBody = {
+        ...stockBody,
+        expirationDate:
+          stockBody.expirationDate !== undefined
+            ? (stockBody.expirationDate ? new Date(stockBody.expirationDate) : null)
+            : undefined,
+        type: stockBody.type !== undefined ? String(stockBody.type) : undefined,
+      };
+
       const updatedStockItem = await this.prisma.stockItem.update({
         where: { id },
-        data: stockBody,
+        data: normalizedBody,
       });
 
       // Invalider le cache de l'élément spécifique

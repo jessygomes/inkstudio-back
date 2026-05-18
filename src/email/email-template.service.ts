@@ -1278,7 +1278,7 @@ export class EmailTemplateService {
           <p>Cordialement,<br><strong>L'équipe de ${data.salonName || 'Inkera Studio'}</strong></p>
         </div>
 
-        <div class="warning-box" style="background: rgba(99, 102, 241, 0.1); border-left: 4px solid #6366f1;">
+        <div class="warning-box" style="background: rgba(99, 102, 241, 0.1); border-left: 4px solid #6366f1; color: #171717;">
           <strong>📧 Information :</strong> Cet email est une réponse à votre suivi de cicatrisation. Si vous n'avez pas envoyé de suivi, veuillez nous contacter.
         </div>
       </div>
@@ -1504,13 +1504,13 @@ export class EmailTemplateService {
           </div>
         ` : ''}
 
-        <div class="appointment-summary">
-          <div class="details-title">🔧 Retouches gratuites disponibles</div>
-          <div class="message" style="color: #3e2c27; margin: 15px 0;">
-            <p style="margin-bottom: 12px;">Si vous constatez que votre tatouage a besoin d'une petite retouche (zones moins pigmentées, traits à reprendre...), nous proposons <strong>des retouches gratuites pendant les 3 premiers mois</strong> suivant votre tatouage.</p>
+        <div style="margin: 25px 0; padding: 20px; background: transparent; border: 1px solid #e5e7eb; border-radius: 12px; color: #171717;">
+          <div style="font-family: 'Montserrat Alternates', sans-serif; font-size: 18px; font-weight: 600; margin-bottom: 15px; color: #171717;">🔧 Retouches gratuites disponibles</div>
+          <div class="message" style="color: #171717; margin: 15px 0;">
+            <p style="margin-bottom: 12px;">Si vous constatez que votre tatouage a besoin d'une petite retouche ? (zones moins pigmentées, traits à reprendre...)</p>
             
             <p style="margin-bottom: 12px;"><strong>Les retouches peuvent être nécessaires dans les cas suivants :</strong></p>
-            <ul style="margin: 8px 0; padding-left: 20px; color: #3e2c27;">
+            <ul style="margin: 8px 0; padding-left: 20px; color: #171717;">
               <li>Zones où l'encre n'a pas bien tenu</li>
               <li>Traits qui ont légèrement bavé pendant la cicatrisation</li>
               <li>Petites imperfections de cicatrisation</li>
@@ -1519,10 +1519,12 @@ export class EmailTemplateService {
           </div>
         </div>
 
+        <!--
         <div style="background: rgba(34, 197, 94, 0.1); border-left: 4px solid #22c55e; padding: 20px; border-radius: 8px; margin: 24px 0;">
           <p style="margin: 0 0 8px 0; color: #22c55e; font-weight: 600;">✅ Service inclus :</p>
           <p style="margin: 0; color: #1e1e1fff; font-weight: 600;">Les retouches sont entièrement gratuites pendant 3 mois !</p>
         </div>
+        -->
 
         <div class="message">
           <p>Si vous souhaitez programmer une retouche ou si vous avez des questions concernant votre tatouage, n'hésitez pas à nous contacter.</p>
@@ -1533,13 +1535,15 @@ export class EmailTemplateService {
           📞 Nous contacter pour une retouche
         </a>
 
+        <!--
         <div class="warning-box">
           <strong>⏰ Important :</strong> Les retouches gratuites sont disponibles uniquement pendant les 3 premiers mois suivant votre tatouage.
         </div>
+        -->
 
         <div class="message">
           <p><strong>Merci de nous faire confiance pour vos créations artistiques ! ✨</strong></p>
-          <p><em>L'équipe ${data.retouchesReminderDetails?.salonName || data.salonName || 'Inkera Studio'}</em></p>
+          <p><em>${data.retouchesReminderDetails?.salonName || data.salonName || 'Inkera Studio'}</em></p>
         </div>
       </div>
     `;

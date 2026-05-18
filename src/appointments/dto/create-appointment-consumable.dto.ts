@@ -1,8 +1,9 @@
 import { IsDateString, IsNumber, IsOptional, IsString } from 'class-validator';
 
-export class CreateStockDto {
+export class CreateAppointmentConsumableDto {
+  @IsOptional()
   @IsString()
-  name: string;
+  stockItemId?: string;
 
   @IsOptional()
   @IsString()
@@ -10,7 +11,7 @@ export class CreateStockDto {
 
   @IsOptional()
   @IsString()
-  type?: string;
+  productName?: string;
 
   @IsOptional()
   @IsString()
@@ -33,9 +34,6 @@ export class CreateStockDto {
   expirationDate?: string;
 
   @IsOptional()
-  @IsString()
-  notes?: string;
-
   @IsNumber()
   quantity?: number;
 
@@ -44,10 +42,6 @@ export class CreateStockDto {
   unit?: string;
 
   @IsOptional()
-  @IsNumber()
-  minQuantity?: number;
-
-  @IsOptional()
-  @IsNumber()
-  pricePerUnit?: number;
+  @IsString()
+  notes?: string;
 }

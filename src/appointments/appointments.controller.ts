@@ -9,6 +9,9 @@ import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { CreateAppointmentRequestDto } from './dto/create-appointment-request.dto';
 import { SendCustomEmailDto } from './dto/send-custom-email.dto';
 import { RequestWithUser } from 'src/auth/jwt.strategy';
+import { CreateAppointmentConsumableDto } from './dto/create-appointment-consumable.dto';
+import { UpdateAppointmentConsumableDto } from './dto/update-appointment-consumable.dto';
+import { SearchAppointmentConsumablesDto } from './dto/search-appointment-consumables.dto';
 
 @Controller('appointments')
 export class AppointmentsController {
@@ -339,6 +342,73 @@ export class AppointmentsController {
   @Post('client-reschedule-response')
   async handleClientRescheduleRequest(@Body() rescheduleData: ClientRescheduleRequestDto) {
     return await this.appointmentsService.handleClientRescheduleRequest(rescheduleData);
+  }
+
+  //! CONSOMMABLES - AJOUTER UN CONSOMMABLE A UN RDV
+  @UseGuards(JwtAuthGuard)
+  @Post(':appointmentId/consumables')
+  async createAppointmentConsumable(
+    @Request() req: RequestWithUser,
+    @Param('appointmentId') appointmentId: string,
+    @Body() dto: CreateAppointmentConsumableDto,
+  ) {
+    return this.appointmentsService.createAppointmentConsumable(
+      appointmentId,
+      req.user.userId,
+      dto,
+    );
+  }
+
+  //! CONSOMMABLES - LISTER LES CONSOMMABLES D'UN RDV
+  @UseGuards(JwtAuthGuard)
+  @Get(':appointmentId/consumables')
+  async getAppointmentConsumables(
+    @Request() req: RequestWithUser,
+    @Param('appointmentId') appointmentId: string,
+  ) {
+    return this.appointmentsService.getAppointmentConsumables(appointmentId, req.user.userId);
+  }
+
+  //! CONSOMMABLES - RECHERCHE PAR LOT/REFERENCE/DATE
+  @UseGuards(JwtAuthGuard)
+  @Get('consumables/search')
+  async searchAppointmentConsumables(
+    @Request() req: RequestWithUser,
+    @Query() query: SearchAppointmentConsumablesDto,
+  ) {
+    return this.appointmentsService.searchAppointmentConsumables(req.user.userId, query);
+  }
+
+  //! CONSOMMABLES - MODIFIER UN CONSOMMABLE
+  @UseGuards(JwtAuthGuard)
+  @Patch(':appointmentId/consumables/:consumableId')
+  async updateAppointmentConsumable(
+    @Request() req: RequestWithUser,
+    @Param('appointmentId') appointmentId: string,
+    @Param('consumableId') consumableId: string,
+    @Body() dto: UpdateAppointmentConsumableDto,
+  ) {
+    return this.appointmentsService.updateAppointmentConsumable(
+      appointmentId,
+      consumableId,
+      req.user.userId,
+      dto,
+    );
+  }
+
+  //! CONSOMMABLES - SUPPRIMER UN CONSOMMABLE
+  @UseGuards(JwtAuthGuard)
+  @Delete(':appointmentId/consumables/:consumableId')
+  async deleteAppointmentConsumable(
+    @Request() req: RequestWithUser,
+    @Param('appointmentId') appointmentId: string,
+    @Param('consumableId') consumableId: string,
+  ) {
+    return this.appointmentsService.deleteAppointmentConsumable(
+      appointmentId,
+      consumableId,
+      req.user.userId,
+    );
   }
 
   // //! VALIDER TOKEN DE DEMANDE

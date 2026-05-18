@@ -15,6 +15,9 @@ import { VideoCallService } from 'src/video-call/video-call.service';
 import { CacheService } from 'src/redis/cache.service';
 import { ConversationsService } from 'src/messaging/conversations/conversations.service';
 import { SKIN_REQUIRED_PRESTATIONS, SKIN_TONE_OPTIONS, SkinTone } from './constants/skin-tone.constants';
+import { CreateAppointmentConsumableDto } from './dto/create-appointment-consumable.dto';
+import { UpdateAppointmentConsumableDto } from './dto/update-appointment-consumable.dto';
+import { SearchAppointmentConsumablesDto } from './dto/search-appointment-consumables.dto';
 
 @Injectable()
 export class AppointmentsService {
@@ -134,6 +137,327 @@ export class AppointmentsService {
       where,
       select: { id: true },
     });
+  }
+
+  private async getConsumableAppointmentForUser(appointmentId: string, userId: string) {
+    const appointment = await this.prisma.appointment.findFirst({
+      where: {
+        id: appointmentId,
+        userId,
+      },
+      select: {
+        id: true,
+        prestation: true,
+      },
+    });
+
+    if (!appointment) {
+      return {
+        appointment: null,
+        error: {
+          error: true,
+          message: 'Rendez-vous introuvable ou non autorisé.',
+        },
+      };
+    }
+
+    const allowedPrestations = ['TATTOO', 'PIERCING', 'RETOUCHE'];
+    if (!allowedPrestations.includes(appointment.prestation)) {
+      return {
+        appointment: null,
+        error: {
+          error: true,
+          message: 'Les consommables sont disponibles uniquement pour Tattoo, Retouche et Piercing.',
+        },
+      };
+    }
+
+    return {
+      appointment,
+      error: null,
+    };
+  }
+
+  //! ------------------------------------------------------------------------------
+
+  //! CONSOMMABLES - CREER
+
+  //! ------------------------------------------------------------------------------
+  async createAppointmentConsumable(
+    appointmentId: string,
+    userId: string,
+    dto: CreateAppointmentConsumableDto,
+  ) {
+    try {
+      const validation = await this.getConsumableAppointmentForUser(appointmentId, userId);
+      if (validation.error) {
+        return validation.error;
+      }
+
+      const consumable = await this.prisma.appointmentConsumable.create({
+        data: {
+          appointmentId,
+          userId,
+          stockItemId: dto.stockItemId,
+          category: dto.category,
+          productName: dto.productName,
+          brand: dto.brand,
+          reference: dto.reference,
+          pigment: dto.pigment,
+          lotNumber: dto.lotNumber,
+          expirationDate: dto.expirationDate ? new Date(dto.expirationDate) : undefined,
+          quantity: dto.quantity,
+          unit: dto.unit,
+          notes: dto.notes,
+        },
+      });
+
+      await this.cacheService.del(`appointment:${appointmentId}`);
+
+      return {
+        error: false,
+        message: 'Consommable ajouté au rendez-vous.',
+        consumable,
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
+
+  //! ------------------------------------------------------------------------------
+
+  //! CONSOMMABLES - LISTER PAR RDV
+
+  //! ------------------------------------------------------------------------------
+  async getAppointmentConsumables(appointmentId: string, userId: string) {
+    try {
+      const validation = await this.getConsumableAppointmentForUser(appointmentId, userId);
+      if (validation.error) {
+        return validation.error;
+      }
+
+      const consumables = await this.prisma.appointmentConsumable.findMany({
+        where: {
+          appointmentId,
+          userId,
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
+
+      return {
+        error: false,
+        consumables,
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
+
+  //! ------------------------------------------------------------------------------
+
+  //! CONSOMMABLES - RECHERCHE LOT/REFERENCE/DATE
+
+  //! ------------------------------------------------------------------------------
+  async searchAppointmentConsumables(userId: string, query: SearchAppointmentConsumablesDto) {
+    try {
+      const page = Math.max(1, Number(query.page) || 1);
+      const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
+      const skip = (page - 1) * limit;
+
+      const where: any = {
+        userId,
+      };
+
+      if (query.lotNumber?.trim()) {
+        where.lotNumber = {
+          contains: query.lotNumber.trim(),
+          mode: 'insensitive',
+        };
+      }
+
+      if (query.reference?.trim()) {
+        where.reference = {
+          contains: query.reference.trim(),
+          mode: 'insensitive',
+        };
+      }
+
+      if (query.expirationDateFrom || query.expirationDateTo) {
+        where.expirationDate = {};
+
+        if (query.expirationDateFrom) {
+          where.expirationDate.gte = new Date(query.expirationDateFrom);
+        }
+
+        if (query.expirationDateTo) {
+          where.expirationDate.lte = new Date(query.expirationDateTo);
+        }
+      }
+
+      const [total, consumables] = await this.prisma.$transaction([
+        this.prisma.appointmentConsumable.count({ where }),
+        this.prisma.appointmentConsumable.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy: {
+            createdAt: 'desc',
+          },
+          include: {
+            appointment: {
+              select: {
+                id: true,
+                prestation: true,
+                start: true,
+                end: true,
+              },
+            },
+          },
+        }),
+      ]);
+
+      return {
+        error: false,
+        consumables,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.max(1, Math.ceil(total / limit)),
+        },
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
+
+  //! ------------------------------------------------------------------------------
+
+  //! CONSOMMABLES - METTRE A JOUR
+
+  //! ------------------------------------------------------------------------------
+  async updateAppointmentConsumable(
+    appointmentId: string,
+    consumableId: string,
+    userId: string,
+    dto: UpdateAppointmentConsumableDto,
+  ) {
+    try {
+      const validation = await this.getConsumableAppointmentForUser(appointmentId, userId);
+      if (validation.error) {
+        return validation.error;
+      }
+
+      const existingConsumable = await this.prisma.appointmentConsumable.findFirst({
+        where: {
+          id: consumableId,
+          appointmentId,
+          userId,
+        },
+        select: { id: true },
+      });
+
+      if (!existingConsumable) {
+        return {
+          error: true,
+          message: 'Consommable introuvable pour ce rendez-vous.',
+        };
+      }
+
+      const consumable = await this.prisma.appointmentConsumable.update({
+        where: { id: consumableId },
+        data: {
+          stockItemId: dto.stockItemId,
+          category: dto.category,
+          productName: dto.productName,
+          brand: dto.brand,
+          reference: dto.reference,
+          pigment: dto.pigment,
+          lotNumber: dto.lotNumber,
+          expirationDate: dto.expirationDate ? new Date(dto.expirationDate) : undefined,
+          quantity: dto.quantity,
+          unit: dto.unit,
+          notes: dto.notes,
+        },
+      });
+
+      await this.cacheService.del(`appointment:${appointmentId}`);
+
+      return {
+        error: false,
+        message: 'Consommable mis à jour.',
+        consumable,
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
+
+  //! ------------------------------------------------------------------------------
+
+  //! CONSOMMABLES - SUPPRIMER
+
+  //! ------------------------------------------------------------------------------
+  async deleteAppointmentConsumable(appointmentId: string, consumableId: string, userId: string) {
+    try {
+      const validation = await this.getConsumableAppointmentForUser(appointmentId, userId);
+      if (validation.error) {
+        return validation.error;
+      }
+
+      const existingConsumable = await this.prisma.appointmentConsumable.findFirst({
+        where: {
+          id: consumableId,
+          appointmentId,
+          userId,
+        },
+        select: { id: true },
+      });
+
+      if (!existingConsumable) {
+        return {
+          error: true,
+          message: 'Consommable introuvable pour ce rendez-vous.',
+        };
+      }
+
+      await this.prisma.appointmentConsumable.delete({
+        where: {
+          id: consumableId,
+        },
+      });
+
+      await this.cacheService.del(`appointment:${appointmentId}`);
+
+      return {
+        error: false,
+        message: 'Consommable supprimé.',
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
   }
 
   //! ------------------------------------------------------------------------------
@@ -1799,6 +2123,11 @@ export class AppointmentsService {
         include: {
           tatoueur: true,
           tattooDetail: true,
+          appointmentConsumables: {
+            orderBy: {
+              createdAt: 'desc',
+            },
+          },
           salonReview: true,
           moodboard: {
             select: { id: true, name: true, description: true },
