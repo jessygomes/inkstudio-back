@@ -192,8 +192,8 @@ async createReview(createSalonReviewDto: CreateSalonReviewDto, clientUserId: str
 
     // 8. Invalider les caches liés au salon
     await this.cacheService.del(`salon:reviews:${salonId}`);
-    this.cacheService.delPattern(`salon:reviews:${salonId}:*`);
-    this.cacheService.delPattern(`client:reviews:${clientUserId}:*`);
+    await this.cacheService.delPattern(`salon:reviews:${salonId}:*`);
+    await this.cacheService.delPattern(`client:reviews:${clientUserId}:*`);
 
     return {
       error: false,
