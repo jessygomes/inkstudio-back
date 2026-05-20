@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import { ClientsService } from './clients.service';
 import { CreateClientDto } from './dto/create-client.dto';
+import { UpdateClientConsentDto } from './dto/update-client-consent.dto';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { RequestWithUser } from 'src/auth/jwt.strategy';
 // import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
@@ -85,6 +86,18 @@ export class ClientsController {
   @Patch('update/:id')
   updateClient(@Param('id') id: string, @Body() clientBody: CreateClientDto) {
     return this.clientsService.updateClient(id, clientBody); 
+  }
+
+  //! METTRE A JOUR LE CONSENTEMENT D'UN CLIENT ✅
+  @UseGuards(JwtAuthGuard)
+  @Patch(':id/consent')
+  updateClientConsent(
+    @Request() req: RequestWithUser,
+    @Param('id') id: string,
+    @Body() consentBody: UpdateClientConsentDto,
+  ) {
+    const userId = req.user.userId;
+    return this.clientsService.updateClientConsent(id, userId, consentBody);
   }
 
   //! SUPPRIMER UN CLIENT ✅

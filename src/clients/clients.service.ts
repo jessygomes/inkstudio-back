@@ -3,6 +3,7 @@ import { PrismaService } from 'src/database/prisma.service';
 import { CreateClientDto } from './dto/create-client.dto';
 import { SaasService } from 'src/saas/saas.service';
 import { CacheService } from 'src/redis/cache.service';
+import { UpdateClientConsentDto } from './dto/update-client-consent.dto';
 
 @Injectable()
 export class ClientsService {
@@ -510,6 +511,82 @@ async searchClients(query: string, userId: string) {
     };
   }
 }
+
+  //! METTRE A JOUR LE CONSENTEMENT D'UN CLIENT
+  async updateClientConsent(clientId: string, userId: string, consentBody: UpdateClientConsentDto) {
+    try {
+      const existingClient = await this.prisma.client.findFirst({
+        where: {
+          id: clientId,
+          userId,
+        },
+        select: {
+          id: true,
+          userId: true,
+        },
+      });
+
+      if (!existingClient) {
+        return {
+          error: true,
+          message: 'Client introuvable ou non autorisé.',
+        };
+      }
+
+      const updateData: {
+        consentSigned?: boolean;
+        consentSignedAt?: Date;
+        consentFileUrl?: string;
+      } = {};
+
+      if (typeof consentBody.consentSigned === 'boolean') {
+        updateData.consentSigned = consentBody.consentSigned;
+      }
+
+      if (consentBody.consentSignedAt) {
+        updateData.consentSignedAt = new Date(consentBody.consentSignedAt);
+      }
+
+      if (typeof consentBody.consentFileUrl === 'string') {
+        updateData.consentFileUrl = consentBody.consentFileUrl;
+      }
+
+      if (Object.keys(updateData).length === 0) {
+        return {
+          error: true,
+          message: 'Aucune donnée de consentement à mettre à jour.',
+        };
+      }
+
+      const updatedClient = await this.prisma.client.update({
+        where: { id: clientId },
+        data: updateData,
+        select: {
+          id: true,
+          consentSigned: true,
+          consentSignedAt: true,
+          consentFileUrl: true,
+          updatedAt: true,
+        },
+      });
+
+      await this.cacheService.del(`client:${clientId}`);
+      await this.cacheService.delPattern(`clients:salon:${userId}:*`);
+      await this.cacheService.delPattern(`clients:search:${userId}:*`);
+
+      return {
+        error: false,
+        message: 'Consentement client mis à jour avec succès.',
+        client: updatedClient,
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
 
   //! MODIFIER UN CLIENT
   async updateClient(clientId: string, clientBody: CreateClientDto) {
