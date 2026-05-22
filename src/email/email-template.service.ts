@@ -71,6 +71,12 @@ export interface EmailTemplateData {
     tatoueurName: string;
     salonName: string;
   };
+
+  // Rappel de fin d'essai
+  trialEndingSoonDetails?: {
+    trialEndDate: string;
+    billingUrl?: string;
+  };
   
   verificationToken?: string;
   verificationUrl?: string;
@@ -698,6 +704,68 @@ export class EmailTemplateService {
       `Vérification d'email - ${data.salonName || 'Inkera Studio'}`, 
       data.salonName || 'Inkera Studio',
     
+    );
+  }
+
+  /**
+   *! Template de rappel de fin d'essai (J-3)
+   */
+  generateTrialEndingSoonEmail(data: EmailTemplateData): string {
+    const details = data.trialEndingSoonDetails;
+    if (!details) {
+      throw new Error('trialEndingSoonDetails is required for trial ending soon email');
+    }
+
+    const billingUrl = this.sanitizeSiteUrl(
+      details.billingUrl,
+      '/dashboard',
+    );
+
+    const content = `
+      <div class="content">
+        <div class="welcome-section">
+          <h2 class="welcome-title">Votre essai se termine bientôt</h2>
+        </div>
+
+        <br/>
+
+        <div class="message-box">
+          <p class="welcome-subtitle">Bonjour ${data.recipientName || 'cher utilisateur'},</p>
+          <p>
+            Votre période d'essai de 30 jours pour <strong>${data.salonName || 'Inkera Studio'}</strong>
+            se termine le <strong>${details.trialEndDate}</strong>.
+          </p>
+          <br/>
+          <p>
+            Aucun changement n'est nécessaire si votre moyen de paiement est valide:
+            la facturation se fera automatiquement à la fin de l'essai.
+          </p>
+        </div>
+
+        <div style="text-align: center;">
+          <a href="${billingUrl}" class="cta-button">
+            💳 Vérifier mon moyen de paiement
+          </a>
+        </div>
+
+        <div style="background: rgba(249, 115, 22, 0.1); border: 1px solid rgba(249, 115, 22, 0.2); border-radius: 12px; padding: 16px; margin: 24px 0; text-align: center;">
+          <p style="font-size: 13px; color: rgba(249, 115, 22, 0.9); margin: 0;">
+            <strong>⚠️ Important :</strong> En cas d'échec du paiement, votre compte passera en statut <strong>PAST_DUE</strong> avant un retour automatique au plan FREE après 5 jours.
+          </p>
+        </div>
+
+        <div class="message">
+          <p>Besoin d'aide ? Vous pouvez nous contacter à tout moment.</p>
+          <br/>
+          <p><strong>Merci de votre confiance ! ✨</strong></p>
+        </div>
+      </div>
+    `;
+
+    return this.getBaseTemplate(
+      content,
+      `Fin d'essai imminente - ${data.salonName || 'Inkera Studio'}`,
+      data.salonName || 'Inkera Studio',
     );
   }
 

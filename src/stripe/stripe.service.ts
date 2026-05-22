@@ -347,6 +347,7 @@ export class StripeService {
       const session = await this.stripe.checkout.sessions.create({
       mode: 'subscription', // Mode abonnement (pas one-time payment)
       customer: customerId, // Lier à ce customer Stripe
+      payment_method_collection: 'always', // Toujours demander un moyen de paiement (même si on a déjà un customer)
 
       line_items: [
         {
@@ -354,6 +355,10 @@ export class StripeService {
           quantity: 1, // Quantité d'abonnements
         },
       ],
+
+      subscription_data: { // Paramètres spécifiques à la souscription créée par ce checkout
+        trial_period_days: 30,
+      },
 
       /*
        * URLs de redirection après le paiement:

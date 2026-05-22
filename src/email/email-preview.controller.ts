@@ -92,6 +92,10 @@ export class EmailPreviewController {
         appointmentDate: 'Lundi 11 mai 2026',
         daysSince: 7,
       },
+      trialEndingSoonDetails: {
+        trialEndDate: 'Lundi 15 juin 2026',
+        billingUrl: 'https://app.inkera.com/dashboard',
+      },
       customMessage:
         'N hesitez pas a nous contacter si vous souhaitez ajuster le design avant la seance.',
     };
@@ -103,6 +107,8 @@ export class EmailPreviewController {
         return this.emailTemplateService.generateNewAppointmentNotificationEmail(baseData);
       case 'email-verification':
         return this.emailTemplateService.generateEmailVerificationEmail(baseData);
+      case 'trial-ending-soon':
+        return this.emailTemplateService.generateTrialEndingSoonEmail(baseData);
       case 'password-reset':
         return this.emailTemplateService.generatePasswordResetEmail(baseData);
       case 'followup-response':
@@ -127,7 +133,7 @@ export class EmailPreviewController {
         return this.emailTemplateService.generateClientEmailVerificationEmail(baseData);
       default:
         throw new BadRequestException(
-          `Unknown template '${template}'. Try: appointment-confirmation, new-appointment-notification, email-verification, password-reset, followup-response, cicatrisation-followup, feedback-request, reschedule-proposal, reschedule-confirmation, retouches-reminder, password-change-confirmation, pending-appointment, auto-confirmed-appointment, client-email-verification`,
+          `Unknown template '${template}'. Try: appointment-confirmation, new-appointment-notification, email-verification, trial-ending-soon, password-reset, followup-response, cicatrisation-followup, feedback-request, reschedule-proposal, reschedule-confirmation, retouches-reminder, password-change-confirmation, pending-appointment, auto-confirmed-appointment, client-email-verification`,
         );
     }
   }

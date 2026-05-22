@@ -3,6 +3,14 @@ import { PrismaService } from '../database/prisma.service';
 import { AgendaMode, SaasPlan, SaasPlanStatus } from '@prisma/client';
 import { freePlan, proPlan, businessPlan } from '../../utils/data';
 
+type UpdatePlanOptions = {
+  planStatus?: SaasPlanStatus;
+  trialEndDate?: Date | null;
+  nextPaymentDate?: Date | null;
+  lastPaymentDate?: Date | null;
+  pastDueSince?: Date | null;
+};
+
 @Injectable()
 export class SaasService {
   constructor(private readonly prisma: PrismaService) {}
@@ -231,11 +239,43 @@ export class SaasService {
   /**
    * 🔄 METTRE À JOUR LE PLAN D'UN UTILISATEUR
    */
-  async updateUserPlan(userId: string, plan: SaasPlan, endDate?: Date | null) {
+  async updateUserPlan(
+    userId: string,
+    plan: SaasPlan,
+    endDate?: Date | null,
+    options?: UpdatePlanOptions,
+  ) {
     const planConfig = this.getPlanConfiguration(plan);
+
+    const planStatus = options?.planStatus ?? SaasPlanStatus.ACTIVE;
+
+    // Ces champs sont optionnels: on ne les écrit que lorsqu'ils sont fournis
+    // explicitement, afin d'éviter d'écraser des dates déjà stockées.
+    const optionalFields: Partial<{
+      trialEndDate: Date | null;
+      nextPaymentDate: Date | null;
+      lastPaymentDate: Date | null;
+      pastDueSince: Date | null;
+    }> = {};
+
+    if (options && 'trialEndDate' in options) {
+      optionalFields.trialEndDate = options.trialEndDate ?? null;
+    }
+
+    if (options && 'nextPaymentDate' in options) {
+      optionalFields.nextPaymentDate = options.nextPaymentDate ?? null;
+    }
+
+    if (options && 'lastPaymentDate' in options) {
+      optionalFields.lastPaymentDate = options.lastPaymentDate ?? null;
+    }
+
+    if (options && 'pastDueSince' in options) {
+      optionalFields.pastDueSince = options.pastDueSince ?? null;
+    }
     
     // Si pas de date d'expiration fournie, calculer automatiquement
-    if (!endDate) {
+    if (endDate === undefined) {
       endDate = plan !== SaasPlan.FREE 
         ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) // 1 an
         : null;
@@ -254,21 +294,115 @@ export class SaasService {
         where: { userId },
         update: {
           currentPlan: plan,
-          planStatus: SaasPlanStatus.ACTIVE,
+          planStatus,
           endDate,
+          ...optionalFields,
           ...planConfig,
         },
         create: {
           userId,
           currentPlan: plan,
-          planStatus: SaasPlanStatus.ACTIVE,
+          planStatus,
           endDate,
+          ...optionalFields,
           ...planConfig,
         },
       }),
     ]);
 
     return saasPlanDetails;
+  }
+
+  /**
+   * Met l'abonnement en mode essai (TRIAL) avec une date de fin d'essai.
+   */
+  async markSubscriptionTrialing(
+    userId: string,
+    plan: SaasPlan,
+    trialEndDate: Date | null,
+  ) {
+    return await this.updateUserPlan(userId, plan, null, {
+      planStatus: SaasPlanStatus.TRIAL,
+      trialEndDate,
+      nextPaymentDate: trialEndDate,
+      pastDueSince: null,
+    });
+  }
+
+  /**
+   * Marque l'abonnement comme actif après paiement réussi.
+   */
+  async markSubscriptionActive(
+    userId: string,
+    plan: SaasPlan,
+    nextPaymentDate: Date | null,
+  ) {
+    return await this.updateUserPlan(userId, plan, null, {
+      planStatus: SaasPlanStatus.ACTIVE,
+      trialEndDate: null,
+      nextPaymentDate,
+      lastPaymentDate: new Date(),
+      pastDueSince: null,
+    });
+  }
+
+  /**
+   * Marque l'abonnement en retard de paiement (PAST_DUE).
+   * Aucune restriction fonctionnelle n'est appliquée à ce stade.
+   */
+  async markSubscriptionPastDue(
+    userId: string,
+    plan: SaasPlan,
+    nextPaymentDate: Date | null,
+    pastDueSince: Date = new Date(),
+  ) {
+    return await this.updateUserPlan(userId, plan, null, {
+      planStatus: SaasPlanStatus.PAST_DUE,
+      nextPaymentDate,
+      pastDueSince,
+    });
+  }
+
+  /**
+   * Rétrograde automatiquement en FREE les comptes en PAST_DUE
+   * depuis plus de `gracePeriodDays` jours.
+   */
+  async downgradeExpiredPastDueUsers(gracePeriodDays = 5) {
+    const cutoffDate = new Date(Date.now() - gracePeriodDays * 24 * 60 * 60 * 1000);
+
+    const pastDueUsers = await this.prisma.saasPlanDetails.findMany({
+      where: {
+        planStatus: SaasPlanStatus.PAST_DUE,
+        currentPlan: {
+          in: [SaasPlan.PRO, SaasPlan.BUSINESS],
+        },
+        pastDueSince: {
+          lte: cutoffDate,
+        },
+      },
+      select: {
+        userId: true,
+      },
+    });
+
+    let downgradedCount = 0;
+
+    for (const entry of pastDueUsers) {
+      await this.updateUserPlan(entry.userId, SaasPlan.FREE, null, {
+        planStatus: SaasPlanStatus.EXPIRED,
+        trialEndDate: null,
+        nextPaymentDate: null,
+        pastDueSince: null,
+      });
+      downgradedCount += 1;
+    }
+
+    return {
+      scanned: pastDueUsers.length,
+      downgraded: downgradedCount,
+      gracePeriodDays,
+      cutoffDate,
+    };
   }
 
   /**

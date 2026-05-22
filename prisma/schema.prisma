@@ -635,6 +635,7 @@ model SaasPlanDetails {
   yearlyPrice        Float?
   lastPaymentDate    DateTime?
   nextPaymentDate    DateTime?
+  pastDueSince       DateTime?
   paymentMethod      String?
   stripeCustomerId   String?
   createdAt          DateTime       @default(now())
@@ -644,6 +645,17 @@ model SaasPlanDetails {
   @@index([currentPlan])
   @@index([planStatus])
   @@index([endDate])
+  @@index([pastDueSince])
+}
+
+model StripeWebhookEvent {
+  id         String   @id @default(cuid())
+  eventId    String   @unique
+  eventType  String
+  createdAt  DateTime @default(now())
+
+  @@index([eventType])
+  @@index([createdAt])
 }
 
 //! MODEL POUR LES DOCUMENTS DE VÉRIFICATION DE SALON
@@ -863,6 +875,7 @@ enum AgendaMode {
 
 enum SaasPlanStatus {
   ACTIVE
+  PAST_DUE
   EXPIRED
   CANCELED
   TRIAL

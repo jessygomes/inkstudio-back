@@ -23,6 +23,7 @@ import {
 import { PrismaService } from 'src/database/prisma.service';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { SaasService } from 'src/saas/saas.service';
+import { MailService } from 'src/email/mailer.service';
 import {
   CheckoutPlan,
   STRIPE_API_VERSION,
@@ -83,7 +84,180 @@ export class StripeController {
     private stripeService: StripeService,
     private prisma: PrismaService,
     private saasService: SaasService,
+    private mailService: MailService,
   ) {}
+
+  // Méthode pour vérifier si un événement Stripe a déjà été traité (idempotence)
+  private async isWebhookEventAlreadyProcessed(eventId: string): Promise<boolean> {
+    const existingEvent = await this.prisma.stripeWebhookEvent.findUnique({
+      where: { eventId },
+      select: { id: true },
+    });
+
+    return !!existingEvent;
+  }
+
+  // Méthode pour marquer un événement Stripe comme traité (enregistrer son ID dans la base de données)
+  private async markWebhookEventAsProcessed(event: Stripe.Event): Promise<void> {
+  // Idempotence webhook: évite de traiter deux fois le même événement Stripe.
+    try {
+      await this.prisma.stripeWebhookEvent.create({
+        data: {
+          eventId: event.id,
+          eventType: event.type,
+        },
+      });
+    } catch (error) {
+      const prismaError = error as { code?: string };
+  // Enregistre l'événement traité. En cas de concurrence, l'unicité DB
+  // protège contre les doublons (code Prisma P2002).
+      if (prismaError?.code !== 'P2002') {
+        throw error;
+      }
+    }
+  }
+
+  // Méthode utilitaire pour trouver un utilisateur local à partir des références Stripe (subscriptionId ou customerId)
+  private async findUserByStripeReferences(
+    subscriptionId?: string | null,
+    customerId?: string | null,
+  ) {
+    if (subscriptionId) {
+      const userBySubscription = await this.prisma.user.findFirst({
+        where: { stripeSubscriptionId: subscriptionId },
+        select: {
+          id: true,
+  // Résout l'utilisateur local depuis les identifiants Stripe connus.
+          email: true,
+          salonName: true,
+          firstName: true,
+          lastName: true,
+          saasPlan: true,
+          saasPlanUntil: true,
+          stripeSubscriptionId: true,
+          stripeCustomerId: true,
+        },
+      });
+
+      if (userBySubscription) {
+        return userBySubscription;
+      }
+    }
+
+    if (customerId) {
+      return await this.prisma.user.findFirst({
+        where: { stripeCustomerId: customerId },
+        select: {
+          id: true,
+          email: true,
+          salonName: true,
+          firstName: true,
+          lastName: true,
+          saasPlan: true,
+          saasPlanUntil: true,
+          stripeSubscriptionId: true,
+          stripeCustomerId: true,
+        },
+      });
+    }
+
+    return null;
+  }
+
+  // Méthode pour synchroniser le plan local de l'utilisateur avec l'état de sa souscription Stripe
+  private async syncPlanFromStripeSubscription(
+    userId: string,
+    subscription: Stripe.Subscription,
+  ) {
+    const firstItem = subscription.items.data[0];
+    const priceId =
+      typeof firstItem?.price === 'string'
+        ? firstItem.price
+  // Synchronise le plan et le statut de facturation local en fonction de Stripe.
+        : firstItem?.price?.id;
+
+    if (!priceId) {
+      this.logger.warn(
+        `Impossible de déterminer le price ID pour la souscription ${subscription.id}`,
+      );
+      return;
+    }
+
+    const checkoutPlan = this.getCheckoutPlanFromPriceId(priceId);
+
+    if (!checkoutPlan) {
+      this.logger.warn(`Price ID Stripe non reconnu: ${priceId}`);
+      return;
+    }
+
+    const targetPlan = CHECKOUT_PLAN_TO_SAAS_PLAN[checkoutPlan];
+    const nextPaymentDate = this.getSubscriptionCurrentPeriodEnd(subscription);
+    const trialEndDate = subscription.trial_end
+      ? new Date(subscription.trial_end * 1000)
+      : null;
+
+    if (subscription.status === 'trialing') {
+      await this.saasService.markSubscriptionTrialing(
+        userId,
+        targetPlan,
+        trialEndDate,
+      );
+      return;
+    }
+
+    if (subscription.status === 'past_due' || subscription.status === 'unpaid') {
+      await this.saasService.markSubscriptionPastDue(
+        userId,
+        targetPlan,
+        nextPaymentDate,
+      );
+      return;
+    }
+
+    await this.saasService.markSubscriptionActive(userId, targetPlan, nextPaymentDate);
+  }
+
+  // Méthode pour obtenir la date de fin de période actuelle d'une souscription Stripe
+  private getSubscriptionCurrentPeriodEnd(
+    subscription: Stripe.Subscription,
+  ): Date | null {
+    const rawSubscription = subscription as unknown as {
+      current_period_end?: number;
+    };
+
+    if (!rawSubscription.current_period_end) {
+      return null;
+    }
+
+    // Cast défensif: certains champs Stripe existent en runtime mais pas toujours
+    // exposés de façon homogène par les typings du SDK.
+    return new Date(rawSubscription.current_period_end * 1000);
+  }
+
+  // Méthode pour obtenir l'ID de souscription à partir d'une facture Stripe
+  private getInvoiceSubscriptionId(invoice: Stripe.Invoice): string | null {
+    const rawInvoice = invoice as unknown as {
+      subscription?: string | { id?: string } | null;
+      parent?: {
+        subscription_details?: {
+          subscription?: string | null;
+        };
+      };
+    };
+    // On gère plusieurs formats possibles selon version/shape de l'objet invoice.
+
+    const directSubscription = rawInvoice.subscription;
+
+    if (typeof directSubscription === 'string') {
+      return directSubscription;
+    }
+
+    if (directSubscription && typeof directSubscription.id === 'string') {
+      return directSubscription.id;
+    }
+
+    return rawInvoice.parent?.subscription_details?.subscription ?? null;
+  }
 
   private getStripePlanService(): StripePlanServiceContract {
     // On se limite volontairement au contrat utilisé par ce contrôleur:
@@ -94,6 +268,7 @@ export class StripeController {
   private async applyPaidPlanChange(
     userId: string,
     plan: CheckoutPlan,
+    // Événement Stripe envoyé en général 3 jours avant la fin d'essai.
   ): Promise<PaidPlanChangeResponse> {
     /*
      * Cette méthode centralise tous les passages vers un plan payant.
@@ -130,6 +305,7 @@ export class StripeController {
 
     if (shouldSyncPlan) {
       // On garde la base locale alignée avec l'état Stripe attendu.
+    // Le paiement a échoué: on passe le compte en PAST_DUE côté métier.
       await this.saasService.updateUserPlan(userId, targetSaasPlan);
     }
 
@@ -169,6 +345,7 @@ export class StripeController {
   /**
    * Route POST /stripe/checkout
    * Crée une session de checkout Stripe et retourne l'URL
+    // Le paiement est régularisé/réussi: retour automatique en ACTIVE.
    * L'utilisateur est redirigé vers Stripe pour entrer ses informations de paiement
    * 
    * 🔐 SÉCURITÉ: Cette route est protégée par JwtAuthGuard
@@ -455,6 +632,11 @@ export class StripeController {
         webhookSecret,
       );
 
+      if (await this.isWebhookEventAlreadyProcessed(event.id)) {
+        this.logger.warn(`Webhook déjà traité, ignore: ${event.id}`);
+        return { received: true };
+      }
+
       this.logger.debug(`Webhook reçu: ${event.type}`);
 
       // ✅ ÉTAPE 2 : Gérer les différents types d'événements
@@ -467,6 +649,12 @@ export class StripeController {
        */
       if (event.type === 'checkout.session.completed') {
         await this.handleCheckoutSessionCompleted(event);
+      } else if (event.type === 'customer.subscription.trial_will_end') {
+        await this.handleSubscriptionTrialWillEnd(event);
+      } else if (event.type === 'invoice.payment_failed') {
+        await this.handleInvoicePaymentFailed(event);
+      } else if (event.type === 'invoice.payment_succeeded') {
+        await this.handleInvoicePaymentSucceeded(event);
       } else if (event.type === 'customer.subscription.deleted') {
         await this.handleSubscriptionDeleted(event);
       } else if (event.type === 'customer.subscription.updated') {
@@ -474,6 +662,8 @@ export class StripeController {
       } else {
         this.logger.debug(`Événement non traité: ${event.type}`);
       }
+
+      await this.markWebhookEventAsProcessed(event);
 
       // Confirmer à Stripe que le webhook a été reçu
       return { received: true };
@@ -502,6 +692,10 @@ export class StripeController {
       typeof session.subscription === 'string'
         ? session.subscription
         : session.subscription?.id;
+    const customerId =
+      typeof session.customer === 'string'
+        ? session.customer
+        : session.customer?.id;
 
     if (!userId || !isCheckoutPlan(plan)) {
       this.logger.warn('Métadonnées Stripe invalides dans le webhook');
@@ -525,16 +719,26 @@ export class StripeController {
      *    - Gérer les factures
      */
     try {
-      await this.saasService.updateUserPlan(
-        userId,
-        CHECKOUT_PLAN_TO_SAAS_PLAN[plan],
-      );
+      const subscription = await this.stripe.subscriptions.retrieve(subscriptionId, {
+        expand: ['items.data.price'],
+      });
+
+      await this.syncPlanFromStripeSubscription(userId, subscription);
+
+      const userStripeUpdate: {
+        stripeSubscriptionId: string;
+        stripeCustomerId?: string;
+      } = {
+        stripeSubscriptionId: subscriptionId,
+      };
+
+      if (customerId) {
+        userStripeUpdate.stripeCustomerId = customerId;
+      }
 
       await this.prisma.user.update({
         where: { id: userId },
-        data: {
-          stripeSubscriptionId: subscriptionId,
-        },
+        data: userStripeUpdate,
       });
 
       this.logger.log(`Utilisateur ${userId} passé au plan ${plan}`);
@@ -545,6 +749,120 @@ export class StripeController {
       );
       throw error;
     }
+  }
+
+  private async handleSubscriptionTrialWillEnd(event: Stripe.Event) {
+    const subscription = event.data.object as Stripe.Subscription;
+    const customerId =
+      typeof subscription.customer === 'string'
+        ? subscription.customer
+        : subscription.customer?.id;
+
+    const user = await this.findUserByStripeReferences(subscription.id, customerId);
+
+    if (!user || !user.email) {
+      this.logger.warn(
+        `Aucun utilisateur local trouvé pour le rappel de fin d'essai ${subscription.id}`,
+      );
+      return;
+    }
+
+    const trialEndDate = subscription.trial_end
+      ? new Date(subscription.trial_end * 1000)
+      : null;
+
+    if (!trialEndDate) {
+      this.logger.warn(`trial_end absent pour la souscription ${subscription.id}`);
+      return;
+    }
+
+    const recipientName = user.firstName || user.salonName || 'Salon';
+
+    await this.mailService.sendTrialEndingSoonReminder(user.email, {
+      recipientName,
+      salonName: user.salonName,
+      trialEndDate: trialEndDate.toLocaleDateString('fr-FR'),
+    });
+
+    this.logger.log(`Rappel de fin d'essai envoyé au salon ${user.id}`);
+  }
+
+  private async handleInvoicePaymentFailed(event: Stripe.Event) {
+    const invoice = event.data.object as Stripe.Invoice;
+    const subscriptionId = this.getInvoiceSubscriptionId(invoice);
+    const customerId =
+      typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id;
+
+    const user = await this.findUserByStripeReferences(subscriptionId, customerId);
+
+    if (!user) {
+      this.logger.warn(
+        `Aucun utilisateur local trouvé pour invoice.payment_failed (invoice ${invoice.id})`,
+      );
+      return;
+    }
+
+    if (!subscriptionId) {
+      this.logger.warn(
+        `Souscription manquante dans invoice.payment_failed (invoice ${invoice.id})`,
+      );
+      return;
+    }
+
+    const subscription = await this.stripe.subscriptions.retrieve(subscriptionId, {
+      expand: ['items.data.price'],
+    });
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        stripeSubscriptionId: subscriptionId,
+        ...(customerId ? { stripeCustomerId: customerId } : {}),
+      },
+    });
+
+    await this.syncPlanFromStripeSubscription(user.id, subscription);
+
+    this.logger.log(`Compte ${user.id} marqué en past_due`);
+  }
+
+  private async handleInvoicePaymentSucceeded(event: Stripe.Event) {
+    const invoice = event.data.object as Stripe.Invoice;
+    const subscriptionId = this.getInvoiceSubscriptionId(invoice);
+    const customerId =
+      typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id;
+
+    const user = await this.findUserByStripeReferences(subscriptionId, customerId);
+
+    if (!user) {
+      this.logger.warn(
+        `Aucun utilisateur local trouvé pour invoice.payment_succeeded (invoice ${invoice.id})`,
+      );
+      return;
+    }
+
+    if (!subscriptionId) {
+      this.logger.warn(
+        `Souscription manquante dans invoice.payment_succeeded (invoice ${invoice.id})`,
+      );
+      return;
+    }
+
+    const subscription = await this.stripe.subscriptions.retrieve(subscriptionId, {
+      expand: ['items.data.price'],
+    });
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        stripeSubscriptionId: subscriptionId,
+        ...(customerId ? { stripeCustomerId: customerId } : {}),
+      },
+    });
+
+    await this.syncPlanFromStripeSubscription(user.id, subscription);
+
+    this.logger.log(`Paiement confirmé et plan synchronisé pour ${user.id}`);
   }
 
   /**
@@ -591,27 +909,7 @@ export class StripeController {
 
     this.logger.log(`🔄 Abonnement mis à jour: ${subscription.id}`);
 
-    let user = await this.prisma.user.findFirst({
-      where: { stripeSubscriptionId: subscription.id },
-      select: {
-        id: true,
-        saasPlan: true,
-        saasPlanUntil: true,
-        stripeSubscriptionId: true,
-      },
-    });
-
-    if (!user && customerId) {
-      user = await this.prisma.user.findFirst({
-        where: { stripeCustomerId: customerId },
-        select: {
-          id: true,
-          saasPlan: true,
-          saasPlanUntil: true,
-          stripeSubscriptionId: true,
-        },
-      });
-    }
+    const user = await this.findUserByStripeReferences(subscription.id, customerId);
 
     if (!user) {
       this.logger.warn(
@@ -644,6 +942,8 @@ export class StripeController {
       return;
     }
 
+    await this.syncPlanFromStripeSubscription(user.id, subscription);
+
     const firstItem = subscription.items.data[0];
     const priceId =
       typeof firstItem?.price === 'string'
@@ -674,10 +974,9 @@ export class StripeController {
     const shouldSyncScheduledEnd =
       subscription.cancel_at_period_end &&
       !!currentPeriodEnd &&
-      (!user.saasPlanUntil ||
-        user.saasPlanUntil.getTime() !== currentPeriodEnd.getTime());
+      !user.saasPlanUntil;
 
-    if (user.saasPlan !== targetPlan || shouldSyncScheduledEnd) {
+    if (shouldSyncScheduledEnd) {
       await this.saasService.updateUserPlan(
         user.id,
         targetPlan,

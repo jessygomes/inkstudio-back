@@ -151,6 +151,24 @@ export class MailService {
     return await this.sendMail(to, subject, html, 'Inkera');
   }
 
+  //! MAIL DE RAPPEL FIN D'ESSAI (J-3)
+  async sendTrialEndingSoonReminder(to: string, data: {
+    recipientName: string;
+    salonName?: string | null;
+    trialEndDate: string;
+  }): Promise<MailgunResponse> {
+    const subject = 'Votre essai se termine bientôt';
+    const html = this.emailTemplateService.generateTrialEndingSoonEmail({
+      recipientName: data.recipientName,
+      salonName: data.salonName || 'Inkera Studio',
+      trialEndingSoonDetails: {
+        trialEndDate: data.trialEndDate,
+      },
+    });
+
+    return await this.sendMail(to, subject, html, data.salonName || 'Inkera');
+  }
+
   //! MAIL DE REINITIALISATION DE MOT DE PASSE
   async sendPasswordReset(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
     const subject = `Réinitialisation de votre mot de passe${salonName ? ` - ${salonName}` : ''}`;
