@@ -30,4 +30,10 @@ export class CreateUserClientDto {
 
   @IsOptional()
   acceptTerms?: boolean;
+
+  // Honeypot invisible côté front: doit rester vide pour un humain.
+  // Si un bot l'alimente, on interceptera la tentative côté service.
+  @IsOptional()
+  @IsString()
+  website?: string;
 }

@@ -6,7 +6,7 @@ import { UserPayload } from './jwt.strategy';
 import { CreateUserDto } from './dto/create-user.dto';
 import { LoginUserDto } from './dto/login-user.dto';
 import { MailService } from 'src/email/mailer.service';
-import { randomBytes } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { SaasService } from 'src/saas/saas.service';
 import { CreateUserClientDto } from './dto/create-userClient.dto';
 import { StripeService } from 'src/stripe/stripe.service';
@@ -97,7 +97,6 @@ export class AuthService {
       }
 
       if (!existingUser.emailVerified) {
-        console.log("Email non vérifié, envoi d'un nouveau token de vérification...");
         // Supprimer tout token de vérification existant pour cet email
         await this.prisma.verificationToken.deleteMany({
           where: {
@@ -167,7 +166,31 @@ export class AuthService {
         firstName,
         lastName,
         phone,
+        website,
       } = registerBody;
+
+      // Honeypot backend: un humain ne renseigne pas ce champ caché.
+      // Si le champ est rempli, on ne crée pas de compte et on renvoie
+      // une réponse neutre pour ne pas informer les bots de la détection.
+      if (typeof website === 'string' && website.trim().length > 0) {
+        const emailHash = typeof email === 'string'
+          ? createHash('sha256').update(email.trim().toLowerCase()).digest('hex')
+          : null;
+
+        this.logger.warn(
+          JSON.stringify({
+            event: 'auth.registration.honeypot_triggered',
+            emailHash,
+            timestamp: new Date().toISOString(),
+          }),
+        );
+
+        return {
+          message: "Votre compte a été créé avec succès. Veuillez vérifier vos emails pour confirmer votre adresse.",
+          checkoutUrl: null,
+          checkoutError: null,
+        };
+      }
 
       // Convertir TESTEUR en FREE
       // const finalSaasPlan = saasPlan === "TESTEUR" ? "FREE" : saasPlan;
@@ -280,7 +303,37 @@ export class AuthService {
   //! INSCRIPTION CLIENT
   async registerClient({ registerBody }: { registerBody: CreateUserClientDto }) {
     try {
-      const { email, password, firstName, lastName, birthDate, confirmPassword } = registerBody;
+      const {
+        email,
+        password,
+        firstName,
+        lastName,
+        birthDate,
+        confirmPassword,
+        website,
+      } = registerBody;
+
+      // Honeypot backend: un utilisateur humain ne remplit jamais ce champ caché.
+      // Si rempli, on ne crée rien en base et on retourne un message neutre
+      // pour ne pas donner d'indice aux bots.
+      if (typeof website === 'string' && website.trim().length > 0) {
+        const emailHash = typeof email === 'string'
+          ? createHash('sha256').update(email.trim().toLowerCase()).digest('hex')
+          : null;
+
+        this.logger.warn(
+          JSON.stringify({
+            event: 'auth.registration_client.honeypot_triggered',
+            emailHash,
+            timestamp: new Date().toISOString(),
+          }),
+        );
+
+        return {
+          message:
+            "Votre compte client a été créé avec succès. Veuillez vérifier vos emails pour confirmer votre adresse.",
+        };
+      }
       
       // Vérifier la confirmation du mot de passe
       if (confirmPassword && password !== confirmPassword) {

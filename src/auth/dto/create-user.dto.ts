@@ -45,4 +45,9 @@ export class CreateUserDto {
     message: 'Le mot de passe doit contenir au moins 6 caractères',
   })
   password: string;
+
+  // Honeypot invisible côté front: doit rester vide pour un humain.
+  @IsOptional()
+  @IsString()
+  website?: string;
 }

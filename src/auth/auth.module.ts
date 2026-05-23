@@ -9,6 +9,8 @@ import { MailModule } from 'src/email/mail.module';
 import { SaasModule } from 'src/saas/saas.module';
 import { CacheService } from 'src/redis/cache.service';
 import { StripeModule } from 'src/stripe/stripe.module';
+import { RegistrationRateLimiterService } from './registration-rate-limiter.service';
+import { RegistrationThrottleGuard } from './registration-throttle.guard';
 // import googleOauthConfig from './google-oauth.config';
 // import { ConfigModule } from '@nestjs/config';
 // import { GoogleStrategy } from './google.strategy';
@@ -33,6 +35,8 @@ import { StripeModule } from 'src/stripe/stripe.module';
     JwtStrategy,
     // GoogleStrategy,
     CacheService,
+    RegistrationRateLimiterService,
+    RegistrationThrottleGuard,
   ],
 })
 export class AuthModule {}

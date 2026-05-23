@@ -9,6 +9,7 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { PrismaService } from 'src/database/prisma.service';
 import { CreateUserClientDto } from './dto/create-userClient.dto';
 import { CachedUser } from 'utils/type';
+import { RegistrationThrottleGuard } from './registration-throttle.guard';
 // import { GoogleAuthGuard } from './guards/google-auth/google-auth.guard';
 
 
@@ -48,11 +49,15 @@ export class AuthController {
   }
 
   @Post('register') // POST /auth/register
+  // Protection anti-bot: limite le nombre de tentatives d'inscription (IP + email).
+  @UseGuards(RegistrationThrottleGuard)
   async register(@Body() registerBody: CreateUserDto) { // CreateUserDto est un DTO qui permet de valider les données : la fonction sera exécuté uniquement si les données sont valides
     return await this.authService.register({ registerBody });
   }
 
   @Post('register_client') // POST /auth/register_client
+  // Même protection anti-bot pour l'inscription client.
+  @UseGuards(RegistrationThrottleGuard)
   async registerClient(@Body() registerBody: CreateUserClientDto) {
     return await this.authService.registerClient({ registerBody });
   }
