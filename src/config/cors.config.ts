@@ -8,6 +8,12 @@ const ENV_ORIGINS = [
   // Domaines de production connus — couvre www et non-www via withHostVariants
   'https://inkera-studio.fr',
   'https://www.inkera-studio.fr',
+  'https://inkera-studio.com',
+  'https://www.inkera-studio.com',
+  'https://theinkera.fr',
+  'https://www.theinkera.fr',
+  'https://theinkera.com',
+  'https://www.theinkera.com',
   'http://localhost:3000',
   'http://localhost:3001',
   'http://127.0.0.1:3000',
