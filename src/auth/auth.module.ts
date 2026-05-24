@@ -8,6 +8,7 @@ import { UserService } from 'src/user/user.service';
 import { MailModule } from 'src/email/mail.module';
 import { SaasModule } from 'src/saas/saas.module';
 import { CacheService } from 'src/redis/cache.service';
+import { RedisModule } from 'src/redis/redis.module';
 import { StripeModule } from 'src/stripe/stripe.module';
 import { RegistrationRateLimiterService } from './registration-rate-limiter.service';
 import { RegistrationThrottleGuard } from './registration-throttle.guard';
@@ -25,6 +26,8 @@ import { RegistrationThrottleGuard } from './registration-throttle.guard';
     SaasModule,
     MailModule,
     StripeModule,
+    // RedisModule exporte RedisService utilisé par RegistrationRateLimiterService.
+    RedisModule,
     // ConfigModule.forFeature(googleOauthConfig),
   ],
   controllers: [AuthController],
