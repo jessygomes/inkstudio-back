@@ -372,6 +372,8 @@ export class UserService {
       type LinkedTatoueurUser = {
         id: string;
         salonName: string | null;
+        city: string | null;
+        postalCode: string | null;
         firstName: string | null;
         lastName: string | null;
         image: string | null;
@@ -412,6 +414,8 @@ export class UserService {
           select: {
             id: true,
             salonName: true,
+            city: true,
+            postalCode: true,
             firstName: true,
             lastName: true,
             image: true,
@@ -435,6 +439,8 @@ export class UserService {
             id: `linked_${user.id}`,
             name: displayName,
             salonName: user.salonName,
+            city: user.city,
+            postalCode: user.postalCode,
             img: user.profileImage ?? user.image,
             description: user.description,
             phone: user.phone,
@@ -453,6 +459,9 @@ export class UserService {
 
         const internalTatoueurs = (found.Tatoueur ?? []).map((tatoueur) => ({
           ...tatoueur,
+          salonName: null,
+          city: null,
+          postalCode: null,
           tiktok: null,
           website: null,
           isLinkedUser: false,
