@@ -670,8 +670,22 @@ export class TatoueursService {
         },
       });
 
+      type LinkedTatoueurUser = {
+        id: string;
+        firstName: string | null;
+        lastName: string | null;
+        image: string | null;
+        profileImage: string | null;
+        phone: string | null;
+        instagram: string | null;
+        description: string | null;
+        prestations: string[];
+        style: string[];
+        appointmentBookingEnabled: boolean;
+      };
+
       // 2b. Ajouter les tatoueurs users rattachés au salon (profil en lecture seule)
-      const linkedTatoueurUsers = await this.prisma.user.findMany({
+      const linkedTatoueurUsersResult = await this.prisma.user.findMany({
         where: {
           salonId: userId,
           role: Role.user_tatoueur,
@@ -691,8 +705,11 @@ export class TatoueursService {
         },
       });
 
+      const linkedTatoueurUsers = linkedTatoueurUsersResult as unknown as LinkedTatoueurUser[];
+
       const linkedTatoueurs = linkedTatoueurUsers.map((user) => {
         const displayName = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || 'Tatoueur';
+
         return {
           id: `linked_${user.id}`,
           linkedUserId: user.id,
@@ -702,8 +719,8 @@ export class TatoueursService {
           phone: user.phone,
           instagram: user.instagram,
           hours: null,
-          style: [],
-          skills: Array.isArray(user.prestations) ? user.prestations : [],
+          style: user.style,
+          skills: user.prestations,
           rdvBookingEnabled: user.appointmentBookingEnabled,
           isLinkedUser: true,
           isReadOnly: true,
