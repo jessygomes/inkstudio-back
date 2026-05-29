@@ -686,6 +686,7 @@ export class TatoueursService {
           instagram: true,
           description: true,
           prestations: true,
+          style: true,
           appointmentBookingEnabled: true,
         },
       });
