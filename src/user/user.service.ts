@@ -239,8 +239,19 @@ export class UserService {
       }),
     ]);
 
-    const tattooerStyles: string[] = tatoueurRows.flatMap(r => Array.isArray(r.style) ? r.style : []);
-    const userStyles: string[] = userRows.flatMap(r => Array.isArray(r.style) ? r.style : []);
+    const typedTatoueurRows = tatoueurRows as unknown as Array<{ style: string[] | null }>;
+    const typedUserRows = userRows as unknown as Array<{ style: string[] | null }>;
+
+    const tattooerStyles: string[] = typedTatoueurRows.flatMap((r) =>
+      Array.isArray(r.style)
+        ? r.style.filter((value): value is string => typeof value === 'string')
+        : [],
+    );
+    const userStyles: string[] = typedUserRows.flatMap((r) =>
+      Array.isArray(r.style)
+        ? r.style.filter((value): value is string => typeof value === 'string')
+        : [],
+    );
     const allStyles = [...tattooerStyles, ...userStyles];
 
     return Array.from(new Set(allStyles.map(s => s.trim()).filter(Boolean))).sort();
@@ -264,7 +275,7 @@ export class UserService {
       }
 
       // 2. Sinon, aller chercher en DB - On récupère tous les salons dont le slug du nom correspond
-      const users = await this.prisma.user.findMany({
+      const usersResult = await this.prisma.user.findMany({
         where: {
           salonName: { not: null },
           city: { not: null },
@@ -273,6 +284,7 @@ export class UserService {
         select: {
           id: true,
           email: true,
+          role: true,
           salonName: true,
           description: true,
           image: true,
@@ -335,6 +347,46 @@ export class UserService {
         },
       });
 
+      type InternalTatoueur = {
+        id: string;
+        name: string;
+        img: string | null;
+        description: string | null;
+        phone: string | null;
+        hours: string | null;
+        instagram: string | null;
+        style: string[];
+        skills: string[];
+        rdvBookingEnabled: boolean;
+      };
+
+      type SlugUser = {
+        id: string;
+        salonName: string | null;
+        city: string | null;
+        postalCode: string | null;
+        Tatoueur: InternalTatoueur[];
+        [key: string]: unknown;
+      };
+
+      type LinkedTatoueurUser = {
+        id: string;
+        firstName: string | null;
+        lastName: string | null;
+        image: string | null;
+        profileImage: string | null;
+        phone: string | null;
+        instagram: string | null;
+        tiktok: string | null;
+        website: string | null;
+        description: string | null;
+        style: string[];
+        prestations: string[];
+        appointmentBookingEnabled: boolean;
+      };
+
+      const users = usersResult as unknown as SlugUser[];
+
       // On filtre côté JS pour matcher les deux slugs
       const toSlug = (str: string) => str
         .normalize('NFD').replace(/\p{Diacritic}/gu, '')
@@ -348,16 +400,78 @@ export class UserService {
         return name === nameSlug && loc === locSlug;
       });
 
+      let enrichedFound = found;
+
+      if (found) {
+        const linkedTatoueurUsersResult = await this.prisma.user.findMany({
+          where: {
+            salonId: found.id,
+            role: 'user_tatoueur',
+          },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            image: true,
+            profileImage: true,
+            phone: true,
+            instagram: true,
+            tiktok: true,
+            website: true,
+            description: true,
+            style: true,
+            prestations: true,
+            appointmentBookingEnabled: true,
+          },
+        });
+
+        const linkedTatoueurUsers = linkedTatoueurUsersResult as unknown as LinkedTatoueurUser[];
+
+        const linkedTatoueurs = linkedTatoueurUsers.map((user) => {
+          const displayName = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || 'Tatoueur';
+          return {
+            id: `linked_${user.id}`,
+            name: displayName,
+            img: user.profileImage ?? user.image,
+            description: user.description,
+            phone: user.phone,
+            hours: null,
+            instagram: user.instagram,
+            tiktok: user.tiktok,
+            website: user.website,
+            style: user.style,
+            skills: user.prestations,
+            rdvBookingEnabled: user.appointmentBookingEnabled,
+            isLinkedUser: true,
+            linkedUserId: user.id,
+            profileUserId: user.id,
+          };
+        });
+
+        const internalTatoueurs = (found.Tatoueur ?? []).map((tatoueur) => ({
+          ...tatoueur,
+          tiktok: null,
+          website: null,
+          isLinkedUser: false,
+          profileUserId: null,
+        }));
+
+        enrichedFound = {
+          ...found,
+          Tatoueur: [...internalTatoueurs, ...linkedTatoueurs],
+        };
+      }
+
       // 3. Mettre en cache le résultat (TTL 2 heures - les données salon changent peu)
       try {
         const ttl = 2 * 60 * 60; // 2 heures
-        await this.cacheService.set(cacheKey, found, ttl);
+        await this.cacheService.set(cacheKey, enrichedFound, ttl);
       } catch (cacheError) {
         console.warn('Erreur sauvegarde cache Redis pour getUserBySlugAndLocation:', cacheError);
         // Continue même si la mise en cache échoue
       }
 
-      return found || null;
+      return enrichedFound || null;
     } catch (error) {
       console.error('Erreur dans getUserBySlugAndLocation:', error);
       throw error;
