@@ -41,6 +41,7 @@ model User {
   updatedAt                 DateTime             @updatedAt
 
   prestations               String[]
+  style                     String[]
 
   verifiedSalon            Boolean               @default(false)
   SalonVerificationDocument SalonVerificationDocument[]

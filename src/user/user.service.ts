@@ -102,6 +102,7 @@ export class UserService {
             postalCode: true,
             salonHours: true,
             prestations: true,
+            style: true,
             appointmentBookingEnabled: true,
             Tatoueur: {
               select: {
@@ -187,6 +188,7 @@ export class UserService {
           postalCode: true,
           salonHours: true,
           prestations: true,
+          style: true,
           Tatoueur: {
             select: {
               id: true,
@@ -225,10 +227,22 @@ export class UserService {
 
   //! RECUPERER LES STYLES
   async getDistinctStyles(): Promise<string[]> {
-    const rows: { style: string[] }[] = await this.prisma.tatoueur.findMany({
-      select: { style: true },
-    });
-    const allStyles: string[] = rows.flatMap(r => Array.isArray(r.style) ? r.style : []);
+    const [tatoueurRows, userRows] = await Promise.all([
+      this.prisma.tatoueur.findMany({
+        select: { style: true },
+      }),
+      this.prisma.user.findMany({
+        where: {
+          role: { in: ['user', 'user_salon', 'user_tatoueur'] },
+        },
+        select: { style: true },
+      }),
+    ]);
+
+    const tattooerStyles: string[] = tatoueurRows.flatMap(r => Array.isArray(r.style) ? r.style : []);
+    const userStyles: string[] = userRows.flatMap(r => Array.isArray(r.style) ? r.style : []);
+    const allStyles = [...tattooerStyles, ...userStyles];
+
     return Array.from(new Set(allStyles.map(s => s.trim()).filter(Boolean))).sort();
   }
 
@@ -271,6 +285,7 @@ export class UserService {
           postalCode: true,
           salonHours: true,
           prestations: true,
+          style: true,
           appointmentBookingEnabled: true,
           addConfirmationEnabled: true,
           colorProfile: true,
@@ -420,6 +435,7 @@ export class UserService {
           role: true,
           verifiedSalon: true,
           prestations: true,
+          style: true,
           Tatoueur: {
             select: {
               id: true,
@@ -499,7 +515,7 @@ export class UserService {
   }
 
   //! UPDATE USER
-  async updateUser({userId, userBody} : {userId: string; userBody: { salonName: string; firstName: string; lastName: string; phone: string; address: string; city: string; postalCode: string; instagram: string; facebook: string; tiktok: string; website: string; description: string; image: string; profileImage?: string; prestations?: string[]; }}): Promise<Record<string, any>> {
+  async updateUser({userId, userBody} : {userId: string; userBody: { salonName: string; firstName: string; lastName: string; phone: string; address: string; city: string; postalCode: string; instagram: string; facebook: string; tiktok: string; website: string; description: string; image: string; profileImage?: string; prestations?: string[]; style?: string[]; }}): Promise<Record<string, any>> {
     
     // Vérifier que userId est défini
     if (!userId) {
@@ -511,6 +527,12 @@ export class UserService {
       ? userBody.prestations
           .map(p => typeof p === 'string' ? p.toUpperCase().trim() : '')
           .filter(p => allowed.has(p))
+      : [];
+
+    const safeStyles = Array.isArray(userBody.style)
+      ? userBody.style
+          .map(s => typeof s === 'string' ? s.trim() : '')
+          .filter(Boolean)
       : [];
 
     const user = await this.prisma.user.update({
@@ -532,7 +554,8 @@ export class UserService {
         description: userBody.description,
         image: userBody.image, // Assurez-vous que l'image est gérée correctement
         profileImage: userBody.profileImage,
-        prestations: safePrestations
+        prestations: safePrestations,
+        style: safeStyles
       },
     });
 

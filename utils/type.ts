@@ -18,5 +18,6 @@ export type CachedUser = {
   image?: string,
   role?: string,
   prestations?: string[],
+  style?: string[],
   Tatoueur?: any, // You can further type this if needed
 };
