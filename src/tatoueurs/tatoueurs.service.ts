@@ -558,6 +558,17 @@ export class TatoueursService {
       const nextStatus = action === 'accept' ? TeamRequestStatus.ACCEPTED : TeamRequestStatus.REFUSED;
 
       const result = await this.prisma.$transaction(async (tx) => {
+        // Evite le conflit de contrainte unique (salonId, tatoueurUserId, status)
+        // si une ancienne ligne porte déjà le même statut final.
+        await tx.salonTatoueurTeamRequest.deleteMany({
+          where: {
+            salonId: request.salonId,
+            tatoueurUserId,
+            status: nextStatus,
+            id: { not: requestId },
+          },
+        });
+
         const updatedRequest = await tx.salonTatoueurTeamRequest.update({
           where: { id: requestId },
           data: {
@@ -806,6 +817,16 @@ export class TatoueursService {
         data: { salonId: null },
       });
 
+      // Nettoie l'ancien état ACCEPTED pour permettre une future ré-acceptation
+      // du même duo salon/tatoueur sans conflit de contrainte unique.
+      await this.prisma.salonTatoueurTeamRequest.deleteMany({
+        where: {
+          salonId: salonUserId,
+          tatoueurUserId,
+          status: TeamRequestStatus.ACCEPTED,
+        },
+      });
+
       await this.cacheService.del(`tatoueurs:user:${salonUserId}`);
       await this.cacheService.del(`tatoueurs:user:${salonUserId}:appointment-enabled`);
 
@@ -866,6 +887,16 @@ export class TatoueursService {
       await this.prisma.user.update({
         where: { id: tatoueurUserId },
         data: { salonId: null },
+      });
+
+      // Nettoie l'ancien état ACCEPTED pour permettre une future ré-acceptation
+      // du même duo salon/tatoueur sans conflit de contrainte unique.
+      await this.prisma.salonTatoueurTeamRequest.deleteMany({
+        where: {
+          salonId: formerSalonId,
+          tatoueurUserId,
+          status: TeamRequestStatus.ACCEPTED,
+        },
       });
 
       await this.cacheService.del(`tatoueurs:user:${formerSalonId}`);
