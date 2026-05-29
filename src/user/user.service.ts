@@ -371,6 +371,7 @@ export class UserService {
 
       type LinkedTatoueurUser = {
         id: string;
+        salonName: string | null;
         firstName: string | null;
         lastName: string | null;
         image: string | null;
@@ -410,6 +411,7 @@ export class UserService {
           },
           select: {
             id: true,
+            salonName: true,
             firstName: true,
             lastName: true,
             image: true,
@@ -432,6 +434,7 @@ export class UserService {
           return {
             id: `linked_${user.id}`,
             name: displayName,
+            salonName: user.salonName,
             img: user.profileImage ?? user.image,
             description: user.description,
             phone: user.phone,
