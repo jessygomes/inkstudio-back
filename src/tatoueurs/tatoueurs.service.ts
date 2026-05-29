@@ -675,7 +675,6 @@ export class TatoueursService {
           instagram: true,
           description: true,
           prestations: true,
-          style: true,
           appointmentBookingEnabled: true,
         },
       });
@@ -691,7 +690,7 @@ export class TatoueursService {
           phone: user.phone,
           instagram: user.instagram,
           hours: null,
-          style: Array.isArray(user.style) ? user.style : [],
+          style: [],
           skills: Array.isArray(user.prestations) ? user.prestations : [],
           rdvBookingEnabled: user.appointmentBookingEnabled,
           isLinkedUser: true,
@@ -813,6 +812,68 @@ export class TatoueursService {
       return {
         error: false,
         message: 'Tatoueur retiré de l\'équipe avec succès.',
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
+
+  //! PERMETTRE A UN TATOUEUR DE QUITTER SON SALON ACTUEL
+  async leaveCurrentSalon({
+    tatoueurUserId,
+    tatoueurRole,
+  }: {
+    tatoueurUserId: string;
+    tatoueurRole?: string;
+  }) {
+    try {
+      if (tatoueurRole !== 'user_tatoueur') {
+        return {
+          error: true,
+          message: 'Seuls les tatoueurs peuvent se retirer d\'un salon.',
+        };
+      }
+
+      const tatoueur = await this.prisma.user.findUnique({
+        where: { id: tatoueurUserId },
+        select: {
+          id: true,
+          role: true,
+          salonId: true,
+        },
+      });
+
+      if (!tatoueur || tatoueur.role !== Role.user_tatoueur) {
+        return {
+          error: true,
+          message: 'Tatoueur introuvable ou invalide.',
+        };
+      }
+
+      if (!tatoueur.salonId) {
+        return {
+          error: true,
+          message: 'Vous n\'êtes rattaché à aucun salon.',
+        };
+      }
+
+      const formerSalonId = tatoueur.salonId;
+
+      await this.prisma.user.update({
+        where: { id: tatoueurUserId },
+        data: { salonId: null },
+      });
+
+      await this.cacheService.del(`tatoueurs:user:${formerSalonId}`);
+      await this.cacheService.del(`tatoueurs:user:${formerSalonId}:appointment-enabled`);
+
+      return {
+        error: false,
+        message: 'Vous avez quitté le salon avec succès.',
       };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';

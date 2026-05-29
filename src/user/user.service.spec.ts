@@ -513,6 +513,36 @@ describe('UserService', () => {
       expect(updateCall?.data?.prestations).not.toContain('INVALID_PRESTATION');
     });
 
+    it('should normalize and persist style array', async () => {
+      const updateData = {
+        salonName: 'Salon',
+        firstName: 'Jean',
+        lastName: 'Dupont',
+        phone: '0123456789',
+        address: '123 Rue',
+        city: 'Paris',
+        postalCode: '75001',
+        instagram: '@salon',
+        facebook: 'salon',
+        tiktok: '@salon',
+        website: 'https://salon.com',
+        description: 'Description',
+        image: 'https://example.com/image.jpg',
+        prestations: ['TATTOO'],
+        style: ['  Realistic  ', 'Geometric', 'Realistic'],
+      };
+      prisma.user.update.mockResolvedValue(buildUser(updateData));
+
+      await service.updateUser({
+        userId: 'user-1',
+        userBody: updateData,
+      });
+
+      const updateCall = prisma.user.update.mock
+        .calls[0]?.[0] as unknown as any;
+      expect(updateCall?.data?.style).toEqual(['Realistic', 'Geometric']);
+    });
+
     it('should throw error when userId is not provided', async () => {
       await expect(
         service.updateUser({

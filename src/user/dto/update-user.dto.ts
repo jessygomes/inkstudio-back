@@ -56,4 +56,9 @@ export class UpdateUserDto {
 
   @IsArray()
   prestations: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  style?: string[];
 }

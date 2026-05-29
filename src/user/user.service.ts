@@ -515,7 +515,7 @@ export class UserService {
   }
 
   //! UPDATE USER
-  async updateUser({userId, userBody} : {userId: string; userBody: { salonName: string; firstName: string; lastName: string; phone: string; address: string; city: string; postalCode: string; instagram: string; facebook: string; tiktok: string; website: string; description: string; image: string; profileImage?: string; prestations?: string[]; style?: string[]; }}): Promise<Record<string, any>> {
+  async updateUser({userId, userBody} : {userId: string; userBody: { salonName: string; firstName: string; lastName: string; phone: string; address: string; city: string; postalCode: string; instagram: string; facebook: string; tiktok: string; website: string; description: string; image: string; profileImage?: string; prestations?: string[]; style?: string[] | string | null; }}): Promise<Record<string, any>> {
     
     // Vérifier que userId est défini
     if (!userId) {
@@ -529,11 +529,17 @@ export class UserService {
           .filter(p => allowed.has(p))
       : [];
 
-    const safeStyles = Array.isArray(userBody.style)
+    const rawStyles = Array.isArray(userBody.style)
       ? userBody.style
-          .map(s => typeof s === 'string' ? s.trim() : '')
-          .filter(Boolean)
-      : [];
+      : (typeof userBody.style === 'string' && userBody.style.trim() !== '')
+        ? userBody.style.split(',')
+        : [];
+
+    const safeStyles = [...new Set(
+      rawStyles
+        .map(s => typeof s === 'string' ? s.trim() : '')
+        .filter(Boolean),
+    )];
 
     const user = await this.prisma.user.update({
       where: {

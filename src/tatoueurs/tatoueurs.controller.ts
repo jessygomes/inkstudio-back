@@ -84,6 +84,16 @@ export class TatoueursController {
     });
   }
 
+  //! RETIRER SON PROPRE COMPTE TATOUEUR DE SON SALON ACTUEL
+  @UseGuards(JwtAuthGuard)
+  @Delete('team-requests/linked/me/leave')
+  leaveCurrentSalon(@Request() req: RequestWithUser) {
+    return this.tatoueursService.leaveCurrentSalon({
+      tatoueurUserId: req.user.userId,
+      tatoueurRole: req.user.role,
+    });
+  }
+
   //! REPONDRE A UNE DEMANDE (accept/refuse)
   @UseGuards(JwtAuthGuard)
   @Patch('team-requests/:requestId/respond')
