@@ -13,6 +13,19 @@ const createPrismaMock = () => ({
     update: jest.fn(),
     delete: jest.fn(),
   },
+  user: {
+    findMany: jest.fn(),
+    findUnique: jest.fn(),
+    update: jest.fn(),
+  },
+  salonTatoueurTeamRequest: {
+    findMany: jest.fn(),
+    findFirst: jest.fn(),
+    findUnique: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+  },
+  $transaction: jest.fn(async (callback) => callback(createPrismaMock())),
 });
 
 const createSaasMock = () => ({
@@ -173,6 +186,7 @@ describe('TatoueursService', () => {
       prisma.tatoueur.findMany.mockResolvedValue([
         { id: 't1', name: 'John', userId: 'u1' },
       ]);
+      prisma.user.findMany.mockResolvedValue([]);
 
       const result = await service.getTatoueurByUserId('u1');
 

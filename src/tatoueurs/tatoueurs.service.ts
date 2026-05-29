@@ -98,6 +98,7 @@ export class TatoueursService {
         select: {
           id: true,
           email: true,
+          salonName: true,
           firstName: true,
           lastName: true,
           image: true,
@@ -122,6 +123,7 @@ export class TatoueursService {
       const tatoueurs = users.map((user) => ({
         id: user.id,
         email: user.email,
+        salonName: user.salonName,
         firstName: user.firstName,
         lastName: user.lastName,
         image: user.image,
@@ -569,39 +571,14 @@ export class TatoueursService {
             where: { id: tatoueurUserId },
             data: { salonId: request.salonId },
           });
-
-          // Créer une entrée dans la table Tatoueur pour affichage dans l'équipe du salon.
-          const fullName = `${request.tatoueurUser.firstName ?? ''} ${request.tatoueurUser.lastName ?? ''}`.trim();
-          const displayName = fullName || 'Tatoueur';
-
-          const existingTeamEntry = await tx.tatoueur.findFirst({
-            where: {
-              userId: request.salonId,
-              name: displayName,
-              phone: request.tatoueurUser.phone ?? undefined,
-            },
-            select: { id: true },
-          });
-
-          if (!existingTeamEntry) {
-            await tx.tatoueur.create({
-              data: {
-                userId: request.salonId,
-                name: displayName,
-                img: request.tatoueurUser.image ?? undefined,
-                description: request.tatoueurUser.description ?? undefined,
-                phone: request.tatoueurUser.phone ?? undefined,
-                instagram: request.tatoueurUser.instagram ?? undefined,
-                hours: undefined,
-                style: [],
-                skills: [],
-              },
-            });
-          }
         }
 
         return updatedRequest;
       });
+
+      // Invalider le cache d'équipe du salon après réponse à la demande
+      await this.cacheService.del(`tatoueurs:user:${request.salonId}`);
+      await this.cacheService.del(`tatoueurs:user:${request.salonId}:appointment-enabled`);
 
       return {
         error: false,
@@ -676,11 +653,58 @@ export class TatoueursService {
       }
 
       // 2. Sinon, aller chercher en DB
-      const tatoueurs = await this.prisma.tatoueur.findMany({
+      const tatoueursInternes = await this.prisma.tatoueur.findMany({
         where: {
           userId,
         },
       });
+
+      // 2b. Ajouter les tatoueurs users rattachés au salon (profil en lecture seule)
+      const linkedTatoueurUsers = await this.prisma.user.findMany({
+        where: {
+          salonId: userId,
+          role: Role.user_tatoueur,
+        },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          image: true,
+          profileImage: true,
+          phone: true,
+          instagram: true,
+          description: true,
+          appointmentBookingEnabled: true,
+        },
+      });
+
+      const linkedTatoueurs = linkedTatoueurUsers.map((user) => {
+        const displayName = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || 'Tatoueur';
+        return {
+          id: `linked_${user.id}`,
+          linkedUserId: user.id,
+          name: displayName,
+          img: user.profileImage ?? user.image,
+          description: user.description,
+          phone: user.phone,
+          instagram: user.instagram,
+          hours: null,
+          style: [],
+          skills: [],
+          rdvBookingEnabled: user.appointmentBookingEnabled,
+          isLinkedUser: true,
+          isReadOnly: true,
+        };
+      });
+
+      const tatoueurs = [
+        ...tatoueursInternes.map((tatoueur) => ({
+          ...tatoueur,
+          isLinkedUser: false,
+          isReadOnly: false,
+        })),
+        ...linkedTatoueurs,
+      ];
 
       // 3. Mettre en cache (TTL 20 minutes pour les tatoueurs d'un salon)
       await this.cacheService.set(cacheKey, tatoueurs, 1200);
@@ -726,6 +750,68 @@ export class TatoueursService {
       await this.cacheService.set(cacheKey, tatoueurs, 900);
 
       return tatoueurs;
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
+
+  //! RETIRER UN TATOUEUR USER RELIE DE L'EQUIPE DU SALON
+  async unlinkLinkedTatoueur({
+    salonUserId,
+    salonRole,
+    tatoueurUserId,
+  }: {
+    salonUserId: string;
+    salonRole?: string;
+    tatoueurUserId: string;
+  }) {
+    try {
+      if (salonRole !== 'user_salon' && salonRole !== 'user') {
+        return {
+          error: true,
+          message: 'Seuls les salons peuvent retirer un tatoueur lié.',
+        };
+      }
+
+      const linkedTatoueur = await this.prisma.user.findUnique({
+        where: { id: tatoueurUserId },
+        select: {
+          id: true,
+          role: true,
+          salonId: true,
+        },
+      });
+
+      if (!linkedTatoueur || linkedTatoueur.role !== Role.user_tatoueur) {
+        return {
+          error: true,
+          message: 'Tatoueur introuvable ou invalide.',
+        };
+      }
+
+      if (linkedTatoueur.salonId !== salonUserId) {
+        return {
+          error: true,
+          message: 'Ce tatoueur n\'est pas lié à votre salon.',
+        };
+      }
+
+      await this.prisma.user.update({
+        where: { id: tatoueurUserId },
+        data: { salonId: null },
+      });
+
+      await this.cacheService.del(`tatoueurs:user:${salonUserId}`);
+      await this.cacheService.del(`tatoueurs:user:${salonUserId}:appointment-enabled`);
+
+      return {
+        error: false,
+        message: 'Tatoueur retiré de l\'équipe avec succès.',
+      };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       return {

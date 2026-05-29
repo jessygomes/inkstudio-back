@@ -70,6 +70,20 @@ export class TatoueursController {
     });
   }
 
+  //! RETIRER UN TATOUEUR USER RELIE DE L'EQUIPE
+  @UseGuards(JwtAuthGuard)
+  @Delete('team-requests/linked/:tatoueurUserId')
+  unlinkLinkedTatoueur(
+    @Request() req: RequestWithUser,
+    @Param('tatoueurUserId') tatoueurUserId: string,
+  ) {
+    return this.tatoueursService.unlinkLinkedTatoueur({
+      salonUserId: req.user.userId,
+      salonRole: req.user.role,
+      tatoueurUserId,
+    });
+  }
+
   //! REPONDRE A UNE DEMANDE (accept/refuse)
   @UseGuards(JwtAuthGuard)
   @Patch('team-requests/:requestId/respond')
