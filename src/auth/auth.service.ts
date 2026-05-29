@@ -9,6 +9,7 @@ import { MailService } from 'src/email/mailer.service';
 import { createHash, randomBytes } from 'crypto';
 import { SaasService } from 'src/saas/saas.service';
 import { CreateUserClientDto } from './dto/create-userClient.dto';
+import { CreateTatoueurUserDto } from './dto/create-tatoueur-user.dto';
 import { StripeService } from 'src/stripe/stripe.service';
 
 interface AuthenticatedUser {
@@ -131,7 +132,7 @@ export class AuthService {
           await this.mailService.sendEmailVerification(
             email,
             {
-              recipientName: existingUser.salonName || 'Salon',
+              recipientName: existingUser.salonName || 'Salon/Tatoueur',
               salonName: existingUser.salonName || 'Inkera Studio',
               verificationUrl: confirmationUrl,
             },
@@ -154,11 +155,12 @@ export class AuthService {
     }
 }
 
-  //! INSCRIPTION
+  //! INSCRIPTION (salon ou tatoueur indépendant)
   async register({ registerBody }: { registerBody: CreateUserDto }) {
     try {
       const {
         email,
+        role,
         salonName,
         saasPlan,
         checkoutPlan,
@@ -192,8 +194,13 @@ export class AuthService {
         };
       }
 
-      // Convertir TESTEUR en FREE
-      // const finalSaasPlan = saasPlan === "TESTEUR" ? "FREE" : saasPlan;
+      // Validation métier selon le rôle
+      if (role === 'user_salon' && !salonName?.trim()) {
+        throw new Error("Le nom du salon est requis pour créer un compte salon.");
+      }
+      if (role === 'user_salon' && !saasPlan) {
+        throw new Error("Le plan SaaS est requis pour créer un compte salon.");
+      }
 
       const existingUser = await this.prisma.user.findUnique({
         where: {
@@ -212,20 +219,21 @@ export class AuthService {
       const createdUser = await this.prisma.user.create({
         data: {
           email,
-          salonName,
           firstName,
           lastName,
           phone,
-          saasPlan,
           password: hashedPassword,
+          role: role as import('@prisma/client').Role,
+          ...(role === 'user_salon' ? { salonName } : {}),
+          ...(saasPlan ? { saasPlan } : {}),
         },
       });
 
       // Envoi d'un mail à l'administrateur pour l'informer de la nouvelle inscription
       await this.mailService.sendAdminNewUserNotification({
         userEmail: createdUser.email,
-        salonName: createdUser.salonName ?? 'Salon',
-        saasPlan: createdUser.saasPlan || 'Salon',
+        salonName: createdUser.salonName ?? `${createdUser.firstName} ${createdUser.lastName}`,
+        saasPlan: createdUser.saasPlan || role,
         firstName: createdUser.firstName,
         lastName: createdUser.lastName,
         phone: createdUser.phone,
@@ -252,20 +260,32 @@ export class AuthService {
 
       const confirmationUrl = `${process.env.FRONTEND_URL}/verifier-email?token=${token}&email=${email}`;
 
-      await this.mailService.sendEmailVerification(
+      // Email de vérification adapté selon le rôle
+      if (role === 'user_tatoueur') {
+        await this.mailService.sendClientEmailVerification(
+          email,
+          {
+            recipientName: `${createdUser.firstName} ${createdUser.lastName}`,
+            verificationUrl: confirmationUrl,
+          },
+        );
+      } else {
+        await this.mailService.sendEmailVerification(
           email,
           {
             recipientName: createdUser.salonName || 'Salon',
             salonName: createdUser.salonName || 'Inkera Studio',
             verificationUrl: confirmationUrl,
           },
-          createdUser.salonName || undefined
+          createdUser.salonName || undefined,
         );
+      }
 
       let checkoutUrl: string | null = null;
       let checkoutError: string | null = null;
 
-      if (checkoutPlan) {
+      // Stripe pour salon et tatoueur si un checkoutPlan est fourni
+      if ((role === 'user_salon' || role === 'user_tatoueur') && checkoutPlan) {
         try {
           checkoutUrl = await this.stripeService.createCheckoutSession(
             createdUser.id,
@@ -393,6 +413,96 @@ export class AuthService {
 
       return {
         message: "Votre compte client a été créé avec succès. Veuillez vérifier vos emails pour confirmer votre adresse.",
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
+
+  //! INSCRIPTION TATOUEUR (indépendant ou rattaché à un salon)
+  async registerTatoueur({ registerBody }: { registerBody: CreateTatoueurUserDto }) {
+    try {
+      const {
+        email,
+        password,
+        firstName,
+        lastName,
+        phone,
+        salonId,
+        website,
+      } = registerBody;
+
+      // Honeypot backend
+      if (typeof website === 'string' && website.trim().length > 0) {
+        const emailHash = typeof email === 'string'
+          ? createHash('sha256').update(email.trim().toLowerCase()).digest('hex')
+          : null;
+        this.logger.warn(
+          JSON.stringify({
+            event: 'auth.registration_tatoueur.honeypot_triggered',
+            emailHash,
+            timestamp: new Date().toISOString(),
+          }),
+        );
+        return {
+          message: "Votre compte tatoueur a été créé avec succès. Veuillez vérifier vos emails pour confirmer votre adresse.",
+        };
+      }
+
+      const existingUser = await this.prisma.user.findUnique({ where: { email } });
+      if (existingUser) {
+        throw new Error("Un compte existe déjà avec cet email.");
+      }
+
+      // Si un salonId est fourni, vérifier que le salon existe et a le bon rôle
+      if (salonId) {
+        const salon = await this.prisma.user.findUnique({
+          where: { id: salonId },
+          select: { role: true },
+        });
+        if (!salon || (salon.role !== 'user_salon' && salon.role !== 'user')) {
+          throw new Error("Le salon spécifié est introuvable ou invalide.");
+        }
+      }
+
+      const hashedPassword = await this.hashPassword({ password });
+
+      const createdUser = await this.prisma.user.create({
+        data: {
+          email,
+          firstName,
+          lastName,
+          phone,
+          password: hashedPassword,
+          role: 'user_tatoueur',
+          ...(salonId ? { salonId } : {}),
+        },
+      });
+
+      // Token de vérification email
+      const token = Math.floor(100000 + Math.random() * 900000).toString();
+      const expires = new Date(Date.now() + 1000 * 60 * 10);
+
+      await this.prisma.verificationToken.create({
+        data: { email, token, expires },
+      });
+
+      const confirmationUrl = `${process.env.FRONTEND_URL}/verifier-email?token=${token}&email=${email}`;
+
+      await this.mailService.sendClientEmailVerification(
+        email,
+        {
+          recipientName: `${createdUser.firstName} ${createdUser.lastName}`,
+          verificationUrl: confirmationUrl,
+        },
+      );
+
+      return {
+        message: "Votre compte tatoueur a été créé avec succès. Veuillez vérifier vos emails pour confirmer votre adresse.",
       };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';

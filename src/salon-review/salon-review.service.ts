@@ -42,7 +42,7 @@ async createReview(createSalonReviewDto: CreateSalonReviewDto, clientUserId: str
       }
     });
 
-    if (!salon || salon.role !== 'user') {
+    if (!salon || (salon.role !== 'user' && salon.role !== 'user_salon' && salon.role !== 'user_tatoueur')) {
       return {
         error: true,
         message: 'Salon introuvable.'
@@ -697,8 +697,8 @@ async findAllReviewBySalon(
 
       // 4. Invalider les caches liés au salon et au client auteur
       await this.cacheService.del(`salon:reviews:${salonUserId}`);
-      this.cacheService.delPattern(`salon:reviews:${salonUserId}:*`);
-      this.cacheService.delPattern(`client:reviews:${review.authorId}:*`);
+      await this.cacheService.delPattern(`salon:reviews:${salonUserId}:*`);
+      await this.cacheService.delPattern(`client:reviews:${review.authorId}:*`);
 
       return {
         error: false,
@@ -750,8 +750,8 @@ async findAllReviewBySalon(
 
       // 3. Invalider les caches liés au salon et au client
       await this.cacheService.del(`salon:reviews:${review.salonId}`);
-      this.cacheService.delPattern(`salon:reviews:${review.salonId}:*`);
-      this.cacheService.delPattern(`client:reviews:${clientUserId}:*`);
+      await this.cacheService.delPattern(`salon:reviews:${review.salonId}:*`);
+      await this.cacheService.delPattern(`client:reviews:${clientUserId}:*`);
 
       return {
         error: false,
@@ -985,9 +985,9 @@ async findAllReviewBySalon(
 
       // 5. Invalider les caches liés au salon et au client auteur
       await this.cacheService.del(`salon:reviews:${salonUserId}`);
-      this.cacheService.delPattern(`salon:reviews:${salonUserId}:*`);
-      this.cacheService.delPattern(`salon:recent-reviews:${salonUserId}:*`);
-      this.cacheService.delPattern(`client:reviews:${review.authorId}:*`);
+      await this.cacheService.delPattern(`salon:reviews:${salonUserId}:*`);
+      await this.cacheService.delPattern(`salon:recent-reviews:${salonUserId}:*`);
+      await this.cacheService.delPattern(`client:reviews:${review.authorId}:*`);
 
       return {
         error: false,
@@ -1063,9 +1063,9 @@ async findAllReviewBySalon(
 
       // 4. Invalider les caches liés au salon et au client auteur
       await this.cacheService.del(`salon:reviews:${salonUserId}`);
-      this.cacheService.delPattern(`salon:reviews:${salonUserId}:*`);
-      this.cacheService.delPattern(`salon:recent-reviews:${salonUserId}:*`);
-      this.cacheService.delPattern(`client:reviews:${review.authorId}:*`);
+      await this.cacheService.delPattern(`salon:reviews:${salonUserId}:*`);
+      await this.cacheService.delPattern(`salon:recent-reviews:${salonUserId}:*`);
+      await this.cacheService.delPattern(`client:reviews:${review.authorId}:*`);
 
       return {
         error: false,

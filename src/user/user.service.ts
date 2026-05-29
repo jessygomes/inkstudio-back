@@ -1619,7 +1619,7 @@ export class UserService {
         }
       });
 
-      if (!salon || salon.role !== 'user') {
+      if (!salon || (salon.role !== 'user' && salon.role !== 'user_salon')) {
         return {
           error: true,
           message: 'Salon introuvable.'

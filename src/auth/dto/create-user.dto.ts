@@ -16,9 +16,16 @@ export class CreateUserDto {
   @IsEmail({}, { message: 'Vous devez fournir une adresse email valide' })
   email: string;
 
+  // Détermine si c'est un salon ou un tatoueur indépendant
+  @IsIn(['user_salon', 'user_tatoueur'], {
+    message: "Le rôle doit être 'user_salon' ou 'user_tatoueur'",
+  })
+  role: 'user_salon' | 'user_tatoueur';
+
+  // Requis uniquement pour user_salon
+  @IsOptional()
   @IsString({ message: 'Vous devez fournir un nom de salon' })
-  @IsNotEmpty({ message: 'Le nom du salon est requis' })
-  salonName: string;
+  salonName?: string;
 
   @IsString({ message: 'Vous devez fournir un prénom' })
   @IsNotEmpty({ message: 'Le prénom est requis' })
@@ -31,8 +38,10 @@ export class CreateUserDto {
   @IsString()
   phone: string;
 
+  // Requis uniquement pour user_salon (plan SaaS)
+  @IsOptional()
   @IsEnum(SaasPlan, { message: 'Vous devez fournir un plan SaaS valide' })
-  saasPlan: SaasPlan;
+  saasPlan?: SaasPlan;
 
   @IsOptional()
   @IsIn(CHECKOUT_PLANS, {

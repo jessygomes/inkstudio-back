@@ -54,6 +54,11 @@ model User {
   stripeCustomerId          String?              
   stripeSubscriptionId      String?              
 
+  // Lien tatoueur ↔ salon (uniquement pour role user_tatoueur)
+  salonId                   String?
+  salon                     User?                @relation("SalonTatoueurs", fields: [salonId], references: [id])
+  linkedTatoueurs           User[]               @relation("SalonTatoueurs")
+
   appointments              Appointment[]
   appointmentConsumables    AppointmentConsumable[]
   AppointmentRequest        AppointmentRequest[]
@@ -97,6 +102,10 @@ model User {
 
   // Statistiques visites profil public
   salonProfileViews         SalonProfileView[]    @relation("SalonProfileViews")
+
+  // Demandes d'invitation d'équipe (salon -> tatoueur user)
+  sentTeamRequests          SalonTatoueurTeamRequest[] @relation("TeamRequestsSentBySalon")
+  receivedTeamRequests      SalonTatoueurTeamRequest[] @relation("TeamRequestsReceivedByTatoueur")
 }
 
 //! MODEL POUR STOCKER LES INFOS D'UN CLIENT CONNECTÉ
@@ -841,10 +850,32 @@ model EmailNotificationQueue {
   @@index([conversationId])
 }
 
+//! MODEL POUR LES DEMANDES D'INTEGRATION D'UN TATOUEUR DANS UNE EQUIPE SALON
+model SalonTatoueurTeamRequest {
+  id             String            @id @default(cuid())
+  salonId        String
+  tatoueurUserId String
+  message        String?
+  status         TeamRequestStatus @default(PENDING)
+  respondedAt    DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  salon          User              @relation("TeamRequestsSentBySalon", fields: [salonId], references: [id], onDelete: Cascade)
+  tatoueurUser   User              @relation("TeamRequestsReceivedByTatoueur", fields: [tatoueurUserId], references: [id], onDelete: Cascade)
+
+  @@index([salonId])
+  @@index([tatoueurUserId])
+  @@index([status])
+  @@unique([salonId, tatoueurUserId, status])
+}
+
 enum Role {
   admin
-  user     // Propriétaires de salon
-  client   // Clients uniquement
+  user         // Ancien rôle (conservé pour compatibilité)
+  user_salon   // Propriétaire de salon
+  user_tatoueur // Tatoueur indépendant ou rattaché à un salon
+  client       // Clients uniquement
   formateur
 }
 
@@ -891,6 +922,12 @@ enum VerificationStatusDocument {
   PENDING
   APPROVED
   REJECTED
+}
+
+enum TeamRequestStatus {
+  PENDING
+  ACCEPTED
+  REFUSED
 }
 
 enum PrestationType {

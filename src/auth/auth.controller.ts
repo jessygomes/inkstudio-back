@@ -8,6 +8,7 @@ import { LoginUserDto } from './dto/login-user.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { PrismaService } from 'src/database/prisma.service';
 import { CreateUserClientDto } from './dto/create-userClient.dto';
+import { CreateTatoueurUserDto } from './dto/create-tatoueur-user.dto';
 import { CachedUser } from 'utils/type';
 import { RegistrationThrottleGuard } from './registration-throttle.guard';
 // import { GoogleAuthGuard } from './guards/google-auth/google-auth.guard';
@@ -60,6 +61,12 @@ export class AuthController {
   @UseGuards(RegistrationThrottleGuard)
   async registerClient(@Body() registerBody: CreateUserClientDto) {
     return await this.authService.registerClient({ registerBody });
+  }
+
+  @Post('register_tatoueur') // POST /auth/register_tatoueur
+  @UseGuards(RegistrationThrottleGuard)
+  async registerTatoueur(@Body() registerBody: CreateTatoueurUserDto) {
+    return await this.authService.registerTatoueur({ registerBody });
   }
 
   // @Get('google/login')

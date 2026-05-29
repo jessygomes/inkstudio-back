@@ -53,7 +53,7 @@ export class AdminService {
         : {};
 
       const whereClause = {
-        role: Role.user,
+        role: { in: [Role.user, Role.user_salon, Role.user_tatoueur] },
         ...(saasPlan ? { saasPlan } : {}),
         ...(verifiedSalon !== undefined ? { verifiedSalon } : {}),
         ...searchConditions,
@@ -265,7 +265,7 @@ export class AdminService {
         : {};
 
       const whereClause = {
-        role: Role.user,
+        role: { in: [Role.user, Role.user_salon, Role.user_tatoueur] },
         ...(saasPlan ? { saasPlan } : {}),
         ...(verifiedSalon !== undefined ? { verifiedSalon } : {}),
         ...searchConditions,
@@ -416,9 +416,9 @@ export class AdminService {
       const now = new Date();
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-      // Compter les salons (users avec role='user')
+      // Compter les salons (users avec role='user', 'user_salon' ou 'user_tatoueur')
       const totalSalons = await this.prisma.user.count({
-        where: { role: Role.user },
+        where: { role: { in: [Role.user, Role.user_salon, Role.user_tatoueur] } },
       });
 
       // Compter les clients (users avec role='client')
@@ -429,7 +429,7 @@ export class AdminService {
       // Compter les salons avec au moins un document en attente
       const salonsWithPendingDocuments = await this.prisma.user.count({
         where: {
-          role: Role.user,
+          role: { in: [Role.user, Role.user_salon, Role.user_tatoueur] },
           SalonVerificationDocument: {
             some: { status: VerificationStatusDocument.PENDING },
           },
@@ -439,7 +439,7 @@ export class AdminService {
       // Compter les salons vérifiés
       const salonsVerified = await this.prisma.user.count({
         where: {
-          role: Role.user,
+          role: { in: [Role.user, Role.user_salon, Role.user_tatoueur] },
           verifiedSalon: true,
         },
       });
@@ -447,7 +447,7 @@ export class AdminService {
       // Nouveaux salons inscrits ce mois
       const newSalonsThisMonth = await this.prisma.user.count({
         where: {
-          role: Role.user,
+          role: { in: [Role.user, Role.user_salon, Role.user_tatoueur] },
           createdAt: { gte: startOfMonth },
         },
       });
@@ -469,7 +469,7 @@ export class AdminService {
       // Répartition des salons par plan SaaS
       const salonsBySaasPlan = await this.prisma.user.groupBy({
         by: ['saasPlan'],
-        where: { role: Role.user },
+        where: { role: { in: [Role.user, Role.user_salon, Role.user_tatoueur] } },
         _count: { saasPlan: true },
       });
 
@@ -525,7 +525,7 @@ export class AdminService {
         // Nouveaux salons inscrits ce mois
         const salons = await this.prisma.user.count({
           where: {
-            role: Role.user,
+            role: { in: [Role.user, Role.user_salon, Role.user_tatoueur] },
             createdAt: {
               gte: monthDate,
               lt: nextMonthDate,
@@ -547,7 +547,7 @@ export class AdminService {
         // NOTE: À adapter selon votre modèle de revenus réel
         const salonsPro = await this.prisma.user.count({
           where: {
-            role: Role.user,
+            role: { in: [Role.user, Role.user_salon, Role.user_tatoueur] },
             saasPlan: SaasPlan.PRO,
             createdAt: { lte: nextMonthDate },
           },
@@ -555,7 +555,7 @@ export class AdminService {
 
         const salonsBusiness = await this.prisma.user.count({
           where: {
-            role: Role.user,
+            role: { in: [Role.user, Role.user_salon, Role.user_tatoueur] },
             saasPlan: SaasPlan.BUSINESS,
             createdAt: { lte: nextMonthDate },
           },
