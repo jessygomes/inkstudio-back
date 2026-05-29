@@ -1619,7 +1619,7 @@ export class UserService {
         }
       });
 
-      if (!salon || (salon.role !== 'user' && salon.role !== 'user_salon')) {
+      if (!salon || (salon.role !== 'user' && salon.role !== 'user_salon' && salon.role !== 'user_tatoueur')) {
         return {
           error: true,
           message: 'Salon introuvable.'

@@ -323,8 +323,14 @@ export class TatoueursService {
             select: {
               id: true,
               salonName: true,
-              firstName: true,
-              lastName: true,
+              profileImage: true,
+              address: true,
+              city: true,
+              postalCode: true,
+              instagram: true,
+              website: true,
+              salonHours: true,
+              prestations: true,
               image: true,
             },
           },
@@ -334,6 +340,152 @@ export class TatoueursService {
       return {
         error: false,
         requests,
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
+
+  //! LISTE DES SALONS RELIES AU TATOUEUR USER (actuel + historiques acceptes)
+  async getLinkedSalons({
+    tatoueurUserId,
+    tatoueurRole,
+  }: {
+    tatoueurUserId: string;
+    tatoueurRole?: string;
+  }) {
+    try {
+      if (tatoueurRole !== 'user_tatoueur') {
+        return {
+          error: true,
+          message: 'Seuls les tatoueurs peuvent voir les salons liés.',
+        };
+      }
+
+      const tatoueurUser = await this.prisma.user.findUnique({
+        where: { id: tatoueurUserId },
+        select: {
+          salonId: true,
+          salon: {
+            select: {
+              id: true,
+              salonName: true,
+              profileImage: true,
+              address: true,
+              city: true,
+              postalCode: true,
+              instagram: true,
+              website: true,
+              salonHours: true,
+              prestations: true,
+              image: true,
+            },
+          },
+        },
+      });
+
+      const acceptedRequests = await this.prisma.salonTatoueurTeamRequest.findMany({
+        where: {
+          tatoueurUserId,
+          status: TeamRequestStatus.ACCEPTED,
+        },
+        orderBy: { respondedAt: 'desc' },
+        select: {
+          respondedAt: true,
+          createdAt: true,
+          salon: {
+            select: {
+              id: true,
+              salonName: true,
+              profileImage: true,
+              address: true,
+              city: true,
+              postalCode: true,
+              instagram: true,
+              website: true,
+              salonHours: true,
+              prestations: true,
+              image: true,
+            },
+          },
+        },
+      });
+
+      const salonsMap = new Map<string, {
+        id: string;
+        salonName: string | null;
+        profileImage: string | null;
+        address: string | null;
+        adress: string | null;
+        city: string | null;
+        postalCode: string | null;
+        instagram: string | null;
+        website: string | null;
+        salonHours: string | null;
+        prestations: string[];
+        image: string | null;
+        isCurrentSalon: boolean;
+        linkedAt: Date | null;
+      }>();
+
+      // Historique des rattachements acceptes
+      for (const item of acceptedRequests) {
+        const salon = item.salon;
+        if (!salonsMap.has(salon.id)) {
+          salonsMap.set(salon.id, {
+            id: salon.id,
+            salonName: salon.salonName,
+            profileImage: salon.profileImage,
+            address: salon.address,
+            adress: salon.address,
+            city: salon.city,
+            postalCode: salon.postalCode,
+            instagram: salon.instagram,
+            website: salon.website,
+            salonHours: salon.salonHours,
+            prestations: salon.prestations,
+            image: salon.image,
+            isCurrentSalon: tatoueurUser?.salonId === salon.id,
+            linkedAt: item.respondedAt ?? item.createdAt,
+          });
+        }
+      }
+
+      // S'assurer que le salon actuellement rattaché apparait toujours
+      if (tatoueurUser?.salon && !salonsMap.has(tatoueurUser.salon.id)) {
+        salonsMap.set(tatoueurUser.salon.id, {
+          id: tatoueurUser.salon.id,
+          salonName: tatoueurUser.salon.salonName,
+          profileImage: tatoueurUser.salon.profileImage,
+          address: tatoueurUser.salon.address,
+          adress: tatoueurUser.salon.address,
+          city: tatoueurUser.salon.city,
+          postalCode: tatoueurUser.salon.postalCode,
+          instagram: tatoueurUser.salon.instagram,
+          website: tatoueurUser.salon.website,
+          salonHours: tatoueurUser.salon.salonHours,
+          prestations: tatoueurUser.salon.prestations,
+          image: tatoueurUser.salon.image,
+          isCurrentSalon: true,
+          linkedAt: null,
+        });
+      }
+
+      const salons = Array.from(salonsMap.values()).sort((a, b) => {
+        if (a.isCurrentSalon && !b.isCurrentSalon) return -1;
+        if (!a.isCurrentSalon && b.isCurrentSalon) return 1;
+        const aTs = a.linkedAt ? a.linkedAt.getTime() : 0;
+        const bTs = b.linkedAt ? b.linkedAt.getTime() : 0;
+        return bTs - aTs;
+      });
+
+      return {
+        error: false,
+        salons,
       };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';

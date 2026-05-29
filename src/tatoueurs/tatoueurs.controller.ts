@@ -60,6 +60,16 @@ export class TatoueursController {
     });
   }
 
+  //! LISTER LES SALONS RELIES AU TATOUEUR USER
+  @UseGuards(JwtAuthGuard)
+  @Get('team-requests/linked-salons')
+  getLinkedSalons(@Request() req: RequestWithUser) {
+    return this.tatoueursService.getLinkedSalons({
+      tatoueurUserId: req.user.userId,
+      tatoueurRole: req.user.role,
+    });
+  }
+
   //! REPONDRE A UNE DEMANDE (accept/refuse)
   @UseGuards(JwtAuthGuard)
   @Patch('team-requests/:requestId/respond')
