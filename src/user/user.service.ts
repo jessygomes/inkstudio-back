@@ -362,6 +362,7 @@ export class UserService {
 
       type SlugUser = {
         id: string;
+        role: string;
         salonName: string | null;
         city: string | null;
         postalCode: string | null;
@@ -406,72 +407,195 @@ export class UserService {
       let enrichedFound = found;
 
       if (found) {
-        const linkedTatoueurUsersResult = await this.prisma.user.findMany({
-          where: {
-            salonId: found.id,
-            role: 'user_tatoueur',
-          },
-          select: {
-            id: true,
-            salonName: true,
-            city: true,
-            postalCode: true,
-            firstName: true,
-            lastName: true,
-            image: true,
-            profileImage: true,
-            phone: true,
-            instagram: true,
-            tiktok: true,
-            website: true,
-            description: true,
-            style: true,
-            prestations: true,
-            appointmentBookingEnabled: true,
-          },
-        });
+        if (found.role === 'user_tatoueur') {
+          const tatoueurUser = await this.prisma.user.findUnique({
+            where: { id: found.id },
+            select: {
+              salonId: true,
+              salon: {
+                select: {
+                  id: true,
+                  salonName: true,
+                  profileImage: true,
+                  address: true,
+                  city: true,
+                  postalCode: true,
+                  instagram: true,
+                  website: true,
+                  salonHours: true,
+                  prestations: true,
+                  image: true,
+                },
+              },
+            },
+          });
 
-        const linkedTatoueurUsers = linkedTatoueurUsersResult as unknown as LinkedTatoueurUser[];
+          const acceptedRequests = await this.prisma.salonTatoueurTeamRequest.findMany({
+            where: {
+              tatoueurUserId: found.id,
+              status: 'ACCEPTED',
+            },
+            orderBy: { respondedAt: 'desc' },
+            select: {
+              respondedAt: true,
+              createdAt: true,
+              salon: {
+                select: {
+                  id: true,
+                  salonName: true,
+                  profileImage: true,
+                  address: true,
+                  city: true,
+                  postalCode: true,
+                  instagram: true,
+                  website: true,
+                  salonHours: true,
+                  prestations: true,
+                  image: true,
+                },
+              },
+            },
+          });
 
-        const linkedTatoueurs = linkedTatoueurUsers.map((user) => {
-          const displayName = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || 'Tatoueur';
-          return {
-            id: `linked_${user.id}`,
-            name: displayName,
-            salonName: user.salonName,
-            city: user.city,
-            postalCode: user.postalCode,
-            img: user.profileImage ?? user.image,
-            description: user.description,
-            phone: user.phone,
-            hours: null,
-            instagram: user.instagram,
-            tiktok: user.tiktok,
-            website: user.website,
-            style: user.style,
-            skills: user.prestations,
-            rdvBookingEnabled: user.appointmentBookingEnabled,
-            isLinkedUser: true,
-            linkedUserId: user.id,
-            profileUserId: user.id,
+          type LinkedSalon = {
+            id: string;
+            salonName: string | null;
+            profileImage: string | null;
+            address: string | null;
+            city: string | null;
+            postalCode: string | null;
+            instagram: string | null;
+            website: string | null;
+            salonHours: string | null;
+            prestations: string[];
+            image: string | null;
+            isCurrentSalon: boolean;
+            linkedAt: Date | null;
           };
-        });
 
-        const internalTatoueurs = (found.Tatoueur ?? []).map((tatoueur) => ({
-          ...tatoueur,
-          salonName: null,
-          city: null,
-          postalCode: null,
-          tiktok: null,
-          website: null,
-          isLinkedUser: false,
-          profileUserId: null,
-        }));
+          const salonsMap = new Map<string, LinkedSalon>();
 
-        enrichedFound = {
-          ...found,
-          Tatoueur: [...internalTatoueurs, ...linkedTatoueurs],
-        };
+          for (const item of acceptedRequests) {
+            const salon = item.salon;
+            if (!salonsMap.has(salon.id)) {
+              salonsMap.set(salon.id, {
+                id: salon.id,
+                salonName: salon.salonName,
+                profileImage: salon.profileImage,
+                address: salon.address,
+                city: salon.city,
+                postalCode: salon.postalCode,
+                instagram: salon.instagram,
+                website: salon.website,
+                salonHours: salon.salonHours,
+                prestations: salon.prestations,
+                image: salon.image,
+                isCurrentSalon: tatoueurUser?.salonId === salon.id,
+                linkedAt: item.respondedAt ?? item.createdAt,
+              });
+            }
+          }
+
+          if (tatoueurUser?.salon && !salonsMap.has(tatoueurUser.salon.id)) {
+            salonsMap.set(tatoueurUser.salon.id, {
+              id: tatoueurUser.salon.id,
+              salonName: tatoueurUser.salon.salonName,
+              profileImage: tatoueurUser.salon.profileImage,
+              address: tatoueurUser.salon.address,
+              city: tatoueurUser.salon.city,
+              postalCode: tatoueurUser.salon.postalCode,
+              instagram: tatoueurUser.salon.instagram,
+              website: tatoueurUser.salon.website,
+              salonHours: tatoueurUser.salon.salonHours,
+              prestations: tatoueurUser.salon.prestations,
+              image: tatoueurUser.salon.image,
+              isCurrentSalon: true,
+              linkedAt: null,
+            });
+          }
+
+          const linkedSalons = Array.from(salonsMap.values()).sort((a, b) => {
+            if (a.isCurrentSalon && !b.isCurrentSalon) return -1;
+            if (!a.isCurrentSalon && b.isCurrentSalon) return 1;
+            const aTs = a.linkedAt ? a.linkedAt.getTime() : 0;
+            const bTs = b.linkedAt ? b.linkedAt.getTime() : 0;
+            return bTs - aTs;
+          });
+
+          enrichedFound = {
+            ...found,
+            Tatoueur: [],
+            linkedSalons,
+          };
+        } else {
+          const linkedTatoueurUsersResult = await this.prisma.user.findMany({
+            where: {
+              salonId: found.id,
+              role: 'user_tatoueur',
+            },
+            select: {
+              id: true,
+              salonName: true,
+              city: true,
+              postalCode: true,
+              firstName: true,
+              lastName: true,
+              image: true,
+              profileImage: true,
+              phone: true,
+              instagram: true,
+              tiktok: true,
+              website: true,
+              description: true,
+              style: true,
+              prestations: true,
+              appointmentBookingEnabled: true,
+            },
+          });
+
+          const linkedTatoueurUsers = linkedTatoueurUsersResult as unknown as LinkedTatoueurUser[];
+
+          const linkedTatoueurs = linkedTatoueurUsers.map((user) => {
+            const displayName = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || 'Tatoueur';
+            return {
+              id: `linked_${user.id}`,
+              name: displayName,
+              salonName: user.salonName,
+              city: user.city,
+              postalCode: user.postalCode,
+              img: user.profileImage ?? user.image,
+              description: user.description,
+              phone: user.phone,
+              hours: null,
+              instagram: user.instagram,
+              tiktok: user.tiktok,
+              website: user.website,
+              style: user.style,
+              skills: user.prestations,
+              rdvBookingEnabled: user.appointmentBookingEnabled,
+              isLinkedUser: true,
+              linkedUserId: user.id,
+              profileUserId: user.id,
+            };
+          });
+
+          const internalTatoueurs = (found.Tatoueur ?? []).map((tatoueur) => ({
+            ...tatoueur,
+            salonName: null,
+            city: null,
+            postalCode: null,
+            tiktok: null,
+            website: null,
+            isLinkedUser: false,
+            profileUserId: null,
+          }));
+
+          enrichedFound = {
+            ...found,
+            Tatoueur: [...internalTatoueurs, ...linkedTatoueurs],
+            linkedSalons: [],
+          };
+        }
       }
 
       // 3. Mettre en cache le résultat (TTL 2 heures - les données salon changent peu)
