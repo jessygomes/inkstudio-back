@@ -285,6 +285,7 @@ export class UserService {
           id: true,
           email: true,
           role: true,
+          verifiedSalon: true,
           salonName: true,
           description: true,
           image: true,
