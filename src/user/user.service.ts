@@ -123,6 +123,7 @@ export class UserService {
             facebook: true,
             tiktok: true,
             website: true,
+            isInspirationSalon: true,
           },
           orderBy: { salonName: "asc" }, // adapte selon ton besoin
           skip,
@@ -687,6 +688,7 @@ export class UserService {
           verifiedSalon: true,
           prestations: true,
           style: true,
+          isInspirationSalon: true,
           Tatoueur: {
             select: {
               id: true,
@@ -1530,6 +1532,74 @@ export class UserService {
     }
   }
 
+  //! BASCULER LE STATUT D'INSPIRATION DU SALON
+  async toggleInspirationSalon({ userId, role }: { userId: string; role?: string }) {
+    try {
+      if (role !== 'user_salon') {
+        return {
+          error: true,
+          message: 'Accès réservé aux salons.',
+        };
+      }
+
+      const existingUser = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          role: true,
+          isInspirationSalon: true,
+          salonName: true,
+        },
+      });
+
+      if (!existingUser) {
+        return {
+          error: true,
+          message: 'Utilisateur introuvable.',
+        };
+      }
+
+      if (existingUser.role !== 'user_salon') {
+        return {
+          error: true,
+          message: 'Accès réservé aux salons.',
+        };
+      }
+
+      const updatedUser = await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          isInspirationSalon: !existingUser.isInspirationSalon,
+        },
+        select: {
+          id: true,
+          salonName: true,
+          isInspirationSalon: true,
+          role: true,
+        },
+      });
+
+      await this.cacheService.del(`user:${userId}`);
+      await this.cacheService.delPattern('users:list:*');
+      await this.cacheService.delPattern('user:slug:*');
+      await this.cacheService.delPattern('portfolio:inspirations:*');
+
+      return {
+        error: false,
+        message: updatedUser.isInspirationSalon
+          ? 'Vos images sont maintenant affichées dans les inspirations.'
+          : 'Vos images sont retirées des inspirations.',
+        user: updatedUser,
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
+
   //! ------------------------------------------------------------------------------
   //! MÉTHODES POUR LES CLIENTS CONNECTÉS
   //! ------------------------------------------------------------------------------
@@ -1566,6 +1636,137 @@ export class UserService {
       return {
         error: true,
         message: errorMessage,
+      };
+    }
+  }
+
+  //! RECUPERER LES IMAGES DE PORTFOLIO FAVORITES D'UN CLIENT
+  async getFavoritePortfolioImages({ userId }: { userId: string }): Promise<Record<string, any>> {
+    try {
+      const favorites = await this.prisma.favoritePortfolio.findMany({
+        where: { clientId: userId },
+        select: {
+          createdAt: true,
+          portfolio: {
+            select: {
+              id: true,
+              title: true,
+              description: true,
+              imageUrl: true,
+              style: true,
+              createdAt: true,
+              updatedAt: true,
+              user: {
+                select: {
+                  id: true,
+                  salonName: true,
+                  image: true,
+                  city: true,
+                  postalCode: true,
+                  instagram: true,
+                },
+              },
+              tatoueur: {
+                select: {
+                  id: true,
+                  name: true,
+                  img: true,
+                  instagram: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      return {
+        error: false,
+        favoritePortfolioImages: favorites.map((favorite) => ({
+          ...favorite.portfolio,
+          favoritedAt: favorite.createdAt,
+        })),
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
+
+  //! METTRE EN FAVORI / RETIRER DES FAVORIS UNE IMAGE DE PORTFOLIO
+  async toggleFavoritePortfolio({
+    userId,
+    portfolioId,
+    role,
+  }: {
+    userId: string;
+    portfolioId: string;
+    role?: string;
+  }): Promise<Record<string, any>> {
+    try {
+      if (role && role !== 'client') {
+        return {
+          error: true,
+          message: 'Accès réservé aux clients.',
+        };
+      }
+
+      const portfolio = await this.prisma.portfolio.findUnique({
+        where: { id: portfolioId },
+        select: { id: true, title: true },
+      });
+
+      if (!portfolio) {
+        return {
+          error: true,
+          message: 'Image de portfolio introuvable.',
+        };
+      }
+
+      const existingFavorite = await this.prisma.favoritePortfolio.findUnique({
+        where: {
+          clientId_portfolioId: {
+            clientId: userId,
+            portfolioId,
+          },
+        },
+      });
+
+      if (existingFavorite) {
+        await this.prisma.favoritePortfolio.delete({
+          where: {
+            clientId_portfolioId: {
+              clientId: userId,
+              portfolioId,
+            },
+          },
+        });
+
+        return {
+          error: false,
+          message: 'Image retirée des favoris avec succès.',
+        };
+      }
+
+      await this.prisma.favoritePortfolio.create({
+        data: {
+          clientId: userId,
+          portfolioId,
+        },
+      });
+
+      return {
+        error: false,
+        message: 'Image ajoutée aux favoris avec succès.',
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: `Erreur lors de la mise à jour des favoris: ${errorMessage}`,
       };
     }
   }

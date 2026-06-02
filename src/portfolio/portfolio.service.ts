@@ -164,6 +164,127 @@ export class PortfolioService {
     }
   }
 
+  //! VOIR TOUTES LES IMAGES D'INSPIRATION DES SALONS
+  async getInspirationPortfolioPhotos({
+    page = 1,
+    limit = 12,
+    city,
+    style,
+  }: {
+    page?: number;
+    limit?: number;
+    city?: string;
+    style?: string;
+  }) {
+    try {
+      const pageSize = Math.min(50, Math.max(1, Number(limit) || 12));
+      const currentPage = Number.isNaN(page) || page < 1 ? 1 : page;
+      const skip = (currentPage - 1) * pageSize;
+      const normalizedCity = city?.trim() || '';
+      const styleFilters = (style ?? '')
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+      const cacheKey = `portfolio:inspirations:page:${currentPage}:limit:${pageSize}:city:${normalizedCity || 'all'}:style:${styleFilters.length ? styleFilters.join('|') : 'all'}`;
+
+      const cachedPhotos = await this.cacheService.get<{
+        photos: any[];
+        pagination: {
+          page: number;
+          pageSize: number;
+          total: number;
+          totalPages: number;
+          hasNextPage: boolean;
+          hasPreviousPage: boolean;
+        };
+      }>(cacheKey);
+
+      if (cachedPhotos) {
+        return cachedPhotos;
+      }
+
+      const whereClause: Record<string, any> = {
+        user: {
+          isInspirationSalon: true,
+          ...(normalizedCity
+            ? {
+                city: {
+                  contains: normalizedCity,
+                  mode: 'insensitive' as const,
+                },
+              }
+            : {}),
+        },
+        ...(styleFilters.length > 0
+          ? {
+              style: {
+                hasSome: styleFilters,
+              },
+            }
+          : {}),
+      };
+
+      const total = await this.prisma.portfolio.count({
+        where: whereClause,
+      });
+
+      const photos = await this.prisma.portfolio.findMany({
+        where: whereClause,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: pageSize,
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          imageUrl: true,
+          style: true,
+          createdAt: true,
+          updatedAt: true,
+          user: {
+            select: {
+              id: true,
+              salonName: true,
+              image: true,
+              city: true,
+              postalCode: true,
+              instagram: true,
+              isInspirationSalon: true,
+            },
+          },
+          tatoueur: {
+            select: {
+              id: true,
+              name: true,
+              img: true,
+              description: true,
+              instagram: true,
+            },
+          },
+        },
+      });
+
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+      const response = {
+        photos,
+        pagination: {
+          page: currentPage,
+          pageSize,
+          total,
+          totalPages,
+          hasNextPage: currentPage < totalPages,
+          hasPreviousPage: currentPage > 1,
+        },
+      };
+
+      await this.cacheService.set(cacheKey, response, 900);
+
+      return response;
+    } catch (error) {
+      throw new Error('Erreur lors de la récupération des images d\'inspiration du portfolio : ' + error);
+    }
+  }
+
   //! MODIFIER UNE PHOTO DU PORTFOLIO
   async updatePortfolioPhoto(id: string, updateData: Partial<AddPhotoDto>, userId: string) {
     try {

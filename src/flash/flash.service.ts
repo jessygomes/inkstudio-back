@@ -139,14 +139,14 @@ export class FlashService {
       if (!existingFlash) {
         return {
           error: true,
-          message: 'Flash non trouve',
+          message: 'Flash non trouvé',
         };
       }
 
       if (existingFlash.userId !== userId) {
         return {
           error: true,
-          message: 'Non autorise a modifier ce flash',
+          message: 'Non autorisé à modifier ce flash',
         };
       }
 
@@ -159,11 +159,11 @@ export class FlashService {
 
       return {
         error: false,
-        message: 'Flash mis a jour avec succes',
+        message: 'Flash mis à jour avec succès',
         flash: updatedFlash,
       };
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
       return {
         error: true,
         message: errorMessage,
@@ -180,14 +180,14 @@ export class FlashService {
       if (!existingFlash) {
         return {
           error: true,
-          message: 'Flash non trouve',
+          message: 'Flash non trouvé',
         };
       }
 
       if (existingFlash.userId !== userId) {
         return {
           error: true,
-          message: 'Non autorise a supprimer ce flash',
+          message: 'Non autorisé à supprimer ce flash',
         };
       }
 
@@ -199,10 +199,10 @@ export class FlashService {
 
       return {
         error: false,
-        message: 'Flash supprime avec succes',
+        message: 'Flash supprimé avec succès',
       };
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
       return {
         error: true,
         message: errorMessage,

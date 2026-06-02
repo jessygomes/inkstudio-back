@@ -31,6 +31,7 @@ model User {
   description               String?
   salonHours                String?
   salonPhotos               String[]
+  isInspirationSalon        Boolean              @default(true)
 
   saasPlan                  SaasPlan             @default(FREE)
   saasPlanUntil             DateTime?
@@ -86,6 +87,7 @@ model User {
   clientProfile         ClientProfile?
   favoriteUsers         FavoriteUser[]       @relation("ClientFavorites")
   favoritedBy           FavoriteUser[]       @relation("FavoritedSalon")
+  favoritePortfolios    FavoritePortfolio[]  @relation("ClientFavoritePortfolios")
   reviewsGiven          SalonReview[]        @relation("ReviewAuthor")
   reviewsReceived       SalonReview[]        @relation("ReviewedSalon")
 
@@ -470,11 +472,28 @@ model Portfolio {
   title       String
   description String?
   imageUrl    String
+  style       String[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   tatoueurId  String?
   tatoueur    Tatoueur? @relation(fields: [tatoueurId], references: [id])
   user        User      @relation(fields: [userId], references: [id])
+  favorites   FavoritePortfolio[] @relation("FavoritedPortfolio")
+}
+
+//! MODEL POUR LES FAVORIS D'IMAGES DE PORTFOLIO
+model FavoritePortfolio {
+  id           String    @id @default(cuid())
+  clientId     String
+  portfolioId  String
+  createdAt    DateTime  @default(now())
+
+  client       User      @relation("ClientFavoritePortfolios", fields: [clientId], references: [id], onDelete: Cascade)
+  portfolio    Portfolio @relation("FavoritedPortfolio", fields: [portfolioId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, portfolioId])
+  @@index([clientId])
+  @@index([portfolioId])
 }
 
 //! MODEL POUR LES PRODUITS EN VENTE DANS LE SALON

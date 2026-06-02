@@ -105,6 +105,17 @@ export class UserController {
     });
   }
 
+  //! BASCULER LE STATUT D'INSPIRATION DU SALON
+  @UseGuards(JwtAuthGuard)
+  @Patch('inspiration-salon')
+  toggleInspirationSalon(@Request() req: RequestWithUser) {
+    const userId = req.user.userId;
+    return this.userService.toggleInspirationSalon({
+      userId,
+      role: req.user.role,
+    });
+  }
+
   //! ROUTES SPÉCIFIQUES AUX CLIENTS CONNECTÉS (AVANT LES PARAMÈTRES)
   
   //! Récupérer les salons favoris
@@ -116,6 +127,15 @@ export class UserController {
     return this.userService.getFavoriteSalons({ userId });
   }
 
+  //! Récupérer les images de portfolio favorites
+  @UseGuards(JwtAuthGuard)
+  @Get('favorites/portfolio')
+  getFavoritePortfolioImages(@Request() req: RequestWithUser) {
+    const userId = req.user.userId;
+
+    return this.userService.getFavoritePortfolioImages({ userId });
+  }
+
   //! Ajouter/Supprimer un salon des favoris
   @UseGuards(JwtAuthGuard)
   @Patch('favorites/:salonId')
@@ -123,6 +143,19 @@ export class UserController {
     const userId = req.user.userId;
     
     return this.userService.toggleFavoriteSalon({ userId, salonId });
+  }
+
+  //! Ajouter/Supprimer une image de portfolio des favoris
+  @UseGuards(JwtAuthGuard)
+  @Patch('favorites/portfolio/:portfolioId')
+  toggleFavoritePortfolio(@Request() req: RequestWithUser, @Param('portfolioId') portfolioId: string) {
+    const userId = req.user.userId;
+
+    return this.userService.toggleFavoritePortfolio({
+      userId,
+      portfolioId,
+      role: req.user.role,
+    });
   }
 
   //! Récupérer tous les RDV d'un client

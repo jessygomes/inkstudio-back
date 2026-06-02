@@ -15,6 +15,15 @@ const createPrismaMock = () => {
       update: jest.fn(),
       count: jest.fn(),
     },
+    portfolio: {
+      findUnique: jest.fn(),
+    },
+    favoritePortfolio: {
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+      create: jest.fn(),
+      delete: jest.fn(),
+    },
     tatoueur: {
       findMany: jest.fn(),
     },
@@ -448,6 +457,130 @@ describe('UserService', () => {
       await expect(
         service.getPhotosSalon({ userId: 'user-1' }),
       ).rejects.toThrow();
+    });
+  });
+
+  describe('getFavoritePortfolioImages', () => {
+    it('should return favorite portfolio images with portfolio details', async () => {
+      const favoriteImages = [
+        {
+          createdAt: new Date('2026-01-01T10:00:00.000Z'),
+          portfolio: {
+            id: 'portfolio-1',
+            title: 'Rose tattoo',
+            description: 'Fine line rose',
+            imageUrl: 'https://example.com/rose.jpg',
+            style: ['Fine line'],
+            createdAt: new Date('2026-01-01T09:00:00.000Z'),
+            updatedAt: new Date('2026-01-01T09:30:00.000Z'),
+            user: {
+              id: 'salon-1',
+              salonName: 'Ink Studio',
+              image: 'https://example.com/salon.jpg',
+              city: 'Paris',
+              postalCode: '75001',
+            },
+            tatoueur: {
+              id: 'tat-1',
+              name: 'Mika',
+              img: 'https://example.com/tat.png',
+            },
+          },
+        },
+      ];
+
+      prisma.favoritePortfolio.findMany.mockResolvedValue(favoriteImages);
+
+      const result = await service.getFavoritePortfolioImages({
+        userId: 'client-1',
+      });
+
+      expect(result.error).toBe(false);
+      expect(result.favoritePortfolioImages).toHaveLength(1);
+      expect(result.favoritePortfolioImages[0]).toMatchObject({
+        id: 'portfolio-1',
+        title: 'Rose tattoo',
+        favoritedAt: favoriteImages[0].createdAt,
+      });
+    });
+  });
+
+  describe('toggleFavoritePortfolio', () => {
+    it('should return an error for non-client roles', async () => {
+      const result = await service.toggleFavoritePortfolio({
+        userId: 'user-1',
+        portfolioId: 'portfolio-1',
+        role: 'user',
+      });
+
+      expect(result).toEqual({
+        error: true,
+        message: 'Accès réservé aux clients.',
+      });
+      expect(prisma.portfolio.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('should add a portfolio image to favorites', async () => {
+      prisma.portfolio.findUnique.mockResolvedValue({ id: 'portfolio-1' });
+      prisma.favoritePortfolio.findUnique.mockResolvedValue(null);
+      prisma.favoritePortfolio.create.mockResolvedValue({ id: 'fav-1' });
+
+      const result = await service.toggleFavoritePortfolio({
+        userId: 'client-1',
+        portfolioId: 'portfolio-1',
+        role: 'client',
+      });
+
+      expect(result).toEqual({
+        error: false,
+        message: 'Image ajoutée aux favoris avec succès.',
+      });
+      expect(prisma.favoritePortfolio.create).toHaveBeenCalledWith({
+        data: {
+          clientId: 'client-1',
+          portfolioId: 'portfolio-1',
+        },
+      });
+    });
+
+    it('should remove a portfolio image from favorites', async () => {
+      prisma.portfolio.findUnique.mockResolvedValue({ id: 'portfolio-1' });
+      prisma.favoritePortfolio.findUnique.mockResolvedValue({ id: 'fav-1' });
+      prisma.favoritePortfolio.delete.mockResolvedValue({ id: 'fav-1' });
+
+      const result = await service.toggleFavoritePortfolio({
+        userId: 'client-1',
+        portfolioId: 'portfolio-1',
+        role: 'client',
+      });
+
+      expect(result).toEqual({
+        error: false,
+        message: 'Image retirée des favoris avec succès.',
+      });
+      expect(prisma.favoritePortfolio.delete).toHaveBeenCalledWith({
+        where: {
+          clientId_portfolioId: {
+            clientId: 'client-1',
+            portfolioId: 'portfolio-1',
+          },
+        },
+      });
+    });
+
+    it('should return an error when portfolio image is missing', async () => {
+      prisma.portfolio.findUnique.mockResolvedValue(null);
+
+      const result = await service.toggleFavoritePortfolio({
+        userId: 'client-1',
+        portfolioId: 'portfolio-404',
+        role: 'client',
+      });
+
+      expect(result).toEqual({
+        error: true,
+        message: 'Image de portfolio introuvable.',
+      });
     });
   });
 
@@ -982,6 +1115,88 @@ describe('UserService', () => {
       });
 
       expect(result.error).toBe(true);
+    });
+  });
+
+  describe('toggleInspirationSalon', () => {
+    it('should reject non salon roles', async () => {
+      const result = await service.toggleInspirationSalon({
+        userId: 'user-1',
+        role: 'client',
+      });
+
+      expect(result).toEqual({
+        error: true,
+        message: 'Accès réservé aux salons.',
+      });
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('should enable inspiration flag for a salon user', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'user-1',
+        role: 'user_salon',
+        isInspirationSalon: false,
+        salonName: 'Salon Test',
+      });
+      prisma.user.update.mockResolvedValue({
+        id: 'user-1',
+        role: 'user_salon',
+        isInspirationSalon: true,
+        salonName: 'Salon Test',
+      });
+
+      const result = await service.toggleInspirationSalon({
+        userId: 'user-1',
+        role: 'user_salon',
+      });
+
+      expect(result).toEqual({
+        error: false,
+        message: 'Le salon est maintenant affiché dans les inspirations.',
+        user: {
+          id: 'user-1',
+          role: 'user_salon',
+          isInspirationSalon: true,
+          salonName: 'Salon Test',
+        },
+      });
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+        data: { isInspirationSalon: true },
+        select: {
+          id: true,
+          salonName: true,
+          isInspirationSalon: true,
+          role: true,
+        },
+      });
+      expect(cache.del).toHaveBeenCalledWith('user:user-1');
+      expect(cache.delPattern).toHaveBeenCalledWith('portfolio:inspirations:*');
+    });
+
+    it('should disable inspiration flag for a salon user', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'user-1',
+        role: 'user_salon',
+        isInspirationSalon: true,
+        salonName: 'Salon Test',
+      });
+      prisma.user.update.mockResolvedValue({
+        id: 'user-1',
+        role: 'user_salon',
+        isInspirationSalon: false,
+        salonName: 'Salon Test',
+      });
+
+      const result = await service.toggleInspirationSalon({
+        userId: 'user-1',
+        role: 'user_salon',
+      });
+
+      expect(result.error).toBe(false);
+      expect(result.message).toBe('Le salon est retiré des inspirations.');
     });
   });
 

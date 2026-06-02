@@ -9,8 +9,6 @@ import {
   Query,
   Request,
   UseGuards,
-  // Request,
-  // UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { RequestWithUser } from 'src/auth/jwt.strategy';

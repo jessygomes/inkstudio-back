@@ -10,8 +10,12 @@ const createPrismaMock = () => ({
   user: {
     findUnique: jest.fn(),
   },
+  tatoueur: {
+    findFirst: jest.fn(),
+  },
   portfolio: {
     create: jest.fn(),
+    count: jest.fn(),
     findMany: jest.fn(),
     findUnique: jest.fn(),
     update: jest.fn(),
@@ -23,6 +27,7 @@ const createCacheMock = () => ({
   get: jest.fn(),
   set: jest.fn(),
   del: jest.fn(),
+  delPattern: jest.fn(),
 });
 
 const createSaasMock = () => ({
@@ -99,6 +104,7 @@ describe('PortfolioService', () => {
 
     it('creates photo, invalidates cache, returns payload', async () => {
       prisma.user.findUnique.mockResolvedValue({ id: 'u1' });
+      prisma.tatoueur.findFirst.mockResolvedValue({ id: 'tat1' });
       prisma.portfolio.create.mockResolvedValue({ id: 'p1', userId: 'u1' });
 
       const result = await service.addPhotoToPortfolio({
@@ -114,11 +120,12 @@ describe('PortfolioService', () => {
           imageUrl: 'http://img',
         }),
       });
-      expect(cache.del).toHaveBeenCalledWith('portfolio:photos:u1');
+      expect(cache.delPattern).toHaveBeenCalledWith('portfolio:photos:u1:*');
     });
 
     it('returns error message when creation throws', async () => {
       prisma.user.findUnique.mockResolvedValue({ id: 'u1' });
+      prisma.tatoueur.findFirst.mockResolvedValue({ id: 'tat1' });
       prisma.portfolio.create.mockRejectedValue(new Error('boom'));
 
       const result = await service.addPhotoToPortfolio({
@@ -143,13 +150,14 @@ describe('PortfolioService', () => {
 
     it('fetches photos, caches them, and returns list', async () => {
       cache.get.mockResolvedValue(null);
+      prisma.portfolio.count.mockResolvedValue(2);
       prisma.portfolio.findMany.mockResolvedValue([{ id: 'p1' }, { id: 'p2' }]);
 
       const result = await service.getPortfolioPhotos('u1');
 
-      expect(result).toHaveLength(2);
+      expect(result.photos).toHaveLength(2);
       expect(cache.set).toHaveBeenCalledWith(
-        'portfolio:photos:u1',
+        'portfolio:photos:u1:all:page:1',
         result,
         900,
       );
@@ -165,11 +173,110 @@ describe('PortfolioService', () => {
     });
   });
 
+  describe('getInspirationPortfolioPhotos', () => {
+    it('returns cached inspiration photos when present', async () => {
+      const cached = { photos: [{ id: 'p1' }], pagination: { page: 1 } };
+      cache.get.mockResolvedValue(cached);
+
+      const result = await service.getInspirationPortfolioPhotos({});
+
+      expect(result).toEqual(cached);
+      expect(prisma.portfolio.count).not.toHaveBeenCalled();
+    });
+
+    it('fetches inspiration photos, caches them, and returns list', async () => {
+      cache.get.mockResolvedValue(null);
+      prisma.portfolio.count.mockResolvedValue(2);
+      prisma.portfolio.findMany.mockResolvedValue([{ id: 'p1' }, { id: 'p2' }]);
+
+      const result = await service.getInspirationPortfolioPhotos({
+        page: 1,
+        limit: 12,
+      });
+
+      expect(result.photos).toHaveLength(2);
+      expect(prisma.portfolio.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { user: { isInspirationSalon: true } },
+          skip: 0,
+          take: 12,
+        }),
+      );
+      expect(cache.set).toHaveBeenCalledWith(
+        'portfolio:inspirations:page:1:limit:12:city:all:style:all',
+        result,
+        900,
+      );
+    });
+
+    it('filters inspiration photos by city and style', async () => {
+      cache.get.mockResolvedValue(null);
+      prisma.portfolio.count.mockResolvedValue(1);
+      prisma.portfolio.findMany.mockResolvedValue([{ id: 'p1' }]);
+
+      await service.getInspirationPortfolioPhotos({
+        page: 1,
+        limit: 12,
+        city: 'Paris',
+        style: 'Fine line,Minimalist',
+      });
+
+      expect(prisma.portfolio.count).toHaveBeenCalledWith({
+        where: {
+          user: {
+            isInspirationSalon: true,
+            city: {
+              contains: 'Paris',
+              mode: 'insensitive',
+            },
+          },
+          style: {
+            hasSome: ['Fine line', 'Minimalist'],
+          },
+        },
+      });
+      expect(prisma.portfolio.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            user: expect.objectContaining({
+              city: expect.objectContaining({
+                contains: 'Paris',
+              }),
+            }),
+            style: {
+              hasSome: ['Fine line', 'Minimalist'],
+            },
+          }),
+          skip: 0,
+          take: 12,
+        }),
+      );
+      expect(cache.set).toHaveBeenCalledWith(
+        'portfolio:inspirations:page:1:limit:12:city:Paris:style:Fine line|Minimalist',
+        expect.objectContaining({ photos: [{ id: 'p1' }] }),
+        900,
+      );
+    });
+
+    it('throws on inspiration retrieval error', async () => {
+      cache.get.mockResolvedValue(null);
+      prisma.portfolio.count.mockRejectedValue(new Error('db fail'));
+
+      await expect(service.getInspirationPortfolioPhotos({})).rejects.toThrow(
+        "Erreur lors de la récupération des images d'inspiration du portfolio",
+      );
+    });
+  });
+
   describe('updatePortfolioPhoto', () => {
     it('returns error when photo not found', async () => {
       prisma.portfolio.findUnique.mockResolvedValue(null);
 
-      const result = await service.updatePortfolioPhoto('p1', { title: 'New' });
+      const result = await service.updatePortfolioPhoto(
+        'p1',
+        { title: 'New' },
+        'u1',
+      );
 
       expect(result).toEqual({ error: true, message: 'Photo non trouvée' });
       expect(prisma.portfolio.update).not.toHaveBeenCalled();
@@ -179,21 +286,29 @@ describe('PortfolioService', () => {
       prisma.portfolio.findUnique.mockResolvedValue({ id: 'p1', userId: 'u1' });
       prisma.portfolio.update.mockResolvedValue({ id: 'p1', title: 'New' });
 
-      const result = await service.updatePortfolioPhoto('p1', { title: 'New' });
+      const result = await service.updatePortfolioPhoto(
+        'p1',
+        { title: 'New' },
+        'u1',
+      );
 
       expect(result).toEqual({
         error: false,
         message: 'Photo mise à jour avec succès',
         photo: { id: 'p1', title: 'New' },
       });
-      expect(cache.del).toHaveBeenCalledWith('portfolio:photos:u1');
+      expect(cache.delPattern).toHaveBeenCalledWith('portfolio:photos:u1:*');
     });
 
     it('returns error message when update throws', async () => {
       prisma.portfolio.findUnique.mockResolvedValue({ id: 'p1', userId: 'u1' });
       prisma.portfolio.update.mockRejectedValue(new Error('boom'));
 
-      const result = await service.updatePortfolioPhoto('p1', { title: 'New' });
+      const result = await service.updatePortfolioPhoto(
+        'p1',
+        { title: 'New' },
+        'u1',
+      );
 
       expect(result).toEqual({ error: true, message: 'boom' });
     });
@@ -203,7 +318,7 @@ describe('PortfolioService', () => {
     it('throws when photo not found', async () => {
       prisma.portfolio.findUnique.mockResolvedValue(null);
 
-      await expect(service.deletePortfolioPhoto('p1')).rejects.toThrow(
+      await expect(service.deletePortfolioPhoto('p1', 'u1')).rejects.toThrow(
         'Photo non trouvée',
       );
     });
@@ -212,17 +327,17 @@ describe('PortfolioService', () => {
       prisma.portfolio.findUnique.mockResolvedValue({ id: 'p1', userId: 'u1' });
       prisma.portfolio.delete.mockResolvedValue({});
 
-      const result = await service.deletePortfolioPhoto('p1');
+      const result = await service.deletePortfolioPhoto('p1', 'u1');
 
       expect(result).toEqual({ message: 'Photo supprimée avec succès' });
-      expect(cache.del).toHaveBeenCalledWith('portfolio:photos:u1');
+      expect(cache.delPattern).toHaveBeenCalledWith('portfolio:photos:u1:*');
     });
 
     it('throws wrapped error on delete failure', async () => {
       prisma.portfolio.findUnique.mockResolvedValue({ id: 'p1', userId: 'u1' });
       prisma.portfolio.delete.mockRejectedValue(new Error('boom'));
 
-      await expect(service.deletePortfolioPhoto('p1')).rejects.toThrow(
+      await expect(service.deletePortfolioPhoto('p1', 'u1')).rejects.toThrow(
         'Erreur lors de la suppression de la photo du portfolio',
       );
     });

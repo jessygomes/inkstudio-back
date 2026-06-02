@@ -16,6 +16,24 @@ export class PortfolioController {
     return this.portfolioService.addPhotoToPortfolio({ portfolioBody, userId });
   }
 
+  //! VOIR TOUTES LES IMAGES D'INSPIRATION DES SALONS
+  @Get('inspirations')
+  getInspirationPortfolioPhotos(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('city') city?: string,
+    @Query('style') style?: string,
+  ) {
+    const pageNumber = page ? Number.parseInt(page, 10) : 1;
+    const limitNumber = limit ? Number.parseInt(limit, 10) : 12;
+    return this.portfolioService.getInspirationPortfolioPhotos({
+      page: pageNumber,
+      limit: limitNumber,
+      city,
+      style,
+    });
+  }
+
   //! VOIR TOUTES LES PHOTOS D'UN PORTFOLIO
   @Get(':userId')
   async getPortfolioPhotos(
