@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsNumber, IsOptional, IsString, IsUrl, Min } from 'class-validator';
+import { IsArray, IsBoolean, IsNumber, IsOptional, IsString, IsUrl, Min } from 'class-validator';
 
 export class CreateFlashDto {
   @IsString()
@@ -24,4 +24,13 @@ export class CreateFlashDto {
   @IsOptional()
   @IsBoolean()
   isAvailable?: boolean;
+
+  @IsOptional()
+  @IsString()
+  tatoueurId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  style?: string[];
 }

@@ -11,6 +11,19 @@ export class UserService {
   constructor(private prisma: PrismaService, 
     private cacheService: CacheService) {}
 
+  private normalizeStyles(styleInput: unknown): string[] {
+    return Array.isArray(styleInput)
+      ? [
+          ...new Set(
+            styleInput
+              .filter((item): item is string => typeof item === 'string')
+              .map((item) => item.trim().toUpperCase())
+              .filter(Boolean),
+          ),
+        ]
+      : [];
+  }
+
   private buildAppointmentBookingSettings({
     plan,
     agendaMode,
@@ -62,6 +75,11 @@ export class UserService {
         return cachedResult;
       }
 
+      const normalizedStyleFilter =
+        typeof style === 'string' && style.trim() !== ''
+          ? style.trim().toUpperCase()
+          : '';
+
       // Build where
       let where: Record<string, any> | undefined = {};
       if (query && query.trim() !== "") {
@@ -74,10 +92,10 @@ export class UserService {
         // Combine avec OR précédent => AND global, c'est ce qu'on veut
         where.city = { contains: city, mode: "insensitive" as const };
       }
-      if (style && typeof style === 'string' && style.trim() !== '') {
+      if (normalizedStyleFilter) {
         where.Tatoueur = {
           some: {
-            style: { has: style.trim() }
+            style: { has: normalizedStyleFilter }
           }
         };
       }
@@ -255,7 +273,7 @@ export class UserService {
     );
     const allStyles = [...tattooerStyles, ...userStyles];
 
-    return Array.from(new Set(allStyles.map(s => s.trim()).filter(Boolean))).sort();
+    return Array.from(new Set(allStyles.map((s) => s.trim().toUpperCase()).filter(Boolean))).sort();
   }
 
   //! GET USER BY SLUG + LOCALISATION
@@ -324,17 +342,6 @@ export class UserService {
           facebook: true,
           tiktok: true,
           website: true,
-          Portfolio: {
-            select: {
-              id: true,
-              title: true,
-              description: true,
-              imageUrl: true,
-              tatoueurId: true,
-              createdAt: true,
-              updatedAt: true,
-            }
-          },
           ProductSalon: {
             select: {
               id: true,
@@ -790,9 +797,10 @@ export class UserService {
 
     const safeStyles = [...new Set(
       rawStyles
-        .map(s => typeof s === 'string' ? s.trim() : '')
-        .filter(Boolean),
+        .filter((item): item is string => typeof item === 'string'),
     )];
+
+    const normalizedStyles = this.normalizeStyles(safeStyles);
 
     const user = await this.prisma.user.update({
       where: {
@@ -814,7 +822,7 @@ export class UserService {
         image: userBody.image, // Assurez-vous que l'image est gérée correctement
         profileImage: userBody.profileImage,
         prestations: safePrestations,
-        style: safeStyles
+        style: normalizedStyles
       },
     });
 

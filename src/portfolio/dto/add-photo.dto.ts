@@ -1,4 +1,4 @@
-import { IsOptional, IsString } from 'class-validator';
+import { IsArray, IsOptional, IsString } from 'class-validator';
 
 export class AddPhotoDto {
   @IsString()
@@ -14,4 +14,9 @@ export class AddPhotoDto {
   @IsOptional()
   @IsString()
   tatoueurId?: string; // ID du tatoueur qui a réalisé le tatouage, si applicable
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  style?: string[]; // Styles associés à l'image portfolio
 }

@@ -42,6 +42,7 @@ const buildPhotoDto = (overrides: Partial<AddPhotoDto> = {}): AddPhotoDto => ({
   imageUrl: 'http://img',
   description: 'desc',
   tatoueurId: 'tat1',
+  style: ['Fine line'],
   ...overrides,
 });
 
@@ -118,6 +119,7 @@ describe('PortfolioService', () => {
           userId: 'u1',
           title: 'T1',
           imageUrl: 'http://img',
+          style: ['FINE LINE'],
         }),
       });
       expect(cache.delPattern).toHaveBeenCalledWith('portfolio:photos:u1:*');
@@ -150,6 +152,10 @@ describe('PortfolioService', () => {
 
     it('fetches photos, caches them, and returns list', async () => {
       cache.get.mockResolvedValue(null);
+      prisma.user.findUnique.mockResolvedValue({
+        role: 'user',
+        linkedTatoueurs: [],
+      });
       prisma.portfolio.count.mockResolvedValue(2);
       prisma.portfolio.findMany.mockResolvedValue([{ id: 'p1' }, { id: 'p2' }]);
 
@@ -163,8 +169,102 @@ describe('PortfolioService', () => {
       );
     });
 
+    it('includes linked user_tatoueur portfolios for a user_salon', async () => {
+      cache.get.mockResolvedValue(null);
+      prisma.user.findUnique.mockResolvedValue({
+        role: 'user_salon',
+        linkedTatoueurs: [
+          { id: 'tat-user-1', salonName: 'INK ONE' },
+          { id: 'tat-user-2', salonName: 'INK TWO' },
+        ],
+      });
+      prisma.portfolio.count.mockResolvedValue(3);
+      prisma.portfolio.findMany.mockResolvedValue([
+        { id: 'p-salon' },
+        { id: 'p-tat-1' },
+        { id: 'p-tat-2' },
+      ]);
+
+      const result = await service.getPortfolioPhotos('salon-1');
+
+      expect(result.photos).toHaveLength(3);
+      expect(prisma.portfolio.count).toHaveBeenCalledWith({
+        where: {
+          userId: { in: ['salon-1', 'tat-user-1', 'tat-user-2'] },
+        },
+      });
+      expect(prisma.portfolio.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            userId: { in: ['salon-1', 'tat-user-1', 'tat-user-2'] },
+          },
+        }),
+      );
+    });
+
+    it('adds fallback tatoueur using linked user salonName when missing', async () => {
+      cache.get.mockResolvedValue(null);
+      prisma.user.findUnique.mockResolvedValue({
+        role: 'user_salon',
+        linkedTatoueurs: [{ id: 'tat-user-1', salonName: 'INK MASTER' }],
+      });
+      prisma.portfolio.count.mockResolvedValue(1);
+      prisma.portfolio.findMany.mockResolvedValue([
+        {
+          id: 'p-tat-1',
+          userId: 'tat-user-1',
+          tatoueurId: null,
+          title: 'Flash',
+          imageUrl: 'http://img',
+          description: 'desc',
+        },
+      ]);
+
+      const result = await service.getPortfolioPhotos('salon-1');
+
+      expect(result.photos).toHaveLength(1);
+      expect(
+        (result.photos[0] as { tatoueur?: { name: string } }).tatoueur?.name,
+      ).toBe('INK MASTER');
+      expect(
+        (result.photos[0] as { tatoueur?: { linkedUserId: string } }).tatoueur
+          ?.linkedUserId,
+      ).toBe('tat-user-1');
+    });
+
+    it('filters photos by linked tatoueur id when tatoueurId is a linked identifier', async () => {
+      cache.get.mockResolvedValue(null);
+      prisma.user.findUnique.mockResolvedValue({
+        role: 'user_salon',
+        linkedTatoueurs: [{ id: 'tat-user-1', salonName: 'INK MASTER' }],
+      });
+      prisma.portfolio.count.mockResolvedValue(1);
+      prisma.portfolio.findMany.mockResolvedValue([
+        { id: 'p-linked-1', userId: 'tat-user-1', tatoueurId: null },
+      ]);
+
+      await service.getPortfolioPhotos('salon-1', 'linked_tat-user-1');
+
+      expect(prisma.portfolio.count).toHaveBeenCalledWith({
+        where: {
+          userId: 'tat-user-1',
+        },
+      });
+      expect(prisma.portfolio.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            userId: 'tat-user-1',
+          },
+        }),
+      );
+    });
+
     it('throws on retrieval error', async () => {
       cache.get.mockResolvedValue(null);
+      prisma.user.findUnique.mockResolvedValue({
+        role: 'user',
+        linkedTatoueurs: [],
+      });
       prisma.portfolio.findMany.mockRejectedValue(new Error('db fail'));
 
       await expect(service.getPortfolioPhotos('u1')).rejects.toThrow(
@@ -231,7 +331,7 @@ describe('PortfolioService', () => {
             },
           },
           style: {
-            hasSome: ['Fine line', 'Minimalist'],
+            hasSome: ['FINE LINE', 'MINIMALIST'],
           },
         },
       });
@@ -244,7 +344,7 @@ describe('PortfolioService', () => {
               }),
             }),
             style: {
-              hasSome: ['Fine line', 'Minimalist'],
+              hasSome: ['FINE LINE', 'MINIMALIST'],
             },
           }),
           skip: 0,
@@ -252,7 +352,7 @@ describe('PortfolioService', () => {
         }),
       );
       expect(cache.set).toHaveBeenCalledWith(
-        'portfolio:inspirations:page:1:limit:12:city:Paris:style:Fine line|Minimalist',
+        'portfolio:inspirations:page:1:limit:12:city:Paris:style:FINE LINE|MINIMALIST',
         expect.objectContaining({ photos: [{ id: 'p1' }] }),
         900,
       );
@@ -311,6 +411,27 @@ describe('PortfolioService', () => {
       );
 
       expect(result).toEqual({ error: true, message: 'boom' });
+    });
+
+    it('normalizes style before updating photo', async () => {
+      prisma.portfolio.findUnique.mockResolvedValue({ id: 'p1', userId: 'u1' });
+      prisma.portfolio.update.mockResolvedValue({
+        id: 'p1',
+        style: ['Fine line', 'Blackwork'],
+      });
+
+      await service.updatePortfolioPhoto(
+        'p1',
+        { style: [' Fine line ', '', 'Blackwork', 'Fine line'] },
+        'u1',
+      );
+
+      expect(prisma.portfolio.update).toHaveBeenCalledWith({
+        where: { id: 'p1' },
+        data: {
+          style: ['FINE LINE', 'BLACKWORK'],
+        },
+      });
     });
   });
 

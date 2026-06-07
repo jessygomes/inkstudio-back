@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Role } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma.service';
 import { CacheService } from 'src/redis/cache.service';
 import { CreateFlashDto } from './dto/create-flash.dto';
@@ -10,6 +11,53 @@ export class FlashService {
     private readonly prisma: PrismaService,
     private readonly cacheService: CacheService,
   ) {}
+
+  private normalizeStyles(styleInput: unknown): string[] {
+    return Array.isArray(styleInput)
+      ? [
+          ...new Set(
+            styleInput
+              .filter((item): item is string => typeof item === 'string')
+              .map((item) => item.trim().toUpperCase())
+              .filter(Boolean),
+          ),
+        ]
+      : [];
+  }
+
+  private async validateTatoueurForSalon(tatoueurId: string, userId: string) {
+    const tatoueur = await this.prisma.tatoueur.findFirst({
+      where: {
+        id: tatoueurId,
+        userId,
+      },
+      select: { id: true },
+    });
+
+    if (!tatoueur) {
+      return {
+        error: true,
+        message: 'Le tatoueur sélectionné est introuvable pour ce salon.',
+      };
+    }
+
+    return null;
+  }
+
+  private async invalidateFlashCacheForUser(userId: string) {
+    await this.cacheService.delPattern(`flashs:salon:${userId}:available:*`);
+    await this.cacheService.delPattern(`flashs:salon:${userId}:all:*`);
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { salonId: true },
+    });
+
+    if (user?.salonId) {
+      await this.cacheService.delPattern(`flashs:salon:${user.salonId}:available:*`);
+      await this.cacheService.delPattern(`flashs:salon:${user.salonId}:all:*`);
+    }
+  }
 
   async createFlash(createFlashDto: CreateFlashDto, userId: string) {
     try {
@@ -25,11 +73,28 @@ export class FlashService {
       }
 
       const dimension = (createFlashDto as { dimension?: string }).dimension;
+      const normalizedStyles = this.normalizeStyles(
+        (createFlashDto as { style?: unknown }).style,
+      );
+      const tatoueurIdRaw = (createFlashDto as { tatoueurId?: unknown }).tatoueurId;
+      const tatoueurId = typeof tatoueurIdRaw === 'string' ? tatoueurIdRaw : undefined;
+
+      if (tatoueurId) {
+        const tatoueurValidation = await this.validateTatoueurForSalon(
+          tatoueurId,
+          userId,
+        );
+        if (tatoueurValidation) {
+          return tatoueurValidation;
+        }
+      }
 
       const flash = await this.prisma.flash.create({
         data: {
           userId,
+          tatoueurId,
           title: createFlashDto.title,
+          style: normalizedStyles,
           dimension,
           imageUrl: createFlashDto.imageUrl,
           price: createFlashDto.price,
@@ -38,15 +103,15 @@ export class FlashService {
         },
       });
 
-      await this.cacheService.del(`flashs:salon:${userId}:available`);
+      await this.invalidateFlashCacheForUser(userId);
 
       return {
         error: false,
-        message: 'Flash cree avec succes',
+        message: 'Flash créé avec succès',
         flash,
       };
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      const errorMessage = error instanceof Error ? error.message : 'Une erreur inconnue est survenue';
       return {
         error: true,
         message: errorMessage,
@@ -66,6 +131,7 @@ export class FlashService {
           flashs: {
             id: string;
             title: string;
+            style: string[];
             dimension: string | null;
             imageUrl: string;
             description: string | null;
@@ -87,8 +153,29 @@ export class FlashService {
         return cached;
       }
 
+      const requestedUser = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          role: true,
+          linkedTatoueurs: {
+            select: {
+              id: true,
+            },
+          },
+        },
+      });
+
+      const linkedTatoueurUserIds = requestedUser?.role === Role.user_salon
+        ? (requestedUser.linkedTatoueurs ?? []).map((tatoueurUser) => tatoueurUser.id)
+        : [];
+
+      const flashOwnerIds = Array.from(new Set([userId, ...linkedTatoueurUserIds]));
+
       const whereClause = {
-        userId,
+        userId:
+          flashOwnerIds.length === 1
+            ? flashOwnerIds[0]
+            : { in: flashOwnerIds },
         isAvailable: true,
       };
 
@@ -122,7 +209,107 @@ export class FlashService {
 
       return response;
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      const errorMessage = error instanceof Error ? error.message : 'Une erreur inconnue est survenue';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
+
+  async getAllFlashsByUser(userId: string, page: number = 1, isAvailable?: boolean) {
+    try {
+      const pageSize = 10;
+      const currentPage = Number.isNaN(page) || page < 1 ? 1 : page;
+      const skip = (currentPage - 1) * pageSize;
+      const availabilityScope =
+        isAvailable === undefined ? 'all' : isAvailable ? 'available' : 'unavailable';
+      const cacheKey = `flashs:salon:${userId}:all:availability:${availabilityScope}:page:${currentPage}`;
+
+      const cached = await this.cacheService.get<
+        {
+          flashs: {
+            id: string;
+            title: string;
+            style: string[];
+            dimension: string | null;
+            imageUrl: string;
+            description: string | null;
+            price: number;
+            isAvailable: boolean;
+          }[];
+          pagination: {
+            page: number;
+            pageSize: number;
+            total: number;
+            totalPages: number;
+            hasNextPage: boolean;
+            hasPreviousPage: boolean;
+          };
+        }
+      >(cacheKey);
+
+      if (cached) {
+        return cached;
+      }
+
+      const requestedUser = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          role: true,
+          linkedTatoueurs: {
+            select: {
+              id: true,
+            },
+          },
+        },
+      });
+
+      const linkedTatoueurUserIds = requestedUser?.role === Role.user_salon
+        ? (requestedUser.linkedTatoueurs ?? []).map((tatoueurUser) => tatoueurUser.id)
+        : [];
+
+      const flashOwnerIds = Array.from(new Set([userId, ...linkedTatoueurUserIds]));
+
+      const whereClause = {
+        userId:
+          flashOwnerIds.length === 1
+            ? flashOwnerIds[0]
+            : { in: flashOwnerIds },
+        ...(isAvailable !== undefined ? { isAvailable } : {}),
+      };
+
+      const total = await this.prisma.flash.count({
+        where: whereClause,
+      });
+
+      const flashs = await this.prisma.flash.findMany({
+        where: whereClause,
+        orderBy: {
+          createdAt: 'desc',
+        },
+        skip,
+        take: pageSize,
+      });
+
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+      const response = {
+        flashs,
+        pagination: {
+          page: currentPage,
+          pageSize,
+          total,
+          totalPages,
+          hasNextPage: currentPage < totalPages,
+          hasPreviousPage: currentPage > 1,
+        },
+      };
+
+      await this.cacheService.set(cacheKey, response, 1200);
+
+      return response;
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Une erreur inconnue est survenue';
       return {
         error: true,
         message: errorMessage,
@@ -150,12 +337,34 @@ export class FlashService {
         };
       }
 
+      const updateTatoueurIdRaw = (updateFlashDto as { tatoueurId?: unknown }).tatoueurId;
+      const updateTatoueurId = typeof updateTatoueurIdRaw === 'string' ? updateTatoueurIdRaw : undefined;
+
+      if (updateTatoueurId) {
+        const tatoueurValidation = await this.validateTatoueurForSalon(
+          updateTatoueurId,
+          userId,
+        );
+        if (tatoueurValidation) {
+          return tatoueurValidation;
+        }
+      }
+
       const updatedFlash = await this.prisma.flash.update({
         where: { id },
-        data: updateFlashDto,
+        data: {
+          ...updateFlashDto,
+          ...(updateFlashDto.style !== undefined
+            ? {
+                style: this.normalizeStyles(
+                  (updateFlashDto as { style?: unknown }).style,
+                ),
+              }
+            : {}),
+        },
       });
 
-      await this.cacheService.del(`flashs:salon:${existingFlash.userId}:available`);
+      await this.invalidateFlashCacheForUser(existingFlash.userId);
 
       return {
         error: false,
@@ -163,7 +372,7 @@ export class FlashService {
         flash: updatedFlash,
       };
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
+      const errorMessage = error instanceof Error ? error.message : 'Une erreur inconnue est survenue';
       return {
         error: true,
         message: errorMessage,
@@ -195,14 +404,14 @@ export class FlashService {
         where: { id },
       });
 
-      await this.cacheService.del(`flashs:salon:${existingFlash.userId}:available`);
+      await this.invalidateFlashCacheForUser(existingFlash.userId);
 
       return {
         error: false,
         message: 'Flash supprimé avec succès',
       };
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
+      const errorMessage = error instanceof Error ? error.message : 'Une erreur inconnue est survenue';
       return {
         error: true,
         message: errorMessage,

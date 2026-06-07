@@ -234,6 +234,7 @@ model Tatoueur {
   appointments       Appointment[]
   blockedTimeSlots   BlockedTimeSlot[]
   Portfolio          Portfolio[]
+  Flash              Flash[]
   rescheduleRequests RescheduleRequest[]
   user               User                @relation(fields: [userId], references: [id])
   TattooHistory      TattooHistory[]
@@ -472,7 +473,7 @@ model Portfolio {
   title       String
   description String?
   imageUrl    String
-  style       String[]
+  style       String[] @default([])
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   tatoueurId  String?
@@ -513,7 +514,9 @@ model ProductSalon {
 model Flash {
   id          String   @id @default(cuid())
   userId      String
+  tatoueurId  String?
   title       String
+  style       String[]
   dimension   String?
   description String?
   imageUrl    String
@@ -521,9 +524,11 @@ model Flash {
   isAvailable Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  tatoueur    Tatoueur? @relation(fields: [tatoueurId], references: [id])
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([tatoueurId])
   @@index([isAvailable])
 }
 

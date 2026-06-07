@@ -12,6 +12,19 @@ export class PortfolioService {
     private cacheService: CacheService
   ) {}
 
+  private normalizeStyles(styleInput: unknown): string[] {
+    return Array.isArray(styleInput)
+      ? [
+          ...new Set(
+            styleInput
+              .filter((item): item is string => typeof item === 'string')
+              .map((item) => item.trim().toUpperCase())
+              .filter(Boolean),
+          ),
+        ]
+      : [];
+  }
+
   private async validateTatoueurForSalon(tatoueurId: string, userId: string) {
     const tatoueur = await this.prisma.tatoueur.findFirst({
       where: {
@@ -35,6 +48,7 @@ export class PortfolioService {
   async addPhotoToPortfolio({portfolioBody, userId}: {portfolioBody: AddPhotoDto, userId: string}) {
     try {
       const { title, imageUrl, description, tatoueurId } = portfolioBody;
+      const normalizedStyles = this.normalizeStyles((portfolioBody as { style?: unknown }).style);
 
       // 🔒 VÉRIFIER LES LIMITES SAAS - IMAGES PORTFOLIO
       const canAddPortfolioImage = await this.saasService.canPerformAction(userId, 'portfolio');
@@ -74,6 +88,7 @@ export class PortfolioService {
           imageUrl,
           description,
           tatoueurId,
+          style: normalizedStyles,
         },
       });
 
@@ -125,9 +140,53 @@ export class PortfolioService {
         return cachedPhotos;
       }
 
-      const whereClause = {
-        userId,
-        ...(tatoueurId ? { tatoueurId } : {}),
+      const requestedUser = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          role: true,
+          linkedTatoueurs: {
+            select: {
+              id: true,
+              salonName: true,
+            },
+          },
+        },
+      });
+
+      const linkedTatoueurUserIds = requestedUser?.role === 'user_salon'
+        ? (requestedUser.linkedTatoueurs ?? []).map((tatoueurUser) => tatoueurUser.id)
+        : [];
+
+      const linkedTatoueurNameByUserId = new Map(
+        requestedUser?.role === 'user_salon'
+          ? (requestedUser.linkedTatoueurs ?? []).map((tatoueurUser) => [
+              tatoueurUser.id,
+              tatoueurUser.salonName?.trim() || 'Tatoueur',
+            ])
+          : [],
+      );
+
+      const normalizedTatoueurId = tatoueurId?.trim() || '';
+      const linkedTatoueurFilterUserId = normalizedTatoueurId
+        ? linkedTatoueurUserIds.find(
+            (linkedUserId) =>
+              linkedUserId === normalizedTatoueurId ||
+              `linked_${linkedUserId}` === normalizedTatoueurId ||
+              `linked_user_${linkedUserId}` === normalizedTatoueurId,
+          )
+        : undefined;
+
+      const portfolioOwnerIds = Array.from(new Set([userId, ...linkedTatoueurUserIds]));
+
+      const whereClause: Record<string, any> = {
+        userId: linkedTatoueurFilterUserId
+          ? linkedTatoueurFilterUserId
+          : portfolioOwnerIds.length === 1
+            ? portfolioOwnerIds[0]
+            : { in: portfolioOwnerIds },
+        ...(normalizedTatoueurId && !linkedTatoueurFilterUserId
+          ? { tatoueurId: normalizedTatoueurId }
+          : {}),
       };
 
       const total = await this.prisma.portfolio.count({
@@ -135,11 +194,32 @@ export class PortfolioService {
       });
 
       // 2. Sinon, aller chercher en DB
-      const photos = await this.prisma.portfolio.findMany({
+      const photosFromDb = await this.prisma.portfolio.findMany({
         where: whereClause,
         orderBy: { createdAt: 'desc' }, // Optionnel : trier par date de création
         skip,
         take: pageSize,
+      });
+
+      const photos = photosFromDb.map((photo) => {
+        if (requestedUser?.role !== 'user_salon') {
+          return photo;
+        }
+
+        const linkedTatoueurName = linkedTatoueurNameByUserId.get(photo.userId);
+        if (!linkedTatoueurName || photo.tatoueurId) {
+          return photo;
+        }
+
+        return {
+          ...photo,
+          tatoueur: {
+            id: `linked_user_${photo.userId}`,
+            name: linkedTatoueurName,
+            isLinkedUser: true,
+            linkedUserId: photo.userId,
+          },
+        };
       });
 
       const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -183,7 +263,7 @@ export class PortfolioService {
       const normalizedCity = city?.trim() || '';
       const styleFilters = (style ?? '')
         .split(',')
-        .map((item) => item.trim())
+        .map((item) => item.trim().toUpperCase())
         .filter(Boolean);
       const cacheKey = `portfolio:inspirations:page:${currentPage}:limit:${pageSize}:city:${normalizedCity || 'all'}:style:${styleFilters.length ? styleFilters.join('|') : 'all'}`;
 
@@ -314,10 +394,17 @@ export class PortfolioService {
         }
       }
 
+      const dataToUpdate: Partial<AddPhotoDto> = {
+        ...updateData,
+        ...(updateData.style !== undefined
+          ? { style: this.normalizeStyles((updateData as { style?: unknown }).style) }
+          : {}),
+      };
+
       // Mettre à jour la photo
       const updatedPhoto = await this.prisma.portfolio.update({
         where: { id },
-        data: updateData,
+        data: dataToUpdate,
       });
 
       // Invalider le cache après mise à jour

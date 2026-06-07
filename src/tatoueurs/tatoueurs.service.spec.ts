@@ -112,6 +112,13 @@ describe('TatoueursService', () => {
       expect(
         (result as unknown as { tatoueur?: { id: string } }).tatoueur?.id,
       ).toBe('t1');
+      expect(prisma.tatoueur.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            style: ['REALISTIC'],
+          }),
+        }),
+      );
       expect(cache.del).toHaveBeenCalledWith('tatoueurs:all');
       expect(cache.del).toHaveBeenCalledWith('tatoueurs:user:u1');
       expect(cache.del).toHaveBeenCalledWith(
@@ -192,6 +199,33 @@ describe('TatoueursService', () => {
 
       expect(result).toHaveLength(1);
       expect(cache.set).toHaveBeenCalledWith('tatoueurs:user:u1', result, 1200);
+    });
+
+    it('uses salonName as name for linked tatoueur users', async () => {
+      cache.get.mockResolvedValue(null);
+      prisma.tatoueur.findMany.mockResolvedValue([]);
+      prisma.user.findMany.mockResolvedValue([
+        {
+          id: 'linked-user-1',
+          salonName: 'INK MASTER',
+          firstName: 'Jean',
+          lastName: 'Dupont',
+          image: 'img.jpg',
+          profileImage: null,
+          phone: '123',
+          instagram: '@ink',
+          description: 'desc',
+          prestations: ['TATTOO'],
+          style: ['REALISTIC'],
+          appointmentBookingEnabled: true,
+        },
+      ]);
+
+      const result = await service.getTatoueurByUserId('u1');
+
+      expect(result).toHaveLength(1);
+      expect((result[0] as { name: string }).name).toBe('INK MASTER');
+      expect((result[0] as { isLinkedUser: boolean }).isLinkedUser).toBe(true);
     });
 
     it('returns error on retrieval failure', async () => {
@@ -299,6 +333,13 @@ describe('TatoueursService', () => {
       expect(
         (result as unknown as { tatoueur?: { name: string } }).tatoueur?.name,
       ).toBe('Updated Name');
+      expect(prisma.tatoueur.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            style: ['REALISTIC'],
+          }),
+        }),
+      );
       expect(cache.del).toHaveBeenCalledWith('tatoueur:t1');
       expect(cache.del).toHaveBeenCalledWith('tatoueurs:all');
       expect(cache.del).toHaveBeenCalledWith('tatoueurs:user:u1');

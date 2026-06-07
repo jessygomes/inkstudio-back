@@ -22,6 +22,23 @@ export class FlashController {
     return this.flashService.getAvailableFlashsByUser(userId, pageNumber);
   }
 
+  @Get(':userId/all')
+  async getAllFlashsByUser(
+    @Param('userId') userId: string,
+    @Query('page') page?: string,
+    @Query('isAvailable') isAvailable?: string,
+  ) {
+    const pageNumber = page ? Number.parseInt(page, 10) : 1;
+    const normalizedAvailability =
+      isAvailable === 'true' ? true : isAvailable === 'false' ? false : undefined;
+
+    return this.flashService.getAllFlashsByUser(
+      userId,
+      pageNumber,
+      normalizedAvailability,
+    );
+  }
+
   @UseGuards(JwtAuthGuard)
   @Patch(':id')
   async updateFlash(

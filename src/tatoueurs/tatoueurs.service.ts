@@ -14,10 +14,24 @@ export class TatoueursService {
     private cacheService: CacheService
   ) {}
 
+  private normalizeStyles(styleInput: unknown): string[] {
+    return Array.isArray(styleInput)
+      ? [
+          ...new Set(
+            styleInput
+              .filter((item): item is string => typeof item === 'string')
+              .map((item) => item.trim().toUpperCase())
+              .filter(Boolean),
+          ),
+        ]
+      : [];
+  }
+
   //! CREER UN TATOUEUR
   async create({ tatoueurBody, userId }: {tatoueurBody: CreateTatoueurDto, userId: string}) {
     try {
       const { name, img, description, phone, instagram, hours, style, skills } = tatoueurBody;
+      const normalizedStyles = this.normalizeStyles(style);
 
       // 🔒 VÉRIFIER LES LIMITES SAAS - TATOUEURS
       const canCreateTatoueur = await this.saasService.canPerformAction(userId, 'tatoueur');
@@ -40,7 +54,7 @@ export class TatoueursService {
           instagram,
           hours,
           userId,
-          style,
+          style: normalizedStyles,
           skills,
         },
       });
@@ -99,8 +113,6 @@ export class TatoueursService {
           id: true,
           email: true,
           salonName: true,
-          firstName: true,
-          lastName: true,
           image: true,
           phone: true,
           instagram: true,
@@ -124,8 +136,6 @@ export class TatoueursService {
         id: user.id,
         email: user.email,
         salonName: user.salonName,
-        firstName: user.firstName,
-        lastName: user.lastName,
         image: user.image,
         phone: user.phone,
         instagram: user.instagram,
@@ -172,6 +182,7 @@ export class TatoueursService {
           id: true,
           role: true,
           salonId: true,
+          salonName: true,
           firstName: true,
           lastName: true,
           email: true,
@@ -222,9 +233,7 @@ export class TatoueursService {
           tatoueurUser: {
             select: {
               id: true,
-              firstName: true,
-              lastName: true,
-              email: true,
+              salonName: true,
             },
           },
         },
@@ -272,9 +281,7 @@ export class TatoueursService {
           tatoueurUser: {
             select: {
               id: true,
-              firstName: true,
-              lastName: true,
-              email: true,
+              salonName: true,
               image: true,
             },
           },
@@ -678,6 +685,7 @@ export class TatoueursService {
         profileImage: string | null;
         phone: string | null;
         instagram: string | null;
+        salonName: string | null;
         description: string | null;
         prestations: string[];
         style: string[];
@@ -692,6 +700,7 @@ export class TatoueursService {
         },
         select: {
           id: true,
+          salonName: true,
           firstName: true,
           lastName: true,
           image: true,
@@ -708,7 +717,7 @@ export class TatoueursService {
       const linkedTatoueurUsers = linkedTatoueurUsersResult as unknown as LinkedTatoueurUser[];
 
       const linkedTatoueurs = linkedTatoueurUsers.map((user) => {
-        const displayName = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || 'Tatoueur';
+        const displayName = user.salonName?.trim() || 'Tatoueur';
 
         return {
           id: `linked_${user.id}`,
@@ -722,6 +731,7 @@ export class TatoueursService {
           style: user.style,
           skills: user.prestations,
           rdvBookingEnabled: user.appointmentBookingEnabled,
+          salonName: user.salonName,
           isLinkedUser: true,
           isReadOnly: true,
         };
@@ -977,6 +987,7 @@ export class TatoueursService {
   async updateTatoueur(id: string, tatoueurBody: CreateTatoueurDto) {
     try {
       const { name, img, description, phone, instagram, hours, style, skills, rdvBookingEnabled } = tatoueurBody;
+      const normalizedStyles = this.normalizeStyles(style);
 
       const updatedTatoueur = await this.prisma.tatoueur.update({
         where: {
@@ -989,7 +1000,7 @@ export class TatoueursService {
           phone,
           instagram,
           hours,
-          style,
+          style: normalizedStyles,
           skills,
           rdvBookingEnabled
         },
