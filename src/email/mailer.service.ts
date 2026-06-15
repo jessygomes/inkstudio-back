@@ -284,6 +284,26 @@ export class MailService {
     );
   }
 
+  //! MAIL ADMIN - MESSAGE À UN UTILISATEUR
+  async sendAdminMessageToUser(to: string, subject: string, data: {
+    recipientName: string;
+    message: string;
+  }): Promise<MailgunResponse> {
+    const html = this.emailTemplateService.generateAdminMessageEmail({
+      recipientName: data.recipientName,
+      salonName: 'Inkera Studio',
+      subject,
+      customMessage: data.message,
+    });
+
+    return await this.sendMail(
+      to,
+      subject,
+      html,
+      'Inkera Studio',
+    );
+  }
+
   //! MAIL PERSONNALISE
   async sendCustomEmail(to: string, subject: string, data: EmailTemplateData, salonName?: string, salonEmail?: string): Promise<MailgunResponse> {
     const dataWithSalon = { ...data, salonName: salonName || data.salonName };

@@ -4,6 +4,7 @@ import { AdminService } from './admin.service';
 import { PrismaService } from 'src/database/prisma.service';
 import { CacheService } from 'src/redis/cache.service';
 import { SaasPlan } from '@prisma/client';
+import { MailService } from 'src/email/mailer.service';
 
 const createPrismaMock = () => ({
   user: {
@@ -25,20 +26,27 @@ const createCacheMock = () => ({
   set: jest.fn(),
 });
 
+const createMailMock = () => ({
+  sendCustomEmail: jest.fn(),
+});
+
 describe('AdminService', () => {
   let service: AdminService;
   let prisma: ReturnType<typeof createPrismaMock>;
   let cache: ReturnType<typeof createCacheMock>;
+  let mail: ReturnType<typeof createMailMock>;
 
   beforeEach(async () => {
     prisma = createPrismaMock();
     cache = createCacheMock();
+    mail = createMailMock();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AdminService,
         { provide: PrismaService, useValue: prisma },
         { provide: CacheService, useValue: cache },
+        { provide: MailService, useValue: mail },
       ],
     }).compile();
 

@@ -994,6 +994,37 @@ export class EmailTemplateService {
   }
 
   /**
+   *! Template pour message admin envoyé à un utilisateur
+   */
+  generateAdminMessageEmail(data: EmailTemplateData & { subject: string }): string {
+    const content = `
+      <div class="content">
+        <div class="greeting">Bonjour ${data.recipientName || 'cher utilisateur'} 👋</div>
+
+        <div class="message">
+          <p>Vous recevez ce message de la part de l'équipe <strong>Inkera Studio</strong>.</p>
+        </div>
+
+<div style="background: transparent; border: 2px solid #e5e7eb; border-radius: 12px; padding: 25px; margin: 25px 0;">
+        <div style="font-family: 'Montserrat Alternates', sans-serif; font-size: 18px; font-weight: 600; margin-bottom: 15px; color: #171717;">${data.subject}</div>
+        <div style="margin-top: 12px; line-height: 1.8; white-space: pre-wrap; color: #171717; font-family: 'Exo 2', sans-serif; font-size: 16px;">${data.customMessage || ''}</div>
+        </div>
+
+        <div class="message" style="margin-top: 30px;">
+          <p>Si vous avez des questions ou avez besoin d'assistance, n'hésitez pas à répondre à cet email.</p>
+          <p style="margin-top: 12px;"><strong>L'équipe Inkera Studio ✨</strong></p>
+        </div>
+      </div>
+    `;
+
+    return this.getBaseTemplate(
+      content,
+      data.subject,
+      'Inkera Studio',
+    );
+  }
+
+  /**
    *! Template générique pour messages personnalisés
    */
   generateCustomEmail(data: EmailTemplateData, subject: string = `Message de ${data.salonName || 'Inkera Studio'}`): string {

@@ -2,18 +2,90 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CacheService } from 'src/redis/cache.service';
 import { Role, SaasPlan, VerificationStatusDocument } from '@prisma/client';
+import { MailService } from 'src/email/mailer.service';
 
 @Injectable()
 export class AdminService {
-  constructor(private prisma: PrismaService, private cacheService: CacheService) {}
+  constructor(
+    private prisma: PrismaService,
+    private cacheService: CacheService,
+    private readonly mailService: MailService,
+  ) {}
 
-  //! RÉCUPÉRER TOUS LES SALONS (users avec role='user')
+  //! ENVOYER UN EMAIL À UN CLIENT (admin)
+  async sendEmailToClient({
+    clientId,
+    adminUserId,
+    subject,
+    message,
+  }: {
+    clientId: string;
+    adminUserId?: string;
+    subject: string;
+    message: string;
+  }): Promise<{ error: boolean; message: string }> {
+    try {
+      if (adminUserId && adminUserId === clientId) {
+        return {
+          error: true,
+          message: 'Vous ne pouvez pas vous envoyer cet email via cette route.',
+        };
+      }
+
+      const client = await this.prisma.user.findUnique({
+        where: { id: clientId },
+        select: {
+          id: true,
+          role: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+        },
+      });
+
+      if (!client) {
+        return {
+          error: true,
+          message: 'Utilisateur introuvable.',
+        };
+      }
+
+      const recipientName = [client.firstName, client.lastName]
+        .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+        .join(' ')
+        .trim() || 'client';
+
+      await this.mailService.sendAdminMessageToUser(
+        client.email,
+        subject,
+        {
+          recipientName,
+          message,
+        },
+      );
+
+      return {
+        error: false,
+        message: 'Email envoyé au client avec succès.',
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      console.error('Erreur lors de l\'envoi d\'email admin au client:', errorMessage);
+      return {
+        error: true,
+        message: `Impossible d'envoyer l'email: ${errorMessage}`,
+      };
+    }
+  }
+
+  //! RÉCUPÉRER TOUS LES SALONS/TATOUEUR
   async getAllSalons(
     page: number = 1,
     limit: number = 10,
     search?: string,
     saasPlan?: SaasPlan,
-    verifiedSalon?: boolean
+    verifiedSalon?: boolean,
+    role?: Role,
   ) {
     try {
       // Sanitize pagination
@@ -28,6 +100,7 @@ export class AdminService {
         search: search?.trim() || null,
         saasPlan: saasPlan || null,
         verifiedSalon: verifiedSalon ?? null,
+        role: role || null,
       })}`;
 
       // 1. Vérifier dans Redis
@@ -53,7 +126,7 @@ export class AdminService {
         : {};
 
       const whereClause = {
-        role: { in: [Role.user, Role.user_salon, Role.user_tatoueur] },
+        role: role ?? { in: [Role.user, Role.user_salon, Role.user_tatoueur] },
         ...(saasPlan ? { saasPlan } : {}),
         ...(verifiedSalon !== undefined ? { verifiedSalon } : {}),
         ...searchConditions,
@@ -67,6 +140,7 @@ export class AdminService {
         where: whereClause,
         select: {
           id: true,
+          role: true,
           email: true,
           firstName: true,
           lastName: true,
@@ -104,8 +178,6 @@ export class AdminService {
 
       // 5. Mettre en cache (TTL 10 minutes)
       await this.cacheService.set(cacheKey, result, 600);
-
-      console.log('Retrieved salons:', result.salons);
 
       return result;
     } catch (error: unknown) {
@@ -340,9 +412,11 @@ export class AdminService {
           salonName: true,
           salonHours: true,
           phone: true,
+          address: true,
           city: true,
           postalCode: true,
           image: true,
+          profileImage: true,
           description: true,
           verifiedSalon: true,
           saasPlan: true,
@@ -405,6 +479,164 @@ export class AdminService {
       return {
         error: true,
         message: "Une erreur est survenue lors de la récupération de l'utilisateur.",
+      };
+    }
+  }
+
+  //! SUPPRIMER UN UTILISATEUR ET SES DONNÉES LIÉES (admin)
+  async deleteUserAndDependencies(
+    userId: string,
+    adminUserId?: string,
+  ): Promise<{ error: boolean; message: string }> {
+    try {
+      if (adminUserId && adminUserId === userId) {
+        return {
+          error: true,
+          message: 'Vous ne pouvez pas supprimer votre propre compte admin.',
+        };
+      }
+
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          email: true,
+          role: true,
+        },
+      });
+
+      if (!user) {
+        return {
+          error: true,
+          message: 'Utilisateur introuvable.',
+        };
+      }
+
+      if (user.role === Role.admin) {
+        return {
+          error: true,
+          message: 'La suppression d\'un compte administrateur est interdite.',
+        };
+      }
+
+      await this.prisma.$transaction(async (tx) => {
+        // Délier les tatoueurs users rattachés à ce salon, et profils clients liés.
+        await tx.user.updateMany({ where: { salonId: userId }, data: { salonId: null } });
+        await tx.client.updateMany({ where: { linkedUserId: userId }, data: { linkedUserId: null } });
+
+        // Si l'utilisateur est référencé comme client connecté dans des RDV, on détache la référence.
+        await tx.appointment.updateMany({ where: { clientUserId: userId }, data: { clientUserId: null } });
+
+        // Nettoyage des ressources directement rattachées à l'utilisateur.
+        await tx.favoriteUser.deleteMany({ where: { OR: [{ salonId: userId }, { clientId: userId }] } });
+        await tx.favoritePortfolio.deleteMany({ where: { clientId: userId } });
+        await tx.salonProfileView.deleteMany({ where: { salonId: userId } });
+        await tx.notificationPreference.deleteMany({ where: { userId } });
+        await tx.messageNotification.deleteMany({ where: { userId } });
+        await tx.emailNotificationQueue.deleteMany({ where: { recipientUserId: userId } });
+        await tx.message.deleteMany({ where: { senderId: userId } });
+        await tx.conversation.deleteMany({ where: { OR: [{ salonId: userId }, { clientUserId: userId }] } });
+        await tx.salonTatoueurTeamRequest.deleteMany({
+          where: { OR: [{ salonId: userId }, { tatoueurUserId: userId }] },
+        });
+        await tx.salonVerificationDocument.deleteMany({ where: { userId } });
+        await tx.clientProfile.deleteMany({ where: { userId } });
+        await tx.saasPlanDetails.deleteMany({ where: { userId } });
+
+        // Supprimer les jetons de sécurité liés à l'email du compte.
+        await tx.verificationToken.deleteMany({ where: { email: user.email } });
+        await tx.passwordResetToken.deleteMany({ where: { email: user.email } });
+
+        // Suppression des données métier salon / tatoueur.
+        const ownedTatoueurs = await tx.tatoueur.findMany({
+          where: { userId },
+          select: { id: true },
+        });
+        const ownedTatoueurIds = ownedTatoueurs.map((tatoueur) => tatoueur.id);
+
+        if (ownedTatoueurIds.length > 0) {
+          await tx.appointment.updateMany({
+            where: { tatoueurId: { in: ownedTatoueurIds } },
+            data: { tatoueurId: null },
+          });
+          await tx.blockedTimeSlot.updateMany({
+            where: { tatoueurId: { in: ownedTatoueurIds } },
+            data: { tatoueurId: null },
+          });
+        }
+
+        // Nettoyage autour des demandes de RDV avant suppression.
+        const appointmentRequests = await tx.appointmentRequest.findMany({
+          where: { userId },
+          select: { id: true },
+        });
+        const appointmentRequestIds = appointmentRequests.map((request) => request.id);
+
+        if (appointmentRequestIds.length > 0) {
+          await tx.proposedSlot.deleteMany({
+            where: { appointmentRequestId: { in: appointmentRequestIds } },
+          });
+        }
+
+        await tx.appointmentRequest.deleteMany({ where: { userId } });
+
+        // Nettoyage des RDV où l'utilisateur est le salon propriétaire.
+        const appointments = await tx.appointment.findMany({
+          where: { userId },
+          select: { id: true },
+        });
+        const appointmentIds = appointments.map((appointment) => appointment.id);
+
+        if (appointmentIds.length > 0) {
+          await tx.salonReview.deleteMany({ where: { appointmentId: { in: appointmentIds } } });
+          await tx.followUpRequest.deleteMany({ where: { appointmentId: { in: appointmentIds } } });
+          await tx.followUpSubmission.deleteMany({ where: { appointmentId: { in: appointmentIds } } });
+          await tx.appointmentConsumable.deleteMany({ where: { appointmentId: { in: appointmentIds } } });
+          await tx.rescheduleRequest.deleteMany({ where: { appointmentId: { in: appointmentIds } } });
+          await tx.tattooDetail.deleteMany({ where: { appointmentId: { in: appointmentIds } } });
+          await tx.timeSlot.deleteMany({ where: { appointmentId: { in: appointmentIds } } });
+          await tx.conversation.deleteMany({ where: { appointmentId: { in: appointmentIds } } });
+        }
+
+        await tx.appointmentConsumable.deleteMany({ where: { userId } });
+        await tx.followUpSubmission.deleteMany({ where: { userId } });
+        await tx.followUpRequest.deleteMany({ where: { userId } });
+        await tx.timeSlot.deleteMany({ where: { userId } });
+        await tx.blockedTimeSlot.deleteMany({ where: { userId } });
+        await tx.appointment.deleteMany({ where: { userId } });
+
+        await tx.portfolio.deleteMany({ where: { userId } });
+        await tx.flash.deleteMany({ where: { userId } });
+        await tx.productSalon.deleteMany({ where: { userId } });
+        await tx.stockItem.deleteMany({ where: { userId } });
+        await tx.piercingServicePrice.deleteMany({ where: { userId } });
+        await tx.piercingPrice.deleteMany({ where: { userId } });
+        await tx.tatoueur.deleteMany({ where: { userId } });
+        await tx.client.deleteMany({ where: { userId } });
+
+        // Enfin, suppression du compte utilisateur.
+        await tx.user.delete({ where: { id: userId } });
+      });
+
+      await this.cacheService.del(`user:${userId}`);
+      await this.cacheService.delPattern('users:list:*');
+      await this.cacheService.delPattern('user:slug:*');
+      await this.cacheService.delPattern('user:photos:*');
+      await this.cacheService.delPattern('portfolio:*');
+      await this.cacheService.delPattern('flashs:*');
+      await this.cacheService.delPattern('tatoueurs:*');
+      await this.cacheService.delPattern('admin:*');
+
+      return {
+        error: false,
+        message: 'Utilisateur et données associées supprimés avec succès.',
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      console.error('Erreur lors de la suppression utilisateur admin:', errorMessage);
+      return {
+        error: true,
+        message: `Impossible de supprimer cet utilisateur: ${errorMessage}`,
       };
     }
   }

@@ -1,8 +1,9 @@
-import { Controller, Get, Query, UseGuards, Request, Param } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, Request, Param, Delete, Post, Body } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { RequestWithUser } from 'src/auth/jwt.strategy';
-import { SaasPlan } from '@prisma/client';
+import { SaasPlan, Role } from '@prisma/client';
+import { SendClientEmailDto } from './dto/send-client-email.dto';
 
 /*
   Guide d'ordre des routes (à respecter lors des ajouts)
@@ -68,7 +69,8 @@ export class AdminController {
     @Query('limit') limit?: string,
     @Query('search') search?: string,
     @Query('saasPlan') saasPlan?: SaasPlan,
-    @Query('verifiedSalon') verifiedSalon?: string
+    @Query('verifiedSalon') verifiedSalon?: string,
+    @Query('role') role?: string,
   ) {
     if (req.user.role !== 'admin') {
       return {
@@ -80,8 +82,11 @@ export class AdminController {
     const pageNumber = page ? parseInt(page, 10) : 1;
     const limitNumber = limit ? parseInt(limit, 10) : 10;
     const verifiedSalonBool = verifiedSalon ? verifiedSalon === 'true' : undefined;
+    const allowedRoles: string[] = [Role.user, Role.user_salon, Role.user_tatoueur];
+    const parsedRole =
+      role && allowedRoles.includes(role) ? (role as Role) : undefined;
 
-    return await this.adminService.getAllSalons(pageNumber, limitNumber, search, saasPlan, verifiedSalonBool);
+    return await this.adminService.getAllSalons(pageNumber, limitNumber, search, saasPlan, verifiedSalonBool, parsedRole);
   }
 
   //! RÉCUPÉRER TOUS LES CLIENTS
@@ -105,6 +110,29 @@ export class AdminController {
     const limitNumber = limit ? parseInt(limit, 10) : 10;
 
     return await this.adminService.getAllClients(pageNumber, limitNumber, search);
+  }
+
+  //! ENVOYER UN EMAIL À UN CLIENT
+  @UseGuards(JwtAuthGuard)
+  @Post('clients/:id/email')
+  async sendEmailToClient(
+    @Request() req: RequestWithUser,
+    @Param('id') id: string,
+    @Body() body: SendClientEmailDto,
+  ): Promise<{ error: boolean; message: string }> {
+    if (req.user.role !== 'admin') {
+      return {
+        error: true,
+        message: 'Accès réservé aux administrateurs.',
+      };
+    }
+
+    return await this.adminService.sendEmailToClient({
+      clientId: id,
+      adminUserId: req.user.userId,
+      subject: body.subject,
+      message: body.message,
+    });
   }
 
   //! RÉCUPÉRER LES SALONS AVEC DES DOCUMENTS EN ATTENTE (PENDING)
@@ -140,7 +168,6 @@ export class AdminController {
     @Request() req: RequestWithUser,
     @Param('id') id: string
   ) {
-    console.log("ID demandé :", id);
     if (req.user.role !== 'admin') {
       return {
         error: true,
@@ -148,5 +175,22 @@ export class AdminController {
       };
     }
     return await this.adminService.getUserById(id);
+  }
+
+  //! SUPPRIMER UN UTILISATEUR ET SES DONNÉES ASSOCIÉES
+  @UseGuards(JwtAuthGuard)
+  @Delete('users/:id')
+  async deleteUser(
+    @Request() req: RequestWithUser,
+    @Param('id') id: string,
+  ): Promise<{ error: boolean; message: string }> {
+    if (req.user.role !== 'admin') {
+      return {
+        error: true,
+        message: 'Accès réservé aux administrateurs.',
+      };
+    }
+
+    return await this.adminService.deleteUserAndDependencies(id, req.user.userId);
   }
 }
