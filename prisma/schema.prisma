@@ -62,6 +62,7 @@ model User {
   linkedTatoueurs           User[]               @relation("SalonTatoueurs")
 
   appointments              Appointment[]
+  appointmentsAsPerformer    Appointment[]        @relation("AppointmentPerformer")
   appointmentConsumables    AppointmentConsumable[]
   AppointmentRequest        AppointmentRequest[]
   blockedTimeSlots          BlockedTimeSlot[]
@@ -252,6 +253,7 @@ model Appointment {
   isPayed            Boolean             @default(false)
   userId             String              // Salon qui reçoit le RDV
   tatoueurId         String?
+  performerUserId    String?
   clientId           String?             // Client existant dans la fiche salon (table Client)
   clientUserId       String?             // NOUVEAU: Client connecté (table User avec role="client")
   skin               String?
@@ -270,6 +272,7 @@ model Appointment {
   client             Client?             @relation(fields: [clientId], references: [id])
   tatoueur           Tatoueur?           @relation(fields: [tatoueurId], references: [id])
   user               User                @relation(fields: [userId], references: [id]) // Salon
+  performerUser      User?               @relation("AppointmentPerformer", fields: [performerUserId], references: [id])
   
   // NOUVELLE relation pour client connecté
   clientUser         User?               @relation("ClientUserAppointments", fields: [clientUserId], references: [id])
@@ -286,6 +289,7 @@ model Appointment {
   salonReview        SalonReview?
 
   @@index([userId])
+  @@index([performerUserId])
   @@index([clientUserId])
   @@index([status])
   @@index([start])

@@ -150,9 +150,15 @@ describe('AppointmentsService', () => {
 
       expect(result.error).toBe(true);
       expect(result.message).toBe('Tatoueur introuvable.');
-      expect(prisma.tatoueur.findUnique).toHaveBeenCalledWith({
-        where: { id: tatoueurId },
-      });
+      expect(prisma.tatoueur.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: tatoueurId },
+          select: expect.objectContaining({
+            id: true,
+            name: true,
+          }),
+        }),
+      );
     });
 
     it('should return error when time slot is already booked', async () => {
