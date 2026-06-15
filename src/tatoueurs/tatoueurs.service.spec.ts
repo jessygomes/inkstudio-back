@@ -4,6 +4,7 @@ import { PrismaService } from 'src/database/prisma.service';
 import { SaasService } from 'src/saas/saas.service';
 import { CacheService } from 'src/redis/cache.service';
 import { CreateTatoueurDto } from './dto/create-tatoueur.dto';
+import { Role } from '@prisma/client';
 
 const createPrismaMock = () => ({
   tatoueur: {
@@ -37,6 +38,7 @@ const createCacheMock = () => ({
   get: jest.fn(),
   set: jest.fn(),
   del: jest.fn(),
+  delPattern: jest.fn(),
 });
 
 const buildTatoueurDto = (
@@ -254,6 +256,7 @@ describe('TatoueursService', () => {
       prisma.tatoueur.findMany.mockResolvedValue([
         { id: 't1', name: 'John', rdvBookingEnabled: true },
       ]);
+      prisma.user.findMany.mockResolvedValue([]);
 
       const result = await service.getTatoueurByUserIdForAppointment('u1');
 
@@ -263,6 +266,69 @@ describe('TatoueursService', () => {
         result,
         900,
       );
+    });
+
+    it('includes linked tatoueur users enabled for appointments', async () => {
+      cache.get.mockResolvedValue(null);
+      prisma.tatoueur.findMany.mockResolvedValue([]);
+      prisma.user.findMany.mockResolvedValue([
+        {
+          id: 'linked-user-1',
+          salonName: 'INK MASTER',
+          firstName: 'Jean',
+          lastName: 'Dupont',
+          image: 'img.jpg',
+          profileImage: null,
+          phone: '123',
+          instagram: '@ink',
+          description: 'desc',
+          prestations: ['TATTOO'],
+          style: ['REALISTIC'],
+          appointmentBookingEnabled: true,
+        },
+      ]);
+
+      const result = await service.getTatoueurByUserIdForAppointment('u1');
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toEqual(
+        expect.objectContaining({
+          id: 'linked_linked-user-1',
+          name: 'INK MASTER',
+          rdvBookingEnabled: true,
+          isLinkedUser: true,
+        }),
+      );
+    });
+
+    it('updates linked tatoueur appointment booking for salon', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'linked-user-1',
+        role: Role.user_tatoueur,
+        salonId: 'salon-1',
+        appointmentBookingEnabled: false,
+      });
+      prisma.user.update.mockResolvedValue({
+        id: 'linked-user-1',
+        appointmentBookingEnabled: true,
+        salonId: 'salon-1',
+      });
+
+      const result = await service.updateLinkedTatoueurAppointmentBooking({
+        salonUserId: 'salon-1',
+        salonRole: 'user_salon',
+        tatoueurUserId: 'linked-user-1',
+        appointmentBookingEnabled: true,
+      });
+
+      expect(result.error).toBe(false);
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'linked-user-1' },
+          data: { appointmentBookingEnabled: true },
+        }),
+      );
+      expect(cache.delPattern).toHaveBeenCalledWith('user:slug:*');
     });
 
     it('returns error on retrieval failure', async () => {

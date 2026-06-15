@@ -5,6 +5,7 @@ import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { RequestWithUser } from 'src/auth/jwt.strategy';
 import { CreateTeamRequestDto } from './dto/create-team-request.dto';
 import { RespondTeamRequestDto } from './dto/respond-team-request.dto';
+import { UpdateLinkedTatoueurAppointmentBookingDto } from './dto/update-linked-tatoueur-appointment-booking.dto';
 
 @Controller('tatoueurs')
 export class TatoueursController {
@@ -81,6 +82,22 @@ export class TatoueursController {
       salonUserId: req.user.userId,
       salonRole: req.user.role,
       tatoueurUserId,
+    });
+  }
+
+  //! AUTORISER OU NON UN TATOUEUR RELIE A PRENDRE DES RDV
+  @UseGuards(JwtAuthGuard)
+  @Patch('team-requests/linked/:tatoueurUserId/appointment-booking')
+  updateLinkedTatoueurAppointmentBooking(
+    @Request() req: RequestWithUser,
+    @Param('tatoueurUserId') tatoueurUserId: string,
+    @Body() body: UpdateLinkedTatoueurAppointmentBookingDto,
+  ) {
+    return this.tatoueursService.updateLinkedTatoueurAppointmentBooking({
+      salonUserId: req.user.userId,
+      salonRole: req.user.role,
+      tatoueurUserId,
+      appointmentBookingEnabled: body.appointmentBookingEnabled,
     });
   }
 

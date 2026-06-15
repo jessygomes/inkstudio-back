@@ -779,12 +779,82 @@ export class TatoueursService {
       }
 
       // 2. Sinon, aller chercher en DB
-      const tatoueurs = await this.prisma.tatoueur.findMany({
-        where: {
-          userId,
-          rdvBookingEnabled: true
-        },
+      const [tatoueursInternes, linkedTatoueurUsersResult] = await Promise.all([
+        this.prisma.tatoueur.findMany({
+          where: {
+            userId,
+            rdvBookingEnabled: true,
+          },
+        }),
+        this.prisma.user.findMany({
+          where: {
+            salonId: userId,
+            role: Role.user_tatoueur,
+            appointmentBookingEnabled: true,
+          },
+          select: {
+            id: true,
+            salonName: true,
+            firstName: true,
+            lastName: true,
+            image: true,
+            profileImage: true,
+            phone: true,
+            instagram: true,
+            description: true,
+            prestations: true,
+            style: true,
+            appointmentBookingEnabled: true,
+          },
+        }),
+      ]);
+
+      type LinkedTatoueurUser = {
+        id: string;
+        salonName: string | null;
+        firstName: string | null;
+        lastName: string | null;
+        image: string | null;
+        profileImage: string | null;
+        phone: string | null;
+        instagram: string | null;
+        description: string | null;
+        prestations: string[];
+        style: string[];
+        appointmentBookingEnabled: boolean;
+      };
+
+      const linkedTatoueurUsers = linkedTatoueurUsersResult as unknown as LinkedTatoueurUser[];
+
+      const linkedTatoueurs = linkedTatoueurUsers.map((user) => {
+        const displayName = user.salonName?.trim() || 'Tatoueur';
+
+        return {
+          id: `linked_${user.id}`,
+          linkedUserId: user.id,
+          name: displayName,
+          img: user.profileImage ?? user.image,
+          description: user.description,
+          phone: user.phone,
+          instagram: user.instagram,
+          hours: null,
+          style: user.style,
+          skills: user.prestations,
+          rdvBookingEnabled: user.appointmentBookingEnabled,
+          salonName: user.salonName,
+          isLinkedUser: true,
+          isReadOnly: true,
+        };
       });
+
+      const tatoueurs = [
+        ...tatoueursInternes.map((tatoueur) => ({
+          ...tatoueur,
+          isLinkedUser: false,
+          isReadOnly: false,
+        })),
+        ...linkedTatoueurs,
+      ];
 
       // 3. Mettre en cache (TTL 15 minutes pour les tatoueurs RDV-enabled)
       await this.cacheService.set(cacheKey, tatoueurs, 900);
@@ -799,7 +869,85 @@ export class TatoueursService {
     }
   }
 
-  //! RETIRER UN TATOUEUR USER RELIE DE L'EQUIPE DU SALON
+  //! AUTORISER OU NON UN TATOUEUR RELIE A PRENDRE DES RDV
+  async updateLinkedTatoueurAppointmentBooking({
+    salonUserId,
+    salonRole,
+    tatoueurUserId,
+    appointmentBookingEnabled,
+  }: {
+    salonUserId: string;
+    salonRole?: string;
+    tatoueurUserId: string;
+    appointmentBookingEnabled: boolean;
+  }) {
+    try {
+      if (salonRole !== 'user_salon' && salonRole !== 'user') {
+        return {
+          error: true,
+          message: 'Seuls les salons peuvent gérer la prise de RDV d\'un tatoueur lié.',
+        };
+      }
+
+      const linkedTatoueur = await this.prisma.user.findUnique({
+        where: { id: tatoueurUserId },
+        select: {
+          id: true,
+          role: true,
+          salonId: true,
+          appointmentBookingEnabled: true,
+        },
+      });
+
+      if (!linkedTatoueur || linkedTatoueur.role !== Role.user_tatoueur) {
+        return {
+          error: true,
+          message: 'Tatoueur introuvable ou invalide.',
+        };
+      }
+
+      if (linkedTatoueur.salonId !== salonUserId) {
+        return {
+          error: true,
+          message: 'Ce tatoueur n\'est pas lié à votre salon.',
+        };
+      }
+
+      const updatedTatoueur = await this.prisma.user.update({
+        where: { id: tatoueurUserId },
+        data: {
+          appointmentBookingEnabled,
+        },
+        select: {
+          id: true,
+          appointmentBookingEnabled: true,
+          salonId: true,
+        },
+      });
+
+      await Promise.all([
+        this.cacheService.del(`tatoueurs:user:${salonUserId}`),
+        this.cacheService.del(`tatoueurs:user:${salonUserId}:appointment-enabled`),
+        this.cacheService.del(`user:${salonUserId}`),
+        this.cacheService.delPattern('user:slug:*'),
+        this.cacheService.del(`user:${tatoueurUserId}`),
+      ]);
+
+      return {
+        error: false,
+        message: appointmentBookingEnabled
+          ? 'La prise de RDV a été activée pour ce tatoueur.'
+          : 'La prise de RDV a été désactivée pour ce tatoueur.',
+        tatoueur: updatedTatoueur,
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
   async unlinkLinkedTatoueur({
     salonUserId,
     salonRole,
