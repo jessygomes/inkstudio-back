@@ -655,7 +655,7 @@ export class TatoueursService {
   //! VOIR TOUS LES TATOUEURS PAR USER ID
   async getTatoueurByUserId(userId: string) {
     try {
-      const cacheKey = `tatoueurs:user:${userId}`;
+      const cacheKey = `tatoueurs:user:${userId}:v2-salon-name`;
 
       // 1. Vérifier dans Redis
       const cachedTatoueurs = await this.cacheService.get<{
@@ -762,7 +762,7 @@ export class TatoueursService {
     //! VOIR TOUS LES TATOUEURS QUI PEUVENT PRENDRE DES RDV PAR USER ID
   async getTatoueurByUserIdForAppointment(userId: string) {
     try {
-      const cacheKey = `tatoueurs:user:${userId}:appointment-enabled`;
+      const cacheKey = `tatoueurs:user:${userId}:appointment-enabled:v2-salon-name`;
 
       // 1. Vérifier dans Redis
       const cachedTatoueurs = await this.cacheService.get<{

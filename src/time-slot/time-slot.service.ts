@@ -133,12 +133,69 @@ export class TimeSlotService {
   }
 
   async generateTatoueurTimeSlots(date: Date, tatoueurId: string, includeUnavailable = false) {
-    const tatoueur = await this.prisma.tatoueur.findUnique({
-      where: { id: tatoueurId },
+    // Normaliser l'ID en enlevant le préfixe "linked_" s'il existe
+    const normalizedId = tatoueurId.startsWith('linked_') ? tatoueurId.slice(7) : tatoueurId;
+
+    // D'abord chercher un Tatoueur interne
+    let tatoueur = await this.prisma.tatoueur.findUnique({
+      where: { id: normalizedId },
       include: { user: { select: { id: true } } }
     });
 
-    if (!tatoueur || !tatoueur.hours) return [];
+    // Si pas trouvé, chercher un User avec le rôle user_tatoueur (tatoueur linked)
+    if (!tatoueur) {
+      const linkedTatoueur = await this.prisma.user.findUnique({
+        where: { id: normalizedId },
+        select: {
+          id: true,
+          salonId: true,
+          role: true,
+          salonHours: true,
+        },
+      });
+
+      if (!linkedTatoueur || linkedTatoueur.role !== 'user_tatoueur' || !linkedTatoueur.salonId) {
+        return [];
+      }
+
+      // Pour un tatoueur linked, utiliser ses horaires et le salon
+      const salonContext = await this.prisma.user.findUnique({
+        where: { id: linkedTatoueur.salonId },
+        select: {
+          salonHours: true,
+          saasPlan: true,
+          saasPlanDetails: {
+            select: {
+              currentPlan: true,
+              agendaMode: true,
+            },
+          },
+        },
+      });
+
+      const agendaMode = salonContext
+        ? this.resolveAgendaMode({
+            plan: salonContext.saasPlanDetails?.currentPlan ?? salonContext.saasPlan,
+            agendaMode: salonContext.saasPlanDetails?.agendaMode,
+          })
+        : AgendaMode.PAR_TATOUEUR;
+
+      // Pour les linked tatoueurs, utiliser les horaires du salon ou les horaires globaux
+      const hoursJson = linkedTatoueur.salonHours ?? salonContext?.salonHours ?? '{}';
+      const scopedTatoueurId = agendaMode === AgendaMode.PAR_TATOUEUR
+        ? normalizedId
+        : undefined;
+
+      return this.generateTimeSlotsForDate(
+        date,
+        hoursJson,
+        linkedTatoueur.salonId,
+        scopedTatoueurId,
+        includeUnavailable,
+      );
+    }
+
+    if (!tatoueur.hours) return [];
 
     const salonContext = await this.prisma.user.findUnique({
       where: { id: tatoueur.userId },
@@ -166,7 +223,7 @@ export class TimeSlotService {
       : tatoueur.hours;
 
     const scopedTatoueurId = agendaMode === AgendaMode.PAR_TATOUEUR
-      ? tatoueurId
+      ? normalizedId
       : undefined;
 
     return this.generateTimeSlotsForDate(

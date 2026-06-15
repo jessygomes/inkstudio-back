@@ -1670,6 +1670,43 @@ describe('AppointmentsService', () => {
     );
   });
 
+  it('returns appointments for linked tatoueur ids (linked_)', async () => {
+    prisma.tatoueur.findUnique.mockResolvedValue(null);
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'linked-user-1',
+      role: 'user_tatoueur',
+    });
+    prisma.appointment.findMany.mockResolvedValue([
+      {
+        start: new Date('2026-01-01T10:00:00Z'),
+        end: new Date('2026-01-01T11:00:00Z'),
+      },
+    ]);
+
+    const result = await service.getAppointmentsByTatoueurRange(
+      'linked_linked-user-1',
+      '2026-01-01T00:00:00Z',
+      '2026-01-02T00:00:00Z',
+    );
+
+    expect(result).toHaveLength(1);
+    expect(prisma.user.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'linked-user-1' },
+      }),
+    );
+    expect(prisma.appointment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: [
+            { userId: 'linked-user-1' },
+            { performerUserId: 'linked-user-1' },
+          ],
+        }),
+      }),
+    );
+  });
+
   it('returns cached appointment when available', async () => {
     const cached = {
       id: 'a1',
