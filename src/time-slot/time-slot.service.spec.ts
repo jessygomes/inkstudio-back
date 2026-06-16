@@ -262,7 +262,7 @@ describe('TimeSlotService', () => {
       });
     });
 
-    it('should use salon hours and salon-wide occupancy in GLOBAL mode', async () => {
+    it('should use tatoueur hours and salon-wide occupancy in GLOBAL mode', async () => {
       const date = new Date('2026-01-26');
       const tatoueur = buildTatoueur({
         hours: buildSalonHours({
@@ -288,7 +288,7 @@ describe('TimeSlotService', () => {
       const slots = await service.generateTatoueurTimeSlots(date, tatoueur.id);
 
       expect(slots).toHaveLength(2);
-      expect(slots[0].start.getHours()).toBe(9);
+      expect(slots[0].start.getHours()).toBe(11);
 
       const firstAppointmentCall = prisma.appointment.findFirst.mock
         .calls[0][0] as {
@@ -405,6 +405,40 @@ describe('TimeSlotService', () => {
         },
         select: { id: true },
       });
+    });
+
+    it('should use linked user hours instead of salon hours for public linked tatoueur slots', async () => {
+      const date = new Date('2026-01-26');
+      const linkedTatoueurId = 'linked-user-1';
+
+      prisma.tatoueur.findUnique.mockResolvedValue(null);
+      prisma.user.findUnique
+        .mockResolvedValueOnce({
+          id: linkedTatoueurId,
+          salonId: 'salon-1',
+          role: 'user_tatoueur',
+          salonHours: buildSalonHours({
+            monday: { start: '14:00', end: '15:00' },
+          }),
+        })
+        .mockResolvedValueOnce({
+          salonHours: buildSalonHours({
+            monday: { start: '09:00', end: '10:00' },
+          }),
+          saasPlan: SaasPlan.PRO,
+          saasPlanDetails: {
+            currentPlan: SaasPlan.PRO,
+            agendaMode: AgendaMode.GLOBAL,
+          },
+        });
+
+      prisma.blockedTimeSlot.findFirst.mockResolvedValue(null);
+      prisma.appointment.findFirst.mockResolvedValue(null);
+
+      const slots = await service.generateTatoueurTimeSlots(date, linkedTatoueurId);
+
+      expect(slots).toHaveLength(2);
+      expect(slots[0].start.getHours()).toBe(14);
     });
 
     it('should return empty array when tatoueur not found', async () => {

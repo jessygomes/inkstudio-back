@@ -175,23 +175,9 @@ export class TimeSlotService {
         return [];
       }
 
-      // Pour un tatoueur linked, utiliser ses horaires et le salon
-      const salonContext = await this.prisma.user.findUnique({
-        where: { id: linkedTatoueur.salonId },
-        select: {
-          salonHours: true,
-          saasPlan: true,
-          saasPlanDetails: {
-            select: {
-              currentPlan: true,
-              agendaMode: true,
-            },
-          },
-        },
-      });
-
-      // Pour les linked tatoueurs, utiliser les horaires du salon ou les horaires globaux
-      const hoursJson = linkedTatoueur.salonHours ?? salonContext?.salonHours ?? '{}';
+      // Cote public, les horaires affiches doivent toujours correspondre au tatoueur
+      // selectionne. Pour un user_tatoueur lie, on utilise donc ses propres horaires.
+      const hoursJson = linkedTatoueur.salonHours ?? '{}';
       // Un profil user_tatoueur gère toujours son propre agenda: même si le salon
       // est en GLOBAL, on doit vérifier ses conflits personnels.
       const scopedTatoueurId = normalizedId;
@@ -229,9 +215,10 @@ export class TimeSlotService {
         })
       : AgendaMode.PAR_TATOUEUR;
 
-    const hoursJson = agendaMode === AgendaMode.GLOBAL
-      ? salonContext?.salonHours ?? '{}'
-      : tatoueur.hours;
+    // Cote public, un tatoueur interne doit afficher ses propres horaires, meme si
+    // le salon travaille en agenda GLOBAL. Le mode d'agenda ne doit piloter que
+    // le scope des conflits, pas la source des horaires affiches.
+    const hoursJson = tatoueur.hours;
 
     const scopedTatoueurId = agendaMode === AgendaMode.PAR_TATOUEUR
       ? normalizedId
