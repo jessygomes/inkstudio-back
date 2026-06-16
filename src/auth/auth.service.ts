@@ -22,6 +22,7 @@ interface AuthenticatedUser {
   image?: string | null;
   profileImage?: string | null;
   saasPlan: string | null;
+  agendaMode?: string | null;
   phone: string | null;
   address: string | null;
   verifiedSalon: boolean | null;
@@ -55,6 +56,7 @@ export type AuthTokenResponse = {
   } | null;
   salonName?: string | null;
   saasPlan?: string | null;
+  agendaMode?: string | null;
   phone?: string | null;
   address?: string | null;
   verifiedSalon?: boolean | null;
@@ -84,6 +86,11 @@ export class AuthService {
         },
         include: {
           clientProfile: true,
+          saasPlanDetails: {
+            select: {
+              agendaMode: true,
+            },
+          },
         },
       });
   
@@ -145,7 +152,10 @@ export class AuthService {
         };
       }
   
-      return this.authenticateUser(existingUser);
+      return this.authenticateUser({
+        ...existingUser,
+        agendaMode: existingUser.saasPlanDetails?.agendaMode ?? null,
+      });
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       return {
@@ -670,6 +680,7 @@ export class AuthService {
         email: user.email,
         clientProfile: user.clientProfile,
         image: user.image || null,
+        agendaMode: user.agendaMode || null,
       }
     }
     
@@ -682,6 +693,7 @@ export class AuthService {
       image: user.image || null,
       profileImage: user.profileImage || null,
       saasPlan: user.saasPlan,
+      agendaMode: user.agendaMode || null,
       phone: user.phone || "",
       address: user.address || "",
       verifiedSalon: user.verifiedSalon || false,
@@ -716,6 +728,7 @@ export class AuthService {
       lastName: user.lastName ?? null,
       image: user.image ?? null,
       saasPlan: user.saasPlan ?? null,
+      agendaMode: user.saasPlanDetails?.agendaMode ?? null,
       phone: user.phone ?? null,
       address: user.address ?? null,
       verifiedSalon: user.verifiedSalon ?? null,
@@ -746,7 +759,14 @@ export class AuthService {
     // Vérifier si l'utilisateur existe déjà
     const existingUser = await this.prisma.user.findUnique({
       where: { email },
-      include: { clientProfile: true }
+      include: {
+        clientProfile: true,
+        saasPlanDetails: {
+          select: {
+            agendaMode: true,
+          },
+        },
+      }
     });
 
     if (existingUser) {
@@ -776,7 +796,14 @@ export class AuthService {
           }
         }
       },
-      include: { clientProfile: true }
+      include: {
+        clientProfile: true,
+        saasPlanDetails: {
+          select: {
+            agendaMode: true,
+          },
+        },
+      }
     });
 
     return newUser;

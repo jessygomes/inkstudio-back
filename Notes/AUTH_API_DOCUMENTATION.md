@@ -128,9 +128,23 @@ async login({ authBody }: { authBody: LoginUserDto }) {
 ```json
 {
   "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "userId": "uuid-user"
+  "id": "uuid-user",
+  "role": "user_salon",
+  "email": "user@example.com",
+  "salonName": "Ink Studio",
+  "saasPlan": "BUSINESS",
+  "agendaMode": "PAR_TATOUEUR",
+  "phone": "0600000000",
+  "address": "12 rue Exemple",
+  "verifiedSalon": true,
+  "salonHours": "{...}"
 }
 ```
+
+**Note agendaMode**:
+
+- `agendaMode` est renvoyé dès la connexion pour permettre au front de savoir immédiatement si le salon est en mode `GLOBAL` ou `PAR_TATOUEUR`.
+- La valeur provient de `saasPlanDetails.agendaMode` (fallback `null` si indisponible).
 
 **Réponses erreur** :
 ```json

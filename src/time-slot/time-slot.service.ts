@@ -75,6 +75,7 @@ export class TimeSlotService {
     userId?: string,
     tatoueurId?: string,
     includeUnavailable = false,
+    forcedAgendaMode?: AgendaMode,
   ): Promise<{ start: Date, end: Date }[]> {
     let salonHours: SalonHours;
 
@@ -104,9 +105,8 @@ export class TimeSlotService {
 
     if (!hours) return []; // Jour fermé ou non défini
 
-    const agendaMode = userId
-      ? await this.getSalonAgendaMode(userId)
-      : AgendaMode.GLOBAL;
+    const agendaMode = forcedAgendaMode
+      ?? (userId ? await this.getSalonAgendaMode(userId) : AgendaMode.GLOBAL);
 
     const slots: { start: Date, end: Date }[] = [];
 
@@ -190,18 +190,11 @@ export class TimeSlotService {
         },
       });
 
-      const agendaMode = salonContext
-        ? this.resolveAgendaMode({
-            plan: salonContext.saasPlanDetails?.currentPlan ?? salonContext.saasPlan,
-            agendaMode: salonContext.saasPlanDetails?.agendaMode,
-          })
-        : AgendaMode.PAR_TATOUEUR;
-
       // Pour les linked tatoueurs, utiliser les horaires du salon ou les horaires globaux
       const hoursJson = linkedTatoueur.salonHours ?? salonContext?.salonHours ?? '{}';
-      const scopedTatoueurId = agendaMode === AgendaMode.PAR_TATOUEUR
-        ? normalizedId
-        : undefined;
+      // Un profil user_tatoueur gère toujours son propre agenda: même si le salon
+      // est en GLOBAL, on doit vérifier ses conflits personnels.
+      const scopedTatoueurId = normalizedId;
 
       return this.generateTimeSlotsForDate(
         date,
@@ -209,6 +202,7 @@ export class TimeSlotService {
         linkedTatoueur.salonId,
         scopedTatoueurId,
         includeUnavailable,
+        AgendaMode.PAR_TATOUEUR,
       );
     }
 
@@ -304,7 +298,12 @@ export class TimeSlotService {
       };
 
       if (agendaMode === AgendaMode.PAR_TATOUEUR && tatoueurId) {
-        whereConditions.tatoueurId = tatoueurId;
+        // Un rendez-vous peut être rattaché soit à tatoueurId (tatoueur interne),
+        // soit à performerUserId (profil user_tatoueur lié).
+        whereConditions.OR = [
+          { tatoueurId },
+          { performerUserId: tatoueurId },
+        ];
       }
 
       const appointment = await this.prisma.appointment.findFirst({

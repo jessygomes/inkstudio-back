@@ -336,7 +336,7 @@ describe('TimeSlotService', () => {
           status: { in: ['PENDING', 'CONFIRMED', 'RESCHEDULING'] },
           start: { lt: firstSlotEnd },
           end: { gt: firstSlotStart },
-          tatoueurId: tatoueur.id,
+          OR: [{ tatoueurId: tatoueur.id }, { performerUserId: tatoueur.id }],
         },
         select: { id: true },
       });
@@ -346,7 +346,62 @@ describe('TimeSlotService', () => {
           status: { in: ['PENDING', 'CONFIRMED', 'RESCHEDULING'] },
           start: { lt: secondSlotEnd },
           end: { gt: secondSlotStart },
-          tatoueurId: tatoueur.id,
+          OR: [{ tatoueurId: tatoueur.id }, { performerUserId: tatoueur.id }],
+        },
+        select: { id: true },
+      });
+    });
+
+    it('should keep per-artist filtering for linked user_tatoueur even when salon agenda is GLOBAL', async () => {
+      const date = new Date('2026-01-26');
+      const linkedTatoueurId = 'linked-user-1';
+      const firstSlotStart = new Date(date);
+      firstSlotStart.setHours(9, 0, 0, 0);
+      const firstSlotEnd = new Date(date);
+      firstSlotEnd.setHours(9, 30, 0, 0);
+
+      prisma.tatoueur.findUnique.mockResolvedValue(null);
+      prisma.user.findUnique
+        .mockResolvedValueOnce({
+          id: linkedTatoueurId,
+          salonId: 'salon-1',
+          role: 'user_tatoueur',
+          salonHours: buildSalonHours({
+            monday: { start: '09:00', end: '10:00' },
+          }),
+        })
+        .mockResolvedValueOnce({
+          salonHours: buildSalonHours({
+            monday: { start: '09:00', end: '10:00' },
+          }),
+          saasPlan: SaasPlan.PRO,
+          saasPlanDetails: {
+            currentPlan: SaasPlan.PRO,
+            agendaMode: AgendaMode.GLOBAL,
+          },
+        });
+
+      prisma.blockedTimeSlot.findFirst.mockResolvedValue(null);
+      prisma.appointment.findFirst
+        .mockResolvedValueOnce({ id: 'apt-linked-1' })
+        .mockResolvedValueOnce(null);
+
+      const slots = await service.generateTatoueurTimeSlots(
+        date,
+        linkedTatoueurId,
+      );
+
+      expect(slots).toHaveLength(1);
+      expect(prisma.appointment.findFirst).toHaveBeenNthCalledWith(1, {
+        where: {
+          userId: 'salon-1',
+          status: { in: ['PENDING', 'CONFIRMED', 'RESCHEDULING'] },
+          start: { lt: firstSlotEnd },
+          end: { gt: firstSlotStart },
+          OR: [
+            { tatoueurId: linkedTatoueurId },
+            { performerUserId: linkedTatoueurId },
+          ],
         },
         select: { id: true },
       });

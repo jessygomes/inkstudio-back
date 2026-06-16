@@ -2468,7 +2468,10 @@ export class AppointmentsService {
       if (agendaMode === AgendaMode.GLOBAL) {
         whereConditions.userId = tatoueurContext.userId;
       } else {
-        whereConditions.tatoueurId = resolvedTatoueurId;
+        whereConditions.OR = [
+          { tatoueurId: resolvedTatoueurId },
+          { performerUserId: resolvedTatoueurId },
+        ];
       }
 
       const appointments = await this.prisma.appointment.findMany({

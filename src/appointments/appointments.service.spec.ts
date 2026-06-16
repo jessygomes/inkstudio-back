@@ -1664,7 +1664,7 @@ describe('AppointmentsService', () => {
     expect(prisma.appointment.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          tatoueurId: 't1',
+          OR: [{ tatoueurId: 't1' }, { performerUserId: 't1' }],
         }),
       }),
     );
