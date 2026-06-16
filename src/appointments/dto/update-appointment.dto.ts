@@ -70,6 +70,10 @@ export class UpdateAppointmentDto {
   @IsOptional()
   tatoueurId: string;
 
+  @IsString()
+  @IsOptional()
+  performerUserId: string;
+
   // @IsString()
   // @IsOptional()
   // status: AppointmentStatus;

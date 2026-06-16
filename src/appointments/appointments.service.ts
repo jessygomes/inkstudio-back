@@ -2710,19 +2710,17 @@ export class AppointmentsService {
         };
       }
 
-      // Vérifier si le tatoueur existe
-      const artist = await this.prisma.tatoueur.findUnique({
-        where: {
-          id: tatoueurId,
-        },
-      });
+      // Vérifier si le tatoueur existe (interne ou profil user_tatoueur lié)
+      const selectedTatoueur = await this.resolveTatoueurSelection(tatoueurId);
 
-      if (!artist) {
+      if (!selectedTatoueur.artist) {
         return {
           error: true,
           message: 'Tatoueur introuvable.',
         };
       }
+
+      const artist = selectedTatoueur.artist;
 
       const salon = await this.prisma.user.findUnique({
         where: { id: existingAppointment.userId },
@@ -2746,7 +2744,8 @@ export class AppointmentsService {
         userId: existingAppointment.userId,
         start: new Date(start),
         end: new Date(end),
-        tatoueurId,
+        tatoueurId: selectedTatoueur.tatoueurId,
+        performerUserId: selectedTatoueur.performerUserId,
         agendaMode,
         excludedAppointmentId: id,
       });
@@ -2768,13 +2767,22 @@ export class AppointmentsService {
           prestation,
           start: new Date(start),
           end: new Date(end),
-          tatoueurId,
+          tatoueurId: selectedTatoueur.tatoueurId,
+          performerUserId: selectedTatoueur.performerUserId,
           skin,
         } as any,
         include: {
-        client: true,
-        tatoueur: true,
-      },
+          client: true,
+          tatoueur: true,
+          performerUser: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              salonName: true,
+            },
+          },
+        },
       });
 
       // Mettre à jour les détails du tatouage s'ils existent
@@ -2862,7 +2870,7 @@ export class AppointmentsService {
       return {
         error: false,
         message: 'Rendez-vous mis à jour avec succès.',
-        appointment: updatedAppointment,
+        appointment: this.normalizeAppointmentTatoueur(updatedAppointment),
       };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
