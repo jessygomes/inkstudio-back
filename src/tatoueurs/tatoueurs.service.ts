@@ -948,6 +948,8 @@ export class TatoueursService {
       };
     }
   }
+  
+  //! RETIRER UN TATOUEUR RELIE D'UN SALON
   async unlinkLinkedTatoueur({
     salonUserId,
     salonRole,

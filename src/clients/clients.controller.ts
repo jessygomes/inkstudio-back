@@ -55,7 +55,7 @@ export class ClientsController {
     return this.clientsService.getClientsBySalon(userId, pageNumber, limitNumber, search);
   }
 
-  //! NOMRE DE NVX CLIENTS PAR MOIS ✅
+  //! NOMBRE DE NVX CLIENTS PAR MOIS ✅
   @Get('new-clients-count/:id')
   async getNewClientsCountByMonth(
     @Param('id') id: string,

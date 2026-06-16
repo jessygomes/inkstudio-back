@@ -24,6 +24,11 @@ interface BlockedTimeSlotWhereCondition {
 export class TimeSlotService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * ! Détermine le mode d'agenda effectif.
+   * Seul un salon BUSINESS avec agenda PAR_TATOUEUR garde ce mode,
+   * sinon on retombe sur un agenda GLOBAL.
+   */
   private resolveAgendaMode({
     plan,
     agendaMode,
@@ -36,6 +41,9 @@ export class TimeSlotService {
       : AgendaMode.GLOBAL;
   }
 
+  /**
+   * ! Lit la configuration d'un salon et renvoie son mode d'agenda final.
+   */
   private async getSalonAgendaMode(userId: string): Promise<AgendaMode> {
     const salon = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -56,6 +64,11 @@ export class TimeSlotService {
     });
   }
   
+  /**
+   * ! Génère des créneaux de 30 minutes pour une date donnée à partir des horaires JSON.
+   * Peut filtrer les créneaux déjà indisponibles (RDV existants ou blocages),
+   * ou les inclure explicitement via includeUnavailable.
+   */
   async generateTimeSlotsForDate(
     date: Date,
     salonHoursJson: string,
@@ -132,12 +145,16 @@ export class TimeSlotService {
     return slots;
   }
 
+  /**
+   * ! Génère les créneaux d'un tatoueur (interne ou linked user_tatoueur).
+   * La source des horaires et le scope des conflits dépendent du mode GLOBAL/PAR_TATOUEUR.
+   */
   async generateTatoueurTimeSlots(date: Date, tatoueurId: string, includeUnavailable = false) {
     // Normaliser l'ID en enlevant le préfixe "linked_" s'il existe
     const normalizedId = tatoueurId.startsWith('linked_') ? tatoueurId.slice(7) : tatoueurId;
 
     // D'abord chercher un Tatoueur interne
-    let tatoueur = await this.prisma.tatoueur.findUnique({
+    const tatoueur = await this.prisma.tatoueur.findUnique({
       where: { id: normalizedId },
       include: { user: { select: { id: true } } }
     });
@@ -235,6 +252,11 @@ export class TimeSlotService {
     );
   }
 
+  /**
+   *! Détermine l'indisponibilité d'un créneau en combinant:
+   * 1) les blocages manuels
+   * 2) les rendez-vous déjà planifiés
+   */
   private async isTimeSlotUnavailable({
     startDate,
     endDate,
@@ -262,6 +284,10 @@ export class TimeSlotService {
     return this.isTimeSlotOccupied(startDate, endDate, userId, agendaMode, tatoueurId);
   }
 
+  /**
+   *! Vérifie si un RDV existant chevauche le créneau demandé.
+   * En mode PAR_TATOUEUR, le contrôle est restreint au tatoueur ciblé.
+   */
   private async isTimeSlotOccupied(
     startDate: Date,
     endDate: Date,
@@ -293,7 +319,11 @@ export class TimeSlotService {
     }
   }
 
-  //! VÉRIFIER SI UN CRÉNEAU EST BLOQUÉ
+  /**
+   *! Vérifie si un créneau chevauche un blocage manuel.
+   * - Avec tatoueurId: accepte les blocages spécifiques + globaux du salon
+   * - Sans tatoueurId: ne prend que les blocages globaux du salon
+   */
   private async isTimeSlotBlocked(startDate: Date, endDate: Date, tatoueurId?: string, userId?: string): Promise<boolean> {
     try {
       // Construire les conditions de recherche

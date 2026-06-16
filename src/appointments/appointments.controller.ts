@@ -121,6 +121,35 @@ export class AppointmentsController {
     return await this.appointmentsService.getTodaysAppointments(userId, targetDate);
   }
 
+  //! Récupérer tous les RDV du client connecté
+  @UseGuards(JwtAuthGuard)
+  @Get('rdv-client')
+  async getAllRdvForClient(
+    @Request() req: RequestWithUser,
+    @Query('status') status?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const appointmentsService = this.appointmentsService as {
+      getAllRdvForClient: (params: {
+        userId: string;
+        status?: string;
+        page?: number;
+        limit?: number;
+      }) => Promise<Record<string, any>>;
+    };
+    const userId = req.user.userId;
+    const pageNumber = page ? parseInt(page, 10) : 1;
+    const limitNumber = limit ? parseInt(limit, 10) : 10;
+
+    return await appointmentsService.getAllRdvForClient({
+      userId,
+      status,
+      page: pageNumber,
+      limit: limitNumber,
+    });
+  }
+
   @Get('skin-tones')
   getSkinTones() {
     return this.appointmentsService.getSkinTones();

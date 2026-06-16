@@ -148,7 +148,7 @@ export class MessagesGateway
       // Enregistrer en Redis pour le scaling horizontal
       // Purge agressive: on remplace toutes les connexions par la connexion courante.
       // TODO: passer sur heartbeat + nettoyage ciblé pour réactiver le multi-onglets (option 2/3).
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+       
       await this.redisOnlineStatusService.resetUserConnections(userId, client.id);
 
       // Récupérer les infos de l'utilisateur pour la notification

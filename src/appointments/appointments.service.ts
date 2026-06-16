@@ -1754,6 +1754,267 @@ export class AppointmentsService {
 
   //! ------------------------------------------------------------------------------
 
+  //! RECUPERER TOUS LES RDV D'UN CLIENT
+
+  //! ------------------------------------------------------------------------------
+  async getAllRdvForClient({userId, status, page = 1, limit = 10}: {userId: string, status?: string, page?: number, limit?: number}): Promise<Record<string, any>> {
+    try {
+      const currentPage = Math.max(1, Number(page) || 1);
+      const perPage = Math.min(50, Math.max(1, Number(limit) || 10));
+      const skip = (currentPage - 1) * perPage;
+
+      const cacheKey = `client:appointments:${userId}:${JSON.stringify({
+        status: status?.trim() || null,
+        page: currentPage,
+        limit: perPage
+      })}`;
+
+      try {
+        const cachedAppointments = await this.cacheService.get<{
+          error: boolean;
+          appointments: Record<string, any>[];
+          pagination: Record<string, any>;
+          message: string;
+        }>(cacheKey);
+        if (cachedAppointments) {
+          return cachedAppointments;
+        }
+      } catch (cacheError) {
+        console.warn('Erreur cache Redis pour getAllRdvForClient:', cacheError);
+      }
+
+      const whereClause: Record<string, any> = {
+        clientUserId: userId,
+      };
+
+      if (status && status.trim() !== '') {
+        whereClause.status = status.toUpperCase();
+      }
+
+      const [totalAppointments, appointments] = await this.prisma.$transaction([
+        this.prisma.appointment.count({ where: whereClause }),
+        this.prisma.appointment.findMany({
+          where: whereClause,
+          select: {
+            id: true,
+            title: true,
+            prestation: true,
+            start: true,
+            end: true,
+            status: true,
+            isPayed: true,
+            createdAt: true,
+            updatedAt: true,
+            visio: true,
+            visioRoom: true,
+            user: {
+              select: {
+                id: true,
+                salonName: true,
+                firstName: true,
+                lastName: true,
+                image: true,
+                city: true,
+                postalCode: true,
+                phone: true,
+                address: true,
+                instagram: true,
+                website: true
+              }
+            },
+            tatoueur: {
+              select: {
+                id: true,
+                name: true,
+                img: true,
+                phone: true,
+                instagram: true
+              }
+            },
+            tattooDetail: {
+              select: {
+                id: true,
+                description: true,
+                zone: true,
+                size: true,
+                colorStyle: true,
+                reference: true,
+                sketch: true,
+                piercingZone: true,
+                estimatedPrice: true,
+                price: true,
+                piercingServicePrice: {
+                  select: {
+                    description: true,
+                    piercingZoneOreille: true,
+                    piercingZoneVisage: true,
+                    piercingZoneBouche: true,
+                    piercingZoneCorps: true,
+                    piercingZoneMicrodermal: true
+                  }
+                }
+              }
+            },
+            conversation: {
+              select: {
+                id: true,
+                lastMessageAt: true,
+                notifications: {
+                  where: {
+                    userId: userId
+                  },
+                  select: {
+                    unreadCount: true
+                  }
+                }
+              }
+            },
+            salonReview: {
+              select: {
+                id: true,
+                rating: true,
+                title: true,
+                comment: true,
+                photos: true,
+                isVerified: true,
+                isVisible: true,
+                createdAt: true,
+                salonResponse: true,
+                salonRespondedAt: true
+              }
+            },
+            moodboard: {
+              select: { id: true, name: true, description: true }
+            }
+          },
+          orderBy: {
+            start: 'desc'
+          },
+          skip,
+          take: perPage,
+        })
+      ]);
+
+      const formattedAppointments = appointments.map(appointment => ({
+        id: appointment.id,
+        title: appointment.title,
+        prestation: appointment.prestation,
+        start: appointment.start,
+        end: appointment.end,
+        status: appointment.status,
+        isPayed: appointment.isPayed,
+        visio: appointment.visio,
+        visioRoom: appointment.visioRoom,
+        createdAt: appointment.createdAt,
+        updatedAt: appointment.updatedAt,
+        duration: appointment.end && appointment.start
+          ? Math.round((appointment.end.getTime() - appointment.start.getTime()) / (1000 * 60))
+          : 0,
+        salon: {
+          id: appointment.user.id,
+          salonName: appointment.user.salonName,
+          firstName: appointment.user.firstName,
+          lastName: appointment.user.lastName,
+          image: appointment.user.image,
+          city: appointment.user.city,
+          postalCode: appointment.user.postalCode,
+          phone: appointment.user.phone,
+          address: appointment.user.address,
+          instagram: appointment.user.instagram,
+          website: appointment.user.website
+        },
+        tatoueur: appointment.tatoueur ? {
+          id: appointment.tatoueur.id,
+          name: appointment.tatoueur.name,
+          img: appointment.tatoueur.img,
+          phone: appointment.tatoueur.phone,
+          instagram: appointment.tatoueur.instagram
+        } : null,
+        prestationDetails: appointment.tattooDetail ? {
+          id: appointment.tattooDetail.id,
+          description: appointment.tattooDetail.description,
+          zone: appointment.tattooDetail.zone,
+          size: appointment.tattooDetail.size,
+          colorStyle: appointment.tattooDetail.colorStyle,
+          reference: appointment.tattooDetail.reference,
+          sketch: appointment.tattooDetail.sketch,
+          piercingZone: appointment.tattooDetail.piercingZone,
+          estimatedPrice: appointment.tattooDetail.estimatedPrice,
+          price: appointment.tattooDetail.price,
+          piercingDetails: appointment.tattooDetail.piercingServicePrice ? {
+            description: appointment.tattooDetail.piercingServicePrice.description,
+            zoneOreille: appointment.tattooDetail.piercingServicePrice.piercingZoneOreille,
+            zoneVisage: appointment.tattooDetail.piercingServicePrice.piercingZoneVisage,
+            zoneBouche: appointment.tattooDetail.piercingServicePrice.piercingZoneBouche,
+            zoneCorps: appointment.tattooDetail.piercingServicePrice.piercingZoneCorps,
+            zoneMicrodermal: appointment.tattooDetail.piercingServicePrice.piercingZoneMicrodermal
+          } : null
+        } : null,
+        conversation: appointment.conversation ? {
+          id: appointment.conversation.id,
+          lastMessageAt: appointment.conversation.lastMessageAt,
+          isRead: (appointment.conversation.notifications?.[0]?.unreadCount ?? 0) === 0,
+          unreadCount: appointment.conversation.notifications?.[0]?.unreadCount ?? 0
+        } : null,
+        review: appointment.salonReview ? {
+          id: appointment.salonReview.id,
+          rating: appointment.salonReview.rating,
+          title: appointment.salonReview.title,
+          comment: appointment.salonReview.comment,
+          photos: appointment.salonReview.photos,
+          isVerified: appointment.salonReview.isVerified,
+          isVisible: appointment.salonReview.isVisible,
+          createdAt: appointment.salonReview.createdAt,
+          salonResponse: appointment.salonReview.salonResponse,
+          salonRespondedAt: appointment.salonReview.salonRespondedAt
+        } : null,
+        moodboard: appointment.moodboard ? {
+          id: appointment.moodboard.id,
+          name: appointment.moodboard.name,
+          description: appointment.moodboard.description
+        } : null
+      }));
+
+      const totalPages = Math.ceil(totalAppointments / perPage);
+      const startIndex = totalAppointments === 0 ? 0 : skip + 1;
+      const endIndex = Math.min(skip + perPage, totalAppointments);
+
+      const result = {
+        error: false,
+        appointments: formattedAppointments,
+        pagination: {
+          currentPage,
+          limit: perPage,
+          totalAppointments,
+          totalPages,
+          hasNextPage: currentPage < totalPages,
+          hasPreviousPage: currentPage > 1,
+          startIndex,
+          endIndex,
+        },
+        message: `${formattedAppointments.length} rendez-vous sur ${totalAppointments} récupéré(s) avec succès.`
+      };
+
+      try {
+        const ttl = 10 * 60;
+        await this.cacheService.set(cacheKey, result, ttl);
+      } catch (cacheError) {
+        console.warn('Erreur sauvegarde cache Redis pour getAllRdvForClient:', cacheError);
+      }
+
+      return result;
+
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: `Erreur lors de la récupération des rendez-vous: ${errorMessage}`,
+      };
+    }
+  }
+
+  //! ------------------------------------------------------------------------------
+
   //! VOIR TOUS LES RDV
 
   //! ------------------------------------------------------------------------------

@@ -158,28 +158,7 @@ export class UserController {
     });
   }
 
-  //! Récupérer tous les RDV d'un client
-  @UseGuards(JwtAuthGuard)
-  @Get('rdv-client')
-  getAllRdvForClient(
-    @Request() req: RequestWithUser,
-    @Query('status') status?: string,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string
-  ) {
-    const userId = req.user.userId;
-    
-    const pageNumber = page ? parseInt(page, 10) : 1;
-    const limitNumber = limit ? parseInt(limit, 10) : 10;
-    
-    return this.userService.getAllRdvForClient({ 
-      userId, 
-      status, 
-      page: pageNumber, 
-      limit: limitNumber 
-    });
-  }
-
+  //! ROUTES DE MISE À JOUR DES PROFILS UTILISATEURS
   @UseGuards(JwtAuthGuard)
   @Patch("userClient")
   updateUserClient(@Request() req: RequestWithUser, @Body() userBody: UpdateUserClientDto) {
@@ -239,7 +218,9 @@ export class UserController {
   @Get(":userId") // :userId est un paramètre dynamique qui sera récupéré dans la méthode getUser
   getUser(@Param('userId') userId: string) { // On récupère le paramètre dynamique userId
     return this.userService.getUserById({userId}); // On appelle la méthode getUserById du service UserService
-  }  // //! Récupérer les RDV du client connecté
+  } 
+  
+  //! Récupérer les RDV du client connecté
   // @UseGuards(JwtAuthGuard)
   // @Get('my-appointments')
   // getMyAppointments(@Request() req: RequestWithUser, @Query('status') status?: string) {
