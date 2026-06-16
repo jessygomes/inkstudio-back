@@ -435,7 +435,10 @@ describe('TimeSlotService', () => {
       prisma.blockedTimeSlot.findFirst.mockResolvedValue(null);
       prisma.appointment.findFirst.mockResolvedValue(null);
 
-      const slots = await service.generateTatoueurTimeSlots(date, linkedTatoueurId);
+      const slots = await service.generateTatoueurTimeSlots(
+        date,
+        linkedTatoueurId,
+      );
 
       expect(slots).toHaveLength(2);
       expect(slots[0].start.getHours()).toBe(14);

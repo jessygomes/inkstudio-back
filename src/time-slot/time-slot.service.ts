@@ -24,6 +24,20 @@ interface BlockedTimeSlotWhereCondition {
 export class TimeSlotService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private getEnglishDayFromDate(date: Date): string {
+    const dayNames = [
+      'sunday',
+      'monday',
+      'tuesday',
+      'wednesday',
+      'thursday',
+      'friday',
+      'saturday',
+    ] as const;
+
+    return dayNames[date.getDay()];
+  }
+
   /**
    * ! Détermine le mode d'agenda effectif.
    * Seul un salon BUSINESS avec agenda PAR_TATOUEUR garde ce mode,
@@ -86,20 +100,7 @@ export class TimeSlotService {
       return [];
     }
 
-    const frToEnDayMap: Record<string, string> = {
-      lundi: 'monday',
-      mardi: 'tuesday',
-      mercredi: 'wednesday',
-      jeudi: 'thursday',
-      vendredi: 'friday',
-      samedi: 'saturday',
-      dimanche: 'sunday',
-    };
-
-    const frDay = date
-      .toLocaleDateString('fr-FR', { weekday: 'long' })
-      .toLowerCase();
-    const dayOfWeek = frToEnDayMap[frDay];
+    const dayOfWeek = this.getEnglishDayFromDate(date);
 
     const hours = salonHours[dayOfWeek];
 
