@@ -910,6 +910,48 @@ describe('AppointmentsService', () => {
       expect(result.message).toContain('Tatoueur');
     });
 
+    it('should block client booking for linked user_tatoueur from salon profile', async () => {
+      const linkedUserId = 'linked-user-1';
+      const dtoWithLinkedTatoueur: CreateAppointmentDto = {
+        ...createByClientDto,
+        tatoueurId: `linked_${linkedUserId}`,
+      };
+
+      prisma.tatoueur.findUnique.mockResolvedValue(null);
+      prisma.user.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          id: userId,
+          addConfirmationEnabled: false,
+          salonName: 'Salon Test',
+          email: 'salon@example.com',
+          saasPlan: SaasPlan.PRO,
+          saasPlanDetails: {
+            currentPlan: SaasPlan.PRO,
+            agendaMode: AgendaMode.GLOBAL,
+          },
+        })
+        .mockResolvedValueOnce({
+          id: linkedUserId,
+          role: 'user_tatoueur',
+          salonId: userId,
+          salonName: 'Linked Artist',
+          firstName: 'Linked',
+          lastName: 'Artist',
+        });
+
+      const result = await service.createByClient({
+        userId,
+        rdvBody: dtoWithLinkedTatoueur,
+      });
+
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('LINKED_BOOKING_REDIRECT');
+      expect(result.performerUserId).toBe(linkedUserId);
+      expect(result.message).toContain('profil du salon');
+      expect(prisma.appointment.create).not.toHaveBeenCalled();
+    });
+
     it('should return error when time slot is already booked', async () => {
       prisma.tatoueur.findUnique.mockResolvedValue({
         id: tatoueurId,

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { AgendaMode, AppointmentStatus, Prisma, PrestationType as PrismaPrestationType, SaasPlan } from '@prisma/client';
+import { AgendaMode, AppointmentStatus, Prisma, PrestationType as PrismaPrestationType } from '@prisma/client';
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CreateAppointmentDto, PrestationType } from './dto/create-appointment.dto';
@@ -18,6 +18,7 @@ import { SKIN_REQUIRED_PRESTATIONS, SKIN_TONE_OPTIONS, SkinTone } from './consta
 import { CreateAppointmentConsumableDto } from './dto/create-appointment-consumable.dto';
 import { UpdateAppointmentConsumableDto } from './dto/update-appointment-consumable.dto';
 import { SearchAppointmentConsumablesDto } from './dto/search-appointment-consumables.dto';
+import { CreateAppointmentByClientResponse } from './dto/create-appointment-by-client.dto';
 
 @Injectable()
 export class AppointmentsService {
@@ -33,15 +34,21 @@ export class AppointmentsService {
   ) {}
 
   private resolveAppointmentAgendaMode({
-    plan,
+    role,
     agendaMode,
   }: {
-    plan?: SaasPlan | null;
+    role?: string | null;
     agendaMode?: AgendaMode | null;
   }) {
-    return plan === SaasPlan.BUSINESS && agendaMode === AgendaMode.PAR_TATOUEUR
-      ? AgendaMode.PAR_TATOUEUR
-      : AgendaMode.GLOBAL;
+    if (role === 'user_salon') {
+      return AgendaMode.PAR_TATOUEUR;
+    }
+
+    if (role === 'user_tatoueur') {
+      return AgendaMode.GLOBAL;
+    }
+
+    return agendaMode ?? AgendaMode.GLOBAL;
   }
 
   private normalizeTatoueurSelectionId(tatoueurId: string) {
@@ -87,6 +94,14 @@ export class AppointmentsService {
       where: { id: userId },
       select: {
         role: true,
+        linkedTatoueurs: {
+          where: {
+            role: 'user_tatoueur',
+          },
+          select: {
+            id: true,
+          },
+        },
       },
     });
 
@@ -99,7 +114,38 @@ export class AppointmentsService {
       };
     }
 
+    if (user?.role === 'user_salon') {
+      const linkedTatoueurIds = (user.linkedTatoueurs ?? []).map((tatoueur) => tatoueur.id);
+
+      if (linkedTatoueurIds.length === 0) {
+        return { userId };
+      }
+
+      return {
+        OR: [
+          { userId },
+          { userId: { in: linkedTatoueurIds } },
+          { performerUserId: { in: linkedTatoueurIds } },
+        ],
+      };
+    }
+
     return { userId };
+  }
+
+  private async buildScopedAppointmentWhere(
+    userId: string,
+    scopedWhere?: Prisma.AppointmentWhereInput,
+  ): Promise<Prisma.AppointmentWhereInput> {
+    const visibilityWhere = await this.buildAppointmentVisibilityWhere(userId);
+
+    if (!scopedWhere) {
+      return visibilityWhere;
+    }
+
+    return {
+      AND: [visibilityWhere, scopedWhere],
+    };
   }
 
   private async resolveTatoueurSelection(tatoueurId: string) {
@@ -118,6 +164,8 @@ export class AppointmentsService {
         artist: tatoueur,
         tatoueurId: tatoueur.id,
         performerUserId: null as string | null,
+        linkedSalonId: null as string | null,
+        isLinkedToSalon: false,
       };
     }
 
@@ -126,6 +174,7 @@ export class AppointmentsService {
       select: {
         id: true,
         role: true,
+        salonId: true,
         salonName: true,
         firstName: true,
         lastName: true,
@@ -133,6 +182,7 @@ export class AppointmentsService {
     });
 
     if (performerUser && performerUser.role === 'user_tatoueur') {
+      const isLinkedToSalon = !!performerUser.salonId && performerUser.salonId !== performerUser.id;
       const displayName = performerUser.salonName?.trim()
         || `${performerUser.firstName ?? ''} ${performerUser.lastName ?? ''}`.trim()
         || 'Tatoueur';
@@ -144,6 +194,8 @@ export class AppointmentsService {
         },
         tatoueurId: null as string | null,
         performerUserId: performerUser.id,
+        linkedSalonId: performerUser.salonId ?? null,
+        isLinkedToSalon,
       };
     }
 
@@ -151,6 +203,8 @@ export class AppointmentsService {
       artist: null,
       tatoueurId: null as string | null,
       performerUserId: null as string | null,
+      linkedSalonId: null as string | null,
+      isLinkedToSalon: false,
     };
   }
 
@@ -695,6 +749,7 @@ export class AppointmentsService {
       const salonConfig = await this.prisma.user.findUnique({
         where: { id: userId },
         select: {
+          role: true,
           salonName: true,
           saasPlan: true,
           saasPlanDetails: {
@@ -714,7 +769,7 @@ export class AppointmentsService {
       }
 
       const agendaMode = this.resolveAppointmentAgendaMode({
-        plan: salonConfig.saasPlanDetails?.currentPlan ?? salonConfig.saasPlan,
+        role: salonConfig.role,
         agendaMode: salonConfig.saasPlanDetails?.agendaMode,
       });
 
@@ -849,6 +904,14 @@ export class AppointmentsService {
               select: {
                 name: true
               }
+            },
+            performerUser: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                salonName: true,
+              },
             }
           }
         });
@@ -1117,7 +1180,7 @@ export class AppointmentsService {
   //! CREER UN RDV PAR UN CLIENT (sans authentification)
 
   //! ------------------------------------------------------------------------------
-  async createByClient({ userId, rdvBody, clientUserId }: {userId: string | undefined, rdvBody: CreateAppointmentDto & { clientUserId?: string }, clientUserId?: string}) {
+  async createByClient({ userId, rdvBody, clientUserId }: {userId: string | undefined, rdvBody: CreateAppointmentDto & { clientUserId?: string }, clientUserId?: string}): Promise<CreateAppointmentByClientResponse> {
     try {
       // Vérifier que userId est fourni
       if (!userId) {
@@ -1182,6 +1245,7 @@ export class AppointmentsService {
       const salonConfig = await this.prisma.user.findUnique({
         where: { id: userId },
         select: {
+          role: true,
           addConfirmationEnabled: true,
           salonName: true,
           email: true,
@@ -1203,7 +1267,7 @@ export class AppointmentsService {
       }
 
       const agendaMode = this.resolveAppointmentAgendaMode({
-        plan: salonConfig.saasPlanDetails?.currentPlan ?? salonConfig.saasPlan,
+        role: salonConfig.role,
         agendaMode: salonConfig.saasPlanDetails?.agendaMode,
       });
 
@@ -1211,6 +1275,8 @@ export class AppointmentsService {
         artist: null,
         tatoueurId: null as string | null,
         performerUserId: null as string | null,
+        linkedSalonId: null as string | null,
+        isLinkedToSalon: false,
       };
 
       let artist: { id: string; name: string } | null = null;
@@ -1221,6 +1287,19 @@ export class AppointmentsService {
           return {
             error: true,
             message: 'Tatoueur introuvable.',
+          };
+        }
+
+        if (
+          selectedTatoueur.performerUserId
+          && selectedTatoueur.isLinkedToSalon
+          && selectedTatoueur.linkedSalonId === userId
+        ) {
+          return {
+            error: true,
+            code: 'LINKED_BOOKING_REDIRECT',
+            message: 'La reservation client avec ce tatoueur n\'est plus disponible depuis le profil du salon. Merci de reserver directement depuis le profil du tatoueur.',
+            performerUserId: selectedTatoueur.performerUserId,
           };
         }
       }
@@ -1593,6 +1672,21 @@ export class AppointmentsService {
           status: appointmentStatus,
           visio: visio || false,
           visioRoom: generatedVisioRoom
+        },
+        include: {
+          tatoueur: {
+            select: {
+              name: true,
+            },
+          },
+          performerUser: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              salonName: true,
+            },
+          },
         },
       });
 
@@ -2062,7 +2156,12 @@ export class AppointmentsService {
       const start = new Date(startDate);
       const end = new Date(endDate);
       const skip = (page - 1) * limit;
-      const visibilityWhere = await this.buildAppointmentVisibilityWhere(userId);
+      const scopedWhere = await this.buildScopedAppointmentWhere(userId, {
+        start: {
+          gte: start,
+          lt: end,
+        },
+      });
 
       // Créer une clé de cache basée sur les paramètres
       const cacheKey = `appointments:date-range:${userId}:${JSON.stringify({
@@ -2086,23 +2185,11 @@ export class AppointmentsService {
 
       // Compter le total des rendez-vous dans la plage de dates
       const totalAppointments = await this.prisma.appointment.count({
-        where: {
-          ...visibilityWhere,
-          start: {
-            gte: start,
-            lt: end,
-          },
-        },
+        where: scopedWhere,
       });
   
       const appointments = await this.prisma.appointment.findMany({
-        where: {
-          ...visibilityWhere,
-          start: {
-            gte: start,
-            lt: end,
-          },
-        },
+        where: scopedWhere,
         include: {
           client: {
             select: {
@@ -2183,7 +2270,7 @@ export class AppointmentsService {
   ) {
     try {
       const skip = (page - 1) * limit;
-      const visibilityWhere = await this.buildAppointmentVisibilityWhere(salonId);
+      const visibilityWhere = await this.buildScopedAppointmentWhere(salonId);
 
       // Créer une clé de cache basée sur les paramètres incluant les filtres
       const cacheKey = `appointments:salon:${salonId}:${JSON.stringify({
@@ -2212,7 +2299,7 @@ export class AppointmentsService {
 
       // Construire les conditions de filtrage
       const now = new Date();
-      const andConditions: Prisma.AppointmentWhereInput[] = [visibilityWhere];
+      const andConditions: Prisma.AppointmentWhereInput[] = [];
 
       // Filtre par statut
       if (status && Object.values(AppointmentStatus).includes(status as AppointmentStatus)) {
@@ -2273,7 +2360,7 @@ export class AppointmentsService {
       }
 
       const whereConditions: Prisma.AppointmentWhereInput = {
-        AND: andConditions,
+        AND: [visibilityWhere, ...andConditions],
       };
 
       // Récupérer en parallèle : les RDV filtrés, le total, tous les tatoueurs et toutes les prestations
@@ -2400,6 +2487,7 @@ export class AppointmentsService {
           userId: true,
           user: {
             select: {
+              role: true,
               saasPlan: true,
               saasPlanDetails: {
                 select: {
@@ -2451,7 +2539,7 @@ export class AppointmentsService {
       }
 
       const agendaMode = this.resolveAppointmentAgendaMode({
-        plan: tatoueurContext.user?.saasPlanDetails?.currentPlan ?? tatoueurContext.user?.saasPlan,
+        role: tatoueurContext.user?.role,
         agendaMode: tatoueurContext.user?.saasPlanDetails?.agendaMode,
       });
 
@@ -2482,6 +2570,8 @@ export class AppointmentsService {
         },
       });
 
+      console.log("RDV récupérés pour le tatoueur", tatoueurId, "entre", startDate, "et", endDate, ":", appointments);
+
     return appointments ?? [];
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
@@ -2501,19 +2591,18 @@ export class AppointmentsService {
     try {
       const start = new Date(startDate);
       const end = new Date(endDate);
-      const visibilityWhere = await this.buildAppointmentVisibilityWhere(salonId);
+      const scopedWhere = await this.buildScopedAppointmentWhere(salonId, {
+        status: {
+          not: 'CANCELED',
+        },
+        start: {
+          gte: start,
+          lt: end,
+        },
+      });
 
       const appointments = await this.prisma.appointment.findMany({
-        where: {
-          ...visibilityWhere,
-          status: {
-            not: 'CANCELED' // Exclure les rendez-vous annulés
-          },
-          start: {
-            gte: start,
-            lt: end,
-          },
-        },
+        where: scopedWhere,
         select: {
           id: true,
           start: true,
@@ -2725,6 +2814,7 @@ export class AppointmentsService {
       const salon = await this.prisma.user.findUnique({
         where: { id: existingAppointment.userId },
         select: {
+          role: true,
           saasPlan: true,
           saasPlanDetails: {
             select: {
@@ -2736,7 +2826,7 @@ export class AppointmentsService {
       });
 
       const agendaMode = this.resolveAppointmentAgendaMode({
-        plan: salon?.saasPlanDetails?.currentPlan ?? salon?.saasPlan,
+        role: salon?.role,
         agendaMode: salon?.saasPlanDetails?.agendaMode,
       });
 
@@ -2896,6 +2986,7 @@ export class AppointmentsService {
           tatoueur: true,
           user: {
             select: {
+              role: true,
               salonName: true,
               email: true,
               addConfirmationEnabled: true,
@@ -2951,7 +3042,7 @@ export class AppointmentsService {
       }
 
       const agendaMode = this.resolveAppointmentAgendaMode({
-        plan: existingAppointment.user?.saasPlanDetails?.currentPlan ?? existingAppointment.user?.saasPlan,
+        role: existingAppointment.user?.role,
         agendaMode: existingAppointment.user?.saasPlanDetails?.agendaMode,
       });
 
@@ -3875,17 +3966,16 @@ async cancelAppointmentByClient(appointmentId: string, clientUserId: string, rea
       // Fin de la journée (début du jour suivant)
       const endOfDay = new Date(startOfDay);
       endOfDay.setDate(startOfDay.getDate() + 1);
-      const visibilityWhere = await this.buildAppointmentVisibilityWhere(userId);
+      const scopedWhere = await this.buildScopedAppointmentWhere(userId, {
+        start: {
+          gte: startOfDay,
+          lt: endOfDay,
+        },
+      });
 
       // ==================== ÉTAPE 3: RÉCUPÉRER LES RDV DE LA JOURNÉE ====================
       const appointments = await this.prisma.appointment.findMany({
-        where: {
-          ...visibilityWhere,
-          start: {
-            gte: startOfDay, // >= début de la journée
-            lt: endOfDay,    // < début du jour suivant
-          },
-        },
+        where: scopedWhere,
         include: {
           tatoueur: true,
            performerUser: {

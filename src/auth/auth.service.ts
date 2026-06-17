@@ -11,6 +11,7 @@ import { SaasService } from 'src/saas/saas.service';
 import { CreateUserClientDto } from './dto/create-userClient.dto';
 import { CreateTatoueurUserDto } from './dto/create-tatoueur-user.dto';
 import { StripeService } from 'src/stripe/stripe.service';
+import { AgendaMode } from '@prisma/client';
 
 interface AuthenticatedUser {
   id: string;
@@ -154,7 +155,12 @@ export class AuthService {
   
       return this.authenticateUser({
         ...existingUser,
-        agendaMode: existingUser.saasPlanDetails?.agendaMode ?? null,
+        agendaMode:
+          existingUser.role === 'user_salon'
+            ? AgendaMode.PAR_TATOUEUR
+            : existingUser.role === 'user_tatoueur'
+              ? AgendaMode.GLOBAL
+              : (existingUser.saasPlanDetails?.agendaMode ?? null),
       });
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
@@ -236,6 +242,18 @@ export class AuthService {
           role: role as import('@prisma/client').Role,
           ...(role === 'user_salon' ? { salonName } : {}),
           ...(saasPlan ? { saasPlan } : {}),
+          ...((role === 'user_salon' || role === 'user_tatoueur')
+            ? {
+                saasPlanDetails: {
+                  create: {
+                    ...(saasPlan ? { currentPlan: saasPlan } : {}),
+                    agendaMode: role === 'user_salon'
+                      ? AgendaMode.PAR_TATOUEUR
+                      : AgendaMode.GLOBAL,
+                  },
+                },
+              }
+            : {}),
         },
       });
 

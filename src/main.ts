@@ -3,6 +3,7 @@ import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import * as bodyParser from 'body-parser';
 import { corsOriginDelegate } from './config/cors.config';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -40,6 +41,24 @@ async function bootstrap() {
     'connection' in (httpServer as { _events?: Record<string, unknown> })._events!
   ) {
     // WebSocket est actif, les gateways utiliseront la configuration définie dans @WebSocketGateway
+  }
+
+  // Swagger UI — disponible sur /api (désactivé en prod si nécessaire)
+  if (process.env.NODE_ENV !== 'production') {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('Tattoo Studio API')
+      .setDescription('Documentation de l\'API du gestionnaire de studio de tatouage')
+      .setVersion('1.0')
+      .addBearerAuth(
+        { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+        'access-token',
+      )
+      .build();
+
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('api', app, document, {
+      swaggerOptions: { persistAuthorization: true },
+    });
   }
 
   await app.listen(process.env.PORT ?? 4000);

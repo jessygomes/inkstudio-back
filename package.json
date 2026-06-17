@@ -34,6 +34,7 @@
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/platform-socket.io": "^11.1.11",
+    "@nestjs/swagger": "^11.4.4",
     "@nestjs/websockets": "^11.1.11",
     "@prisma/client": "^6.19.0",
     "@socket.io/redis-adapter": "^8.3.0",
@@ -60,6 +61,7 @@
     "rxjs": "^7.8.1",
     "socket.io": "^4.8.3",
     "stripe": "^20.4.1",
+    "swagger-ui-express": "^5.0.1",
     "uuid": "^13.0.0"
   },
   "devDependencies": {

@@ -72,9 +72,43 @@ async create(@Request() req: RequestWithUser, @Body() rdvBody: CreateAppointment
 
 ```typescript
 @Post('by-client')
-async createByClient(@Body() rdvBody: CreateAppointmentDto) {
-  const userId = rdvBody.userId;
-  return await this.appointmentsService.createByClient({userId, rdvBody });
+async createByClient(@Body() body: CreateAppointmentByClientRequestDto) {
+  const { userId, rdvBody, clientUserId } = body;
+  return await this.appointmentsService.createByClient({
+    userId,
+    rdvBody,
+    clientUserId,
+  });
+}
+```
+
+**Payload attendu :**
+
+```json
+{
+  "userId": "salon-id",
+  "rdvBody": {
+    "prestation": "TATTOO",
+    "start": "2026-04-20T09:00:00.000Z",
+    "end": "2026-04-20T11:00:00.000Z",
+    "clientFirstname": "Lea",
+    "clientLastname": "Martin",
+    "clientEmail": "lea@example.com",
+    "clientPhone": "0601020304",
+    "tatoueurId": "tatoueur-123"
+  },
+  "clientUserId": "optional-client-user-id"
+}
+```
+
+**Réponse erreur métier (linked tattooer) :**
+
+```json
+{
+  "error": true,
+  "code": "LINKED_BOOKING_REDIRECT",
+  "message": "La reservation client avec ce tatoueur n'est plus disponible depuis le profil du salon. Merci de reserver directement depuis le profil du tatoueur.",
+  "performerUserId": "linked-user-id"
 }
 ```
 
@@ -84,6 +118,7 @@ async createByClient(@Body() rdvBody: CreateAppointmentDto) {
 - Vérifie les conflits de créneaux
 - Valide la teinte de peau pour les prestations tattoo, retouche et projet
 - Crée ou récupère le client
+- Renvoie `LINKED_BOOKING_REDIRECT` si la réservation est tentée via le profil salon pour un `user_tatoueur` linked
 - **Logique conditionnelle :** Vérifie `addConfirmationEnabled` du salon
   - Si `true` : Statut "PENDING" + Email au salon
   - Si `false` : Statut "CONFIRMED" + Email au client

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { AgendaMode, SaasPlan } from '@prisma/client';
+import { AgendaMode } from '@prisma/client';
 import { addMinutes, isBefore } from 'date-fns';
 import { PrismaService } from 'src/database/prisma.service';
 
@@ -40,19 +40,27 @@ export class TimeSlotService {
 
   /**
    * ! Détermine le mode d'agenda effectif.
-   * Seul un salon BUSINESS avec agenda PAR_TATOUEUR garde ce mode,
-   * sinon on retombe sur un agenda GLOBAL.
+    * La règle métier est pilotée par le rôle:
+    * - user_salon => PAR_TATOUEUR
+    * - user_tatoueur => GLOBAL
+    * - fallback => valeur stockée, puis GLOBAL.
    */
   private resolveAgendaMode({
-    plan,
+    role,
     agendaMode,
   }: {
-    plan?: SaasPlan | null;
+    role?: string | null;
     agendaMode?: AgendaMode | null;
   }) {
-    return plan === SaasPlan.BUSINESS && agendaMode === AgendaMode.PAR_TATOUEUR
-      ? AgendaMode.PAR_TATOUEUR
-      : AgendaMode.GLOBAL;
+    if (role === 'user_salon') {
+      return AgendaMode.PAR_TATOUEUR;
+    }
+
+    if (role === 'user_tatoueur') {
+      return AgendaMode.GLOBAL;
+    }
+
+    return agendaMode ?? AgendaMode.GLOBAL;
   }
 
   /**
@@ -62,10 +70,9 @@ export class TimeSlotService {
     const salon = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
-        saasPlan: true,
+        role: true,
         saasPlanDetails: {
           select: {
-            currentPlan: true,
             agendaMode: true,
           },
         },
@@ -73,7 +80,7 @@ export class TimeSlotService {
     });
 
     return this.resolveAgendaMode({
-      plan: salon?.saasPlanDetails?.currentPlan ?? salon?.saasPlan,
+      role: salon?.role,
       agendaMode: salon?.saasPlanDetails?.agendaMode,
     });
   }
@@ -179,8 +186,9 @@ export class TimeSlotService {
       // Cote public, les horaires affiches doivent toujours correspondre au tatoueur
       // selectionne. Pour un user_tatoueur lie, on utilise donc ses propres horaires.
       const hoursJson = linkedTatoueur.salonHours ?? '{}';
-      // Un profil user_tatoueur gère toujours son propre agenda: même si le salon
-      // est en GLOBAL, on doit vérifier ses conflits personnels.
+      // Exception explicite de scope de conflits pour les profils linked:
+      // on force PAR_TATOUEUR afin d'eviter qu'un agenda salon GLOBAL n'ouvre
+      // des slots deja pris par ce tatoueur sur son agenda personnel.
       const scopedTatoueurId = normalizedId;
 
       return this.generateTimeSlotsForDate(
@@ -199,10 +207,9 @@ export class TimeSlotService {
       where: { id: tatoueur.userId },
       select: {
         salonHours: true,
-        saasPlan: true,
+        role: true,
         saasPlanDetails: {
           select: {
-            currentPlan: true,
             agendaMode: true,
           },
         },
@@ -211,7 +218,7 @@ export class TimeSlotService {
 
     const agendaMode = salonContext
       ? this.resolveAgendaMode({
-          plan: salonContext.saasPlanDetails?.currentPlan ?? salonContext.saasPlan,
+          role: salonContext.role,
           agendaMode: salonContext.saasPlanDetails?.agendaMode,
         })
       : AgendaMode.PAR_TATOUEUR;

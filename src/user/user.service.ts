@@ -1,4 +1,4 @@
-import { AgendaMode, SaasPlan } from '@prisma/client';
+import { AgendaMode } from '@prisma/client';
 import {Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CacheService } from 'src/redis/cache.service';
@@ -27,16 +27,18 @@ export class UserService {
   }
 
   private buildAppointmentBookingSettings({
-    plan,
+    role,
     agendaMode,
   }: {
-    plan?: SaasPlan | null;
+    role?: string | null;
     agendaMode?: AgendaMode | null;
   }) {
     const effectiveAgendaMode =
-      plan === SaasPlan.BUSINESS && agendaMode === AgendaMode.PAR_TATOUEUR
+      role === 'user_salon'
         ? AgendaMode.PAR_TATOUEUR
-        : AgendaMode.GLOBAL;
+        : role === 'user_tatoueur'
+          ? AgendaMode.GLOBAL
+          : (agendaMode ?? AgendaMode.GLOBAL);
 
     return {
       agendaMode: effectiveAgendaMode,
@@ -370,6 +372,12 @@ export class UserService {
         colorProfile: true,
         colorProfileBis: true,
         saasPlan: true,
+        saasPlanDetails: {
+          select: {
+            currentPlan: true,
+            agendaMode: true,
+          },
+        },
         Tatoueur: {
           select: {
             id: true,
@@ -701,6 +709,8 @@ export class UserService {
       } catch (cacheError) {
         console.warn('Erreur sauvegarde cache Redis pour getUserBySlugAndLocation:', cacheError);
       }
+
+      console.log('Profil trouvé pour slugs:', nameSlug, locSlug, '=>', enrichedFound);
 
       return enrichedFound;
     } catch (error) {
@@ -1184,10 +1194,9 @@ export class UserService {
           id: userId,
         },
         select: {
-          saasPlan: true,
+          role: true,
           saasPlanDetails: {
             select: {
-              currentPlan: true,
               agendaMode: true,
             },
           },
@@ -1196,7 +1205,7 @@ export class UserService {
 
       const setting = user
         ? this.buildAppointmentBookingSettings({
-            plan: user.saasPlanDetails?.currentPlan ?? user.saasPlan,
+            role: user.role,
             agendaMode: user.saasPlanDetails?.agendaMode,
           })
         : null;
@@ -1231,7 +1240,7 @@ export class UserService {
           id: userId,
         },
         select: {
-          saasPlan: true,
+          role: true,
           saasPlanDetails: {
             select: {
               currentPlan: true,
@@ -1247,9 +1256,8 @@ export class UserService {
         };
       }
 
-      const effectivePlan = existingUser.saasPlanDetails?.currentPlan ?? existingUser.saasPlan;
       const nextSettings = this.buildAppointmentBookingSettings({
-        plan: effectivePlan,
+        role: existingUser.role,
         agendaMode,
       });
 
@@ -1260,7 +1268,9 @@ export class UserService {
         },
         create: {
           userId,
-          currentPlan: effectivePlan,
+          ...(existingUser.saasPlanDetails?.currentPlan
+            ? { currentPlan: existingUser.saasPlanDetails.currentPlan }
+            : {}),
           agendaMode: nextSettings.agendaMode,
         },
       });
@@ -1271,11 +1281,9 @@ export class UserService {
 
       return {
         error: false,
-        message: effectivePlan !== SaasPlan.BUSINESS && agendaMode === AgendaMode.PAR_TATOUEUR
-          ? 'Le mode agenda par tatoueur est réservé au plan BUSINESS. Votre agenda reste en mode global.'
-          : nextSettings.agendaMode === AgendaMode.PAR_TATOUEUR
-            ? 'Agenda par tatoueur activé avec succès.'
-            : 'Agenda global activé avec succès.',
+        message: nextSettings.agendaMode === AgendaMode.PAR_TATOUEUR
+          ? 'Agenda par tatoueur activé avec succès.'
+          : 'Agenda global activé avec succès.',
         user: {
           agendaMode: nextSettings.agendaMode,
         },

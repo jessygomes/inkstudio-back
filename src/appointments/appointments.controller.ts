@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, ForbiddenException, Get, Param, Patch, Post, Query, Request, UseGuards } from '@nestjs/common';
+import { ApiOperation, ApiResponse, ApiTags, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AppointmentsService } from './appointments.service';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
@@ -12,12 +13,21 @@ import { RequestWithUser } from 'src/auth/jwt.strategy';
 import { CreateAppointmentConsumableDto } from './dto/create-appointment-consumable.dto';
 import { UpdateAppointmentConsumableDto } from './dto/update-appointment-consumable.dto';
 import { SearchAppointmentConsumablesDto } from './dto/search-appointment-consumables.dto';
+import {
+  CreateAppointmentByClientRequestDto,
+  CreateAppointmentByClientResponse,
+} from './dto/create-appointment-by-client.dto';
 
+@ApiTags('Appointments')
 @Controller('appointments')
 export class AppointmentsController {
   constructor(private readonly appointmentsService: AppointmentsService) {}
 
   //! CREER UN RDV ✅
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Créer un RDV (salon authentifié)' })
+  @ApiResponse({ status: 201, description: 'RDV créé avec succès.' })
+  @ApiResponse({ status: 401, description: 'Non authentifié.' })
   @UseGuards(JwtAuthGuard)
   @Post()
   // @SaasLimit('appointment')
@@ -26,15 +36,24 @@ export class AppointmentsController {
     return await this.appointmentsService.create({userId, rdvBody });
   }
 
+  @ApiOperation({ summary: 'Créer un RDV via le parcours client (sans auth)' })
+  @ApiResponse({ status: 201, description: 'RDV créé (PENDING ou CONFIRMED selon le salon).' })
+  @ApiResponse({
+    status: 200,
+    description: 'Erreur métier — code LINKED_BOOKING_REDIRECT: tatoueur réservable uniquement via son profil direct.',
+    schema: {
+      example: {
+        error: true,
+        code: 'LINKED_BOOKING_REDIRECT',
+        message: "La reservation client avec ce tatoueur n'est plus disponible depuis le profil du salon.",
+        performerUserId: 'linked-user-id',
+      },
+    },
+  })
   @Post('by-client')
   async createByClient(
-    @Body()
-    body: {
-      userId: string;
-      rdvBody: CreateAppointmentDto & { clientUserId?: string };
-      clientUserId?: string;
-    },
-  ) {
+    @Body() body: CreateAppointmentByClientRequestDto,
+  ): Promise<CreateAppointmentByClientResponse> {
     const { userId, rdvBody, clientUserId } = body;
     const resolvedClientUserId = clientUserId ?? rdvBody?.clientUserId;
     
@@ -46,6 +65,8 @@ export class AppointmentsController {
   }
 
   //! DEMANDE DE RDV CLIENT
+  @ApiOperation({ summary: 'Créer une demande de RDV client (sans auth)' })
+  @ApiResponse({ status: 201, description: 'Demande créée, en attente de proposition de créneau.' })
   @Post('appointment-request')
   async createAppointmentRequest(@Body() dto: CreateAppointmentRequestDto) {
     return await this.appointmentsService.createAppointmentRequest(dto);
@@ -58,6 +79,14 @@ export class AppointmentsController {
   // }
 
   //! VOIR TOUS LES RDV PAR DATE ✅
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'RDV par plage de dates (paginé)' })
+  @ApiQuery({ name: 'start', required: true, example: '2026-01-01' })
+  @ApiQuery({ name: 'end', required: true, example: '2026-01-31' })
+  @ApiQuery({ name: 'page', required: false, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, example: 5 })
+  @ApiResponse({ status: 200, description: 'Liste paginée des RDV.' })
+  @ApiResponse({ status: 401, description: 'Non authentifié.' })
   @UseGuards(JwtAuthGuard)
   @Get('range')
   async getByDateRange(
@@ -74,9 +103,15 @@ export class AppointmentsController {
   }
 
   //! VOIR TOUS LES RDV D'UN SALON AVEC PAGINATION ✅
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Tous les RDV du salon authentifié (paginé, filtrable)' })
+  @ApiResponse({ status: 200, description: 'Liste paginée des RDV.' })
+  @ApiResponse({ status: 401, description: 'Non authentifié.' })
+  @ApiResponse({ status: 403, description: 'Accès interdit — l\'id ne correspond pas au salon connecté.' })
   @UseGuards(JwtAuthGuard)
   @Get('salon/:id')
   async getAllAppointmentsBySalon(
+    @Request() req: RequestWithUser,
     @Param('id') salonId: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
@@ -86,10 +121,15 @@ export class AppointmentsController {
     @Query('prestation') prestation?: string,
     @Query('search') search?: string
   ) {
+    const authenticatedUserId = req.user.userId;
+    if (salonId !== authenticatedUserId) {
+      throw new ForbiddenException('Accès interdit à ce salon.');
+    }
+
     const pageNumber = page ? parseInt(page, 10) : 1;
     const limitNumber = limit ? parseInt(limit, 10) : 5;
     return await this.appointmentsService.getAllAppointmentsBySalon(
-      salonId, 
+      authenticatedUserId,
       pageNumber, 
       limitNumber,
       status,
@@ -101,16 +141,33 @@ export class AppointmentsController {
   }
 
   //! RECUPERER LES RDV D'UN SALON PAR PLAGE DE DATES ✅
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'RDV du salon sur une plage de dates (agenda)' })
+  @ApiQuery({ name: 'start', required: true, example: '2026-01-01' })
+  @ApiQuery({ name: 'end', required: true, example: '2026-01-31' })
+  @ApiResponse({ status: 200, description: 'Liste des RDV sur la plage.' })
+  @ApiResponse({ status: 403, description: 'Accès interdit.' })
+  @UseGuards(JwtAuthGuard)
   @Get('salon/:id/range')
   async getAppointmentsBySalonRange(
+    @Request() req: RequestWithUser,
     @Param('id') salonId: string,
     @Query('start') start: string,
     @Query('end') end: string
   ) {
-    return await this.appointmentsService.getAppointmentsBySalonRange(salonId, start, end);
+    const authenticatedUserId = req.user.userId;
+    if (salonId !== authenticatedUserId) {
+      throw new ForbiddenException('Accès interdit à ce salon.');
+    }
+
+    return await this.appointmentsService.getAppointmentsBySalonRange(authenticatedUserId, start, end);
   }
 
   //! VOIR LES RDV DU JOUR POUR DASHBOARD ✅
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'RDV du jour (ou d\'une date) pour le dashboard' })
+  @ApiQuery({ name: 'date', required: false, example: '2026-06-17', description: 'Date cible (YYYY-MM-DD). Défaut: aujourd\'hui.' })
+  @ApiResponse({ status: 200, description: 'RDV de la journée.' })
   @UseGuards(JwtAuthGuard)
   @Get('today')
   async getTodaysAppointments(
@@ -122,6 +179,10 @@ export class AppointmentsController {
   }
 
   //! Récupérer tous les RDV du client connecté
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'RDV du client connecté' })
+  @ApiQuery({ name: 'status', required: false, example: 'CONFIRMED' })
+  @ApiResponse({ status: 200, description: 'Liste paginée des RDV du client.' })
   @UseGuards(JwtAuthGuard)
   @Get('rdv-client')
   async getAllRdvForClient(
@@ -150,6 +211,8 @@ export class AppointmentsController {
     });
   }
 
+  @ApiOperation({ summary: 'Teintes de peau disponibles pour les RDV tattoo' })
+  @ApiResponse({ status: 200, description: 'Liste des teintes de peau.' })
   @Get('skin-tones')
   getSkinTones() {
     return this.appointmentsService.getSkinTones();
