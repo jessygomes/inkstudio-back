@@ -1925,6 +1925,14 @@ export class AppointmentsService {
                 instagram: true
               }
             },
+            performerUser: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                salonName: true,
+              },
+            },
             tattooDetail: {
               select: {
                 id: true,
@@ -2023,6 +2031,12 @@ export class AppointmentsService {
           img: appointment.tatoueur.img,
           phone: appointment.tatoueur.phone,
           instagram: appointment.tatoueur.instagram
+        } : appointment.performerUser ? {
+          id: appointment.performerUser.id,
+          name: this.getPerformerDisplayName(appointment.performerUser),
+          img: null,
+          phone: null,
+          instagram: null,
         } : null,
         prestationDetails: appointment.tattooDetail ? {
           id: appointment.tattooDetail.id,
@@ -3967,6 +3981,9 @@ async cancelAppointmentByClient(appointmentId: string, clientUserId: string, rea
       const endOfDay = new Date(startOfDay);
       endOfDay.setDate(startOfDay.getDate() + 1);
       const scopedWhere = await this.buildScopedAppointmentWhere(userId, {
+        status: {
+          not: 'CANCELED',
+        },
         start: {
           gte: startOfDay,
           lt: endOfDay,

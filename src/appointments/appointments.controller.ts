@@ -54,7 +54,8 @@ export class AppointmentsController {
   async createByClient(
     @Body() body: CreateAppointmentByClientRequestDto,
   ): Promise<CreateAppointmentByClientResponse> {
-    const { userId, rdvBody, clientUserId } = body;
+    const userId = body.userId ?? body.salonId;
+    const { rdvBody, clientUserId } = body;
     const resolvedClientUserId = clientUserId ?? rdvBody?.clientUserId;
     
     return await this.appointmentsService.createByClient({
@@ -141,26 +142,35 @@ export class AppointmentsController {
   }
 
   //! RECUPERER LES RDV D'UN SALON PAR PLAGE DE DATES ✅
-  @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'RDV du salon sur une plage de dates (agenda)' })
+  @ApiOperation({ summary: 'RDV du salon sur une plage de dates (agenda public + auth)' })
   @ApiQuery({ name: 'start', required: true, example: '2026-01-01' })
   @ApiQuery({ name: 'end', required: true, example: '2026-01-31' })
-  @ApiResponse({ status: 200, description: 'Liste des RDV sur la plage.' })
+  @ApiResponse({ status: 200, description: 'Liste des RDV sur la plage. En mode public: start/end uniquement.' })
   @ApiResponse({ status: 403, description: 'Accès interdit.' })
-  @UseGuards(JwtAuthGuard)
   @Get('salon/:id/range')
   async getAppointmentsBySalonRange(
-    @Request() req: RequestWithUser,
+    @Request() req: { user?: { userId?: string } },
     @Param('id') salonId: string,
     @Query('start') start: string,
     @Query('end') end: string
   ) {
-    const authenticatedUserId = req.user.userId;
-    if (salonId !== authenticatedUserId) {
+    const authenticatedUserId = req.user?.userId;
+
+    if (authenticatedUserId && salonId !== authenticatedUserId) {
       throw new ForbiddenException('Accès interdit à ce salon.');
     }
 
-    return await this.appointmentsService.getAppointmentsBySalonRange(authenticatedUserId, start, end);
+    const appointments = await this.appointmentsService.getAppointmentsBySalonRange(salonId, start, end);
+
+    // Cote public (sans JWT), on expose uniquement les bornes des créneaux occupés.
+    if (!authenticatedUserId && Array.isArray(appointments)) {
+      return appointments.map((appointment) => ({
+        start: appointment.start,
+        end: appointment.end,
+      }));
+    }
+
+    return appointments;
   }
 
   //! VOIR LES RDV DU JOUR POUR DASHBOARD ✅

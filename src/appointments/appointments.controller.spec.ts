@@ -111,4 +111,32 @@ describe('AppointmentsController', () => {
       appointmentsService.getAppointmentsBySalonRange,
     ).toHaveBeenCalledWith('auth-salon', '2026-01-01', '2026-01-31');
   });
+
+  it('should allow public salon range access and return only occupied slot bounds', async () => {
+    appointmentsService.getAppointmentsBySalonRange.mockResolvedValue([
+      {
+        id: 'apt-1',
+        start: new Date('2026-01-10T09:00:00.000Z'),
+        end: new Date('2026-01-10T09:30:00.000Z'),
+        title: 'Should be hidden',
+      },
+    ]);
+
+    const result = await controller.getAppointmentsBySalonRange(
+      {} as any,
+      'public-salon',
+      '2026-01-01',
+      '2026-01-31',
+    );
+
+    expect(
+      appointmentsService.getAppointmentsBySalonRange,
+    ).toHaveBeenCalledWith('public-salon', '2026-01-01', '2026-01-31');
+    expect(result).toEqual([
+      {
+        start: new Date('2026-01-10T09:00:00.000Z'),
+        end: new Date('2026-01-10T09:30:00.000Z'),
+      },
+    ]);
+  });
 });

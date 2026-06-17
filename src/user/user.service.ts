@@ -710,8 +710,6 @@ export class UserService {
         console.warn('Erreur sauvegarde cache Redis pour getUserBySlugAndLocation:', cacheError);
       }
 
-      console.log('Profil trouvé pour slugs:', nameSlug, locSlug, '=>', enrichedFound);
-
       return enrichedFound;
     } catch (error) {
       console.error('Erreur dans getUserBySlugAndLocation:', error);

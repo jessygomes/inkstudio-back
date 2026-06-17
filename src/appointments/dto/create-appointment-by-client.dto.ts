@@ -1,14 +1,27 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import { IsNotEmpty, IsOptional, IsString, ValidateNested } from 'class-validator';
 import { CreateAppointmentDto } from './create-appointment.dto';
 
 export class CreateAppointmentByClientRequestDto {
   @ApiProperty({ description: 'ID du salon cible' })
+  @IsString()
+  @IsNotEmpty()
   userId: string;
 
+  @ApiPropertyOptional({ description: 'Alias de compatibilite de userId' })
+  @IsOptional()
+  @IsString()
+  salonId?: string;
+
   @ApiProperty({ type: CreateAppointmentDto })
+  @ValidateNested()
+  @Type(() => CreateAppointmentDto)
   rdvBody: CreateAppointmentDto & { clientUserId?: string };
 
   @ApiPropertyOptional({ description: 'ID du compte client connecté (optionnel)' })
+  @IsOptional()
+  @IsString()
   clientUserId?: string;
 }
 
