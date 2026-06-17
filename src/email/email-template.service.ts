@@ -582,41 +582,41 @@ export class EmailTemplateService {
         </div>
 
         ${data.appointmentDetails ? `
-          <div class="appointment-summary">
-            <div class="details-title">📋 Résumé du rendez-vous</div>
-            <ul class="details-list" style="color: #171717;">
+          <div style="margin: 25px 0; padding: 0; background: transparent; color: #171717; font-family: 'Exo 2', sans-serif;">
+            <div style="font-family: 'Montserrat Alternates', sans-serif; font-size: 18px; font-weight: 600; margin-bottom: 15px; color: #171717;">📋 Résumé du rendez-vous</div>
+            <ul style="list-style: none; padding: 0; margin: 0; font-family: 'Exo 2', sans-serif; color: #171717;">
               <li>
-                <span class="detail-label" style="color: #3e2c27;">👤 Client :</span>
-                <span class="detail-value" style="color: #2d1f1a;">${data.recipientName || 'Nouveau client'}</span>
+                <span style="font-weight: 500; color: #171717;">👤 Client :</span>
+                <span style="font-weight: 600; color: #171717;">${data.recipientName || 'Nouveau client'}</span>
               </li>
               <li>
-                <span class="detail-label" style="color: #3e2c27;">📅 Date :</span>
-                <span class="detail-value" style="color: #2d1f1a;">${data.appointmentDetails.date}</span>
+                <span style="font-weight: 500; color: #171717;">📅 Date :</span>
+                <span style="font-weight: 600; color: #171717;">${data.appointmentDetails.date}</span>
               </li>
               <li>
-                <span class="detail-label" style="color: #3e2c27;">⏰ Heure :</span>
-                <span class="detail-value" style="color: #2d1f1a;">${data.appointmentDetails.time}</span>
+                <span style="font-weight: 500; color: #171717;">⏰ Heure :</span>
+                <span style="font-weight: 600; color: #171717;">${data.appointmentDetails.time}</span>
               </li>
               <li>
-                <span class="detail-label" style="color: #3e2c27;">🎨 Prestation :</span>
-                <span class="detail-value" style="color: #2d1f1a;">${data.appointmentDetails.service}</span>
+                <span style="font-weight: 500; color: #171717;">🎨 Prestation :</span>
+                <span style="font-weight: 600; color: #171717;">${data.appointmentDetails.service}</span>
               </li>
               ${data.appointmentDetails.tatoueur ? `
                 <li>
-                  <span class="detail-label" style="color: #3e2c27;">👨‍🎨 Artiste :</span>
-                  <span class="detail-value" style="color: #2d1f1a;">${data.appointmentDetails.tatoueur}</span>
+                  <span style="font-weight: 500; color: #171717;">👨‍🎨 Artiste :</span>
+                  <span style="font-weight: 600; color: #171717;">${data.appointmentDetails.tatoueur}</span>
                 </li>
               ` : ''}
               ${data.appointmentDetails.price ? `
                 <li>
-                  <span class="detail-label" style="color: #3e2c27;">💰 Prix :</span>
-                  <span class="detail-value">${data.appointmentDetails.price}€</span>
+                  <span style="font-weight: 500; color: #171717;">💰 Prix :</span>
+                  <span style="font-weight: 600; color: #171717;">${data.appointmentDetails.price}€</span>
                 </li>
               ` : ''}
               ${data.appointmentDetails.visio && data.appointmentDetails.visioRoom ? `
                 <li>
-                  <span class="detail-label" style="color: #3e2c27;">🎥 Visioconférence :</span>
-                  <span class="detail-value">
+                  <span style="font-weight: 500; color: #171717;">🎥 Visioconférence :</span>
+                  <span style="font-weight: 600; color: #171717;">
                     <a href="${this.sanitizeSiteUrl(data.appointmentDetails.visioRoom, '/dashboard')}" 
                       style="background: #059669; color: white; padding: 8px 16px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; margin-top: 8px;">
                       🎥 Rejoindre la visioconférence
