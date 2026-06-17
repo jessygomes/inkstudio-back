@@ -89,14 +89,19 @@ export class AppointmentsService {
     return appointments.map((appointment) => this.normalizeAppointmentTatoueur(appointment));
   }
 
+  // Fonction pour construire la condition WHERE pour filtrer les rendez-vous visibles par un utilisateur donné
   private async buildAppointmentVisibilityWhere(userId: string): Promise<Prisma.AppointmentWhereInput> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
         role: true,
+        // Récupère uniquement les tatoueurs liés qui ont AUTORISÉ le salon à voir leurs RDV
         linkedTatoueurs: {
           where: {
             role: 'user_tatoueur',
+            // 🔐 PERMISSION : Filtrer sur salonCanViewAppointments = true
+            // Seuls les tatoueurs qui ont donné cette permission apparaissent ici
+            salonCanViewAppointments: true,
           },
           select: {
             id: true,
@@ -105,6 +110,7 @@ export class AppointmentsService {
       },
     });
 
+    // Pour un tatoueur lié à un salon : voir ses propres RDV + RDV où il est performerUserId
     if (user?.role === 'user_tatoueur') {
       return {
         OR: [
@@ -114,22 +120,27 @@ export class AppointmentsService {
       };
     }
 
+    // Pour un user_salon : voir les RDV qu'il crée + RDV de ses tatoueurs liés (si permission accordée)
     if (user?.role === 'user_salon') {
       const linkedTatoueurIds = (user.linkedTatoueurs ?? []).map((tatoueur) => tatoueur.id);
 
       if (linkedTatoueurIds.length === 0) {
+        // Aucun tatoueur autorisé, voir uniquement ses propres RDV
         return { userId };
       }
 
       return {
         OR: [
           { userId },
+          // RDV créés par l'un de ses tatoueurs
           { userId: { in: linkedTatoueurIds } },
+          // RDV où l'un de ses tatoueurs est performer (cas tatoueur indépendant devenu lié)
           { performerUserId: { in: linkedTatoueurIds } },
         ],
       };
     }
 
+    // Par défaut : voir uniquement ses propres RDV
     return { userId };
   }
 
@@ -148,9 +159,19 @@ export class AppointmentsService {
     };
   }
 
+  /**
+   * Résout les données complètes d'un tatoueur (tatoueur interne ou user_tatoueur lié)
+   * 
+   * Cette méthode centralise la recherche et normalisation des tatoueurs pour les RDV.
+   * Elle récupère aussi les permissions si c'est un user_tatoueur lié à un salon.
+   * 
+   * @param {string} tatoueurId ID du tatoueur (Tatoueur.id ou User.id si user_tatoueur)
+   * @returns {Object} { artist, tatoueurId, performerUserId, linkedSalonId, isLinkedToSalon, allowSalonCreateAppointments }
+   */
   private async resolveTatoueurSelection(tatoueurId: string) {
     const resolvedTatoueurId = this.normalizeTatoueurSelectionId(tatoueurId);
 
+    // Cas 1 : Tatoueur interne (table Tatoueur)
     const tatoueur = await this.prisma.tatoueur.findUnique({
       where: { id: resolvedTatoueurId },
       select: {
@@ -166,15 +187,20 @@ export class AppointmentsService {
         performerUserId: null as string | null,
         linkedSalonId: null as string | null,
         isLinkedToSalon: false,
+        // Tatoueur interne : pas de permission liée à un salon
+        allowSalonCreateAppointments: null as boolean | null,
       };
     }
 
+    // Cas 2 : User_tatoueur (table User avec role=user_tatoueur)
     const performerUser = await this.prisma.user.findUnique({
       where: { id: resolvedTatoueurId },
       select: {
         id: true,
         role: true,
         salonId: true,
+        // 🔐 Récupère la permission que le user_salon peut créer des RDV pour ce tatoueur
+        salonCanCreateAppointments: true,
         salonName: true,
         firstName: true,
         lastName: true,
@@ -182,6 +208,7 @@ export class AppointmentsService {
     });
 
     if (performerUser && performerUser.role === 'user_tatoueur') {
+      // Vérifie si ce user_tatoueur est lié à un salon (et pas à lui-même)
       const isLinkedToSalon = !!performerUser.salonId && performerUser.salonId !== performerUser.id;
       const displayName = performerUser.salonName?.trim()
         || `${performerUser.firstName ?? ''} ${performerUser.lastName ?? ''}`.trim()
@@ -196,16 +223,62 @@ export class AppointmentsService {
         performerUserId: performerUser.id,
         linkedSalonId: performerUser.salonId ?? null,
         isLinkedToSalon,
+        // 🔐 Permission persisted lors de l'acceptance de la demande d'équipe
+        // null si non lié, boolean si lié
+        allowSalonCreateAppointments: performerUser.salonCanCreateAppointments,
       };
     }
 
+    // Cas 3 : Tatoueur non trouvé
     return {
       artist: null,
       tatoueurId: null as string | null,
       performerUserId: null as string | null,
       linkedSalonId: null as string | null,
       isLinkedToSalon: false,
+      allowSalonCreateAppointments: null as boolean | null,
     };
+  }
+
+  /**
+   * Valide que le user_salon peut créer un RDV pour un user_tatoueur sélectionné
+   * 
+   * Logique d'autorisation :
+   * - Tatoueur interne (table Tatoueur) : TOUJOURS autorisé
+   * - User_tatoueur indépendant : TOUJOURS autorisé (pas lié à un salon)
+   * - User_tatoueur lié à CE salon ET allowSalonCreateAppointments=true : AUTORISÉ
+   * - User_tatoueur lié à CE salon ET allowSalonCreateAppointments=false : REJETÉ ❌
+   * - User_tatoueur lié à AUTRE salon : REJETÉ (conflit de lien)
+   * 
+   * @param {Object} params
+   * @param {string} params.salonId ID du user_salon qui crée le RDV
+   * @param {Object} params.selectedTatoueur Réponse de resolveTatoueurSelection()
+   * 
+   * @returns {string|null} Message d'erreur si bloqué, null sinon
+   */
+  private validateSalonCanCreateForSelection({
+    salonId,
+    selectedTatoueur,
+  }: {
+    salonId: string;
+    selectedTatoueur: {
+      performerUserId: string | null;
+      isLinkedToSalon: boolean;
+      linkedSalonId: string | null;
+      allowSalonCreateAppointments: boolean | null;
+    };
+  }): string | null {
+    // Cas : User_tatoueur lié à CE salon ET permission refusée
+    if (
+      selectedTatoueur.performerUserId
+      && selectedTatoueur.isLinkedToSalon
+      && selectedTatoueur.linkedSalonId === salonId
+      && selectedTatoueur.allowSalonCreateAppointments === false
+    ) {
+      return 'Ce tatoueur n\'autorise pas le salon à créer des rendez-vous pour lui.';
+    }
+
+    return null;
   }
 
   getSkinTones() {
@@ -723,6 +796,23 @@ export class AppointmentsService {
         return {
           error: true,
           message: 'Tatoueur introuvable.',
+        };
+      }
+
+      // 🔐 PERMISSION DE CRÉATION : Vérifier si le user_salon peut créer un RDV pour ce user_tatoueur lié
+      // Si c'est un user_tatoueur lié à CE salon ET qu'il a refusé l'autorisation :
+      // → La création est bloquée avec code 'SALON_BOOKING_NOT_ALLOWED'
+      const salonCreationPermissionError = this.validateSalonCanCreateForSelection({
+        salonId: userId,
+        selectedTatoueur,
+      });
+
+      if (salonCreationPermissionError) {
+        return {
+          error: true,
+          code: 'SALON_BOOKING_NOT_ALLOWED',
+          message: salonCreationPermissionError,
+          performerUserId: selectedTatoueur.performerUserId,
         };
       }
 
@@ -1277,6 +1367,7 @@ export class AppointmentsService {
         performerUserId: null as string | null,
         linkedSalonId: null as string | null,
         isLinkedToSalon: false,
+        allowSalonCreateAppointments: null as boolean | null,
       };
 
       let artist: { id: string; name: string } | null = null;

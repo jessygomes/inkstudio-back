@@ -47,8 +47,21 @@ model User {
   verifiedSalon            Boolean               @default(false)
   SalonVerificationDocument SalonVerificationDocument[]
 
-  addConfirmationEnabled    Boolean              @default(false)  // Confirmation auto ou manuelle
-  appointmentBookingEnabled Boolean              @default(false) // Agenda globale ou agenda par tatoueur
+  // Contrôle des confirmations de RDV : true = confirmation manuelle, false = confirmation auto
+  addConfirmationEnabled    Boolean              @default(false)
+  
+  // DEPRECATED: Ancien champ pour contrôle agenda (conservé pour compatibilité)
+  // À remplacer par salonCanCreateAppointments pour les tatoueurs liés
+  appointmentBookingEnabled Boolean              @default(false)
+  
+  // Permissions pour user_tatoueur lié à un salon
+  // Autorise le user_salon à voir l'agenda et les RDV du user_tatoueur
+  salonCanViewAppointments  Boolean              @default(true)
+  
+  // Permissions pour user_tatoueur lié à un salon
+  // Autorise le user_salon à créer des RDV pour ce user_tatoueur
+  // À UTILISER dans la logique de création de RDV par salon pour tatoueur lié
+  salonCanCreateAppointments Boolean             @default(true)
 
   colorProfile              String?              @default("default")
   colorProfileBis           String?              @default("default")

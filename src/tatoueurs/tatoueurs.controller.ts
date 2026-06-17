@@ -6,6 +6,7 @@ import { RequestWithUser } from 'src/auth/jwt.strategy';
 import { CreateTeamRequestDto } from './dto/create-team-request.dto';
 import { RespondTeamRequestDto } from './dto/respond-team-request.dto';
 import { UpdateLinkedTatoueurAppointmentBookingDto } from './dto/update-linked-tatoueur-appointment-booking.dto';
+import { UpdateSalonLinkedPermissionDto } from './dto/update-salon-linked-permission.dto';
 
 @Controller('tatoueurs')
 export class TatoueursController {
@@ -124,6 +125,68 @@ export class TatoueursController {
       tatoueurUserId: req.user.userId,
       tatoueurRole: req.user.role,
       action: body.action,
+      allowSalonAgendaAccess: body.allowSalonAgendaAccess,
+      allowSalonCreateAppointments: body.allowSalonCreateAppointments,
+    });
+  }
+
+  /**
+   * PATCH /team-requests/permissions/agenda-access
+   * 
+   * Route contrôlée par le user_tatoueur pour autoriser/refuser au user_salon lié
+   * la possibilité de voir son agenda et ses RDV.
+   * 
+   * Authentification : JwtAuthGuard (user_tatoueur uniquement)
+   * 
+   * Logique :
+   * 1. Vérifie que l'appelant est un user_tatoueur lié à un salon
+   * 2. Met à jour User.salonCanViewAppointments
+   * 3. Invalide le cache des RDV du salon et les données du tatoueur
+   * 
+   * @param req Requête HTTP avec user context (JwtAuthGuard)
+   * @param body UpdateSalonLinkedPermissionDto { enabled: boolean }
+   * @returns Message de succès/erreur + permissions mises à jour
+   */
+  @UseGuards(JwtAuthGuard)
+  @Patch('team-requests/permissions/agenda-access')
+  updateSalonAgendaAccessPermission(
+    @Request() req: RequestWithUser,
+    @Body() body: UpdateSalonLinkedPermissionDto,
+  ) {
+    return this.tatoueursService.updateSalonAgendaAccessPermission({
+      tatoueurUserId: req.user.userId,
+      tatoueurRole: req.user.role,
+      enabled: body.enabled,
+    });
+  }
+
+  /**
+   * PATCH /team-requests/permissions/salon-appointment-creation
+   * 
+   * Route contrôlée par le user_tatoueur pour autoriser/refuser au user_salon lié
+   * la possibilité de créer des RDV pour ce tatoueur.
+   * 
+   * Authentification : JwtAuthGuard (user_tatoueur uniquement)
+   * 
+   * Logique :
+   * 1. Vérifie que l'appelant est un user_tatoueur lié à un salon
+   * 2. Met à jour User.salonCanCreateAppointments
+   * 3. Invalide le cache de gestion des RDV du salon
+   * 
+   * @param req Requête HTTP avec user context (JwtAuthGuard)
+   * @param body UpdateSalonLinkedPermissionDto { enabled: boolean }
+   * @returns Message de succès/erreur + permissions mises à jour
+   */
+  @UseGuards(JwtAuthGuard)
+  @Patch('team-requests/permissions/salon-appointment-creation')
+  updateSalonAppointmentCreationPermission(
+    @Request() req: RequestWithUser,
+    @Body() body: UpdateSalonLinkedPermissionDto,
+  ) {
+    return this.tatoueursService.updateSalonAppointmentCreationPermission({
+      tatoueurUserId: req.user.userId,
+      tatoueurRole: req.user.role,
+      enabled: body.enabled,
     });
   }
 

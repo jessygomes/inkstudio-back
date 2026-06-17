@@ -505,23 +505,51 @@ export class TatoueursService {
     }
   }
 
-  //! REPONDRE A UNE DEMANDE D'INTEGRATION
+  /**
+   * Gère l'acceptation/refus d'une demande d'intégration d'équipe salon
+   * 
+   * FLUX D'ACCEPTATION :
+   * 1. Valide que le tatoueur a fourni les deux permissions obligatoires
+   * 2. Lie le tatoueur au salon (update User.salonId)
+   * 3. Persiste les permissions choisies lors de l'acceptance :
+   *    - User.salonCanViewAppointments : autorise le salon à voir agenda/RDV
+   *    - User.salonCanCreateAppointments : autorise le salon à créer des RDV
+   * 4. Invalide les caches de tatoueurs et RDV du salon
+   * 
+   * FLUX DE REFUS :
+   * 1. Marque simplement la demande comme REFUSED
+   * 2. Aucun changement sur les données utilisateur
+   * 
+   * @param {Object} params
+   * @param {string} params.requestId ID de la demande
+   * @param {string} params.tatoueurUserId ID du tatoueur qui répond
+   * @param {string} params.tatoueurRole Rôle du tatoueur (doit être user_tatoueur)
+   * @param {'accept'|'refuse'} params.action Action à effectuer
+   * @param {boolean} params.allowSalonAgendaAccess Permission 1 (obligatoire si accept)
+   * @param {boolean} params.allowSalonCreateAppointments Permission 2 (obligatoire si accept)
+   * 
+   * @returns {Object} { error, message, request { id, status, permissions } }
+   */
   async respondToTeamRequest({
     requestId,
     tatoueurUserId,
     tatoueurRole,
     action,
+    allowSalonAgendaAccess,
+    allowSalonCreateAppointments,
   }: {
     requestId: string;
     tatoueurUserId: string;
     tatoueurRole?: string;
     action: 'accept' | 'refuse';
+    allowSalonAgendaAccess?: boolean;
+    allowSalonCreateAppointments?: boolean;
   }) {
     try {
-      if (tatoueurRole !== 'user_tatoueur') {
+      if (tatoueurRole !== Role.user_tatoueur) {
         return {
           error: true,
-          message: 'Seuls les tatoueurs peuvent répondre à une demande.',
+          message: 'Seul un tatoueur peut répondre à cette demande.',
         };
       }
 
@@ -532,15 +560,7 @@ export class TatoueursService {
             select: {
               id: true,
               salonName: true,
-            },
-          },
-          tatoueurUser: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              phone: true,
-              image: true,
+              email: true,
               instagram: true,
               description: true,
             },
@@ -564,9 +584,21 @@ export class TatoueursService {
 
       const nextStatus = action === 'accept' ? TeamRequestStatus.ACCEPTED : TeamRequestStatus.REFUSED;
 
+      // À l'acceptation, les deux permissions sont OBLIGATOIRES
+      if (
+        action === 'accept'
+        && (typeof allowSalonAgendaAccess !== 'boolean' || typeof allowSalonCreateAppointments !== 'boolean')
+      ) {
+        return {
+          error: true,
+          message:
+            'Veuillez préciser les autorisations du salon (accès agenda/RDV et création de RDV) avant d\'accepter.',
+        };
+      }
+
       const result = await this.prisma.$transaction(async (tx) => {
-        // Evite le conflit de contrainte unique (salonId, tatoueurUserId, status)
-        // si une ancienne ligne porte déjà le même statut final.
+        // Évite les conflits de contrainte unique (salonId, tatoueurUserId, status)
+        // Supprime les anciennes demandes au même statut si elles existent
         await tx.salonTatoueurTeamRequest.deleteMany({
           where: {
             salonId: request.salonId,
@@ -576,6 +608,7 @@ export class TatoueursService {
           },
         });
 
+        // Met à jour le statut de la demande
         const updatedRequest = await tx.salonTatoueurTeamRequest.update({
           where: { id: requestId },
           data: {
@@ -584,17 +617,24 @@ export class TatoueursService {
           },
         });
 
+        // À l'acceptation : lie le tatoueur au salon ET persiste les permissions
         if (nextStatus === TeamRequestStatus.ACCEPTED) {
           await tx.user.update({
             where: { id: tatoueurUserId },
-            data: { salonId: request.salonId },
+            data: {
+              salonId: request.salonId,
+              // Permission 1 : Autorise le salon à voir l'agenda/RDV du tatoueur
+              salonCanViewAppointments: !!allowSalonAgendaAccess,
+              // Permission 2 : Autorise le salon à créer des RDV pour ce tatoueur
+              salonCanCreateAppointments: !!allowSalonCreateAppointments,
+            },
           });
         }
 
         return updatedRequest;
       });
 
-      // Invalider le cache d'équipe du salon après réponse à la demande
+      // Invalide les caches du salon pour forcer la mise à jour des tatoueurs liés
       await this.cacheService.del(`tatoueurs:user:${request.salonId}`);
       await this.cacheService.del(`tatoueurs:user:${request.salonId}:appointment-enabled`);
 
@@ -607,6 +647,203 @@ export class TatoueursService {
           id: result.id,
           status: result.status,
           respondedAt: result.respondedAt,
+          // Retourne les permissions acceptées
+          permissions: nextStatus === TeamRequestStatus.ACCEPTED
+            ? {
+                allowSalonAgendaAccess: !!allowSalonAgendaAccess,
+                allowSalonCreateAppointments: !!allowSalonCreateAppointments,
+              }
+            : undefined,
+        },
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
+
+  /**
+   * Toggle pour le tatoueur lié : autoriser/refuser que le salon voit son agenda/RDV
+   * 
+   * Logique :
+   * 1. Vérifie que l'appelant est un user_tatoueur
+   * 2. Récupère le tatoueur et vérifie qu'il est lié à un salon
+   * 3. Met à jour User.salonCanViewAppointments selon le paramètre 'enabled'
+   * 4. Invalide les caches de RDV du salon (pattern: appointments:salon:*)
+   * 
+   * @param {Object} params
+   * @param {string} params.tatoueurUserId ID du tatoueur qui toggle
+   * @param {string} params.tatoueurRole Rôle de l'utilisateur (doit être user_tatoueur)
+   * @param {boolean} params.enabled true = autoriser, false = refuser
+   * 
+   * @returns {Object} { error, message, permissions { allowSalonAgendaAccess } }
+   */
+  async updateSalonAgendaAccessPermission({
+    tatoueurUserId,
+    tatoueurRole,
+    enabled,
+  }: {
+    tatoueurUserId: string;
+    tatoueurRole?: string;
+    enabled: boolean;
+  }) {
+    try {
+      // Seul un user_tatoueur peut modifier ses permissions
+      if (tatoueurRole !== 'user_tatoueur') {
+        return {
+          error: true,
+          message: 'Seuls les tatoueurs peuvent gérer cet accès.',
+        };
+      }
+
+      // Récupère le tatoueur et ses permissions actuelles
+      const linkedTatoueur = await this.prisma.user.findUnique({
+        where: { id: tatoueurUserId },
+        select: {
+          id: true,
+          role: true,
+          salonId: true,
+          salonCanViewAppointments: true,
+        },
+      });
+
+      if (!linkedTatoueur || linkedTatoueur.role !== Role.user_tatoueur) {
+        return {
+          error: true,
+          message: 'Tatoueur introuvable ou invalide.',
+        };
+      }
+
+      // Un tatoueur DOIT être lié à un salon pour gérer ses permissions
+      if (!linkedTatoueur.salonId) {
+        return {
+          error: true,
+          message: 'Aucun salon lié actuellement.',
+        };
+      }
+
+      // Met à jour la permission
+      await this.prisma.user.update({
+        where: { id: tatoueurUserId },
+        data: { salonCanViewAppointments: enabled },
+      });
+
+      // Invalide les caches de RDV et tatoueurs du salon lié
+      await Promise.all([
+        this.cacheService.del(`tatoueurs:user:${linkedTatoueur.salonId}`),
+        this.cacheService.del(`tatoueurs:user:${linkedTatoueur.salonId}:appointment-enabled`),
+        // Invalide TOUS les caches de RDV du salon pour forcer un refresh
+        this.cacheService.delPattern(`appointments:salon:${linkedTatoueur.salonId}:*`),
+        this.cacheService.delPattern(`appointments:date-range:${linkedTatoueur.salonId}:*`),
+        // Invalide les données du tatoueur
+        this.cacheService.del(`user:${tatoueurUserId}`),
+      ]);
+
+      return {
+        error: false,
+        message: enabled
+          ? 'Le salon peut maintenant voir votre agenda et vos rendez-vous.'
+          : 'Le salon ne peut plus voir votre agenda ni vos rendez-vous.',
+        permissions: {
+          allowSalonAgendaAccess: enabled,
+        },
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
+
+  /**
+   * Toggle pour le tatoueur lié : autoriser/refuser que le salon crée des RDV pour lui
+   * 
+   * Logique :
+   * 1. Vérifie que l'appelant est un user_tatoueur
+   * 2. Récupère le tatoueur et vérifie qu'il est lié à un salon
+   * 3. Met à jour User.salonCanCreateAppointments selon le paramètre 'enabled'
+   * 4. Invalide le cache de gestion des tatoueurs du salon
+   * 
+   * Note : Ce champ est séparé de 'appointmentBookingEnabled' qui gère l'agenda du tatoueur
+   * (GLOBAL vs PAR_TATOUEUR). salonCanCreateAppointments gère spécifiquement l'autorisation
+   * pour le user_salon lié de créer des RDV pour ce tatoueur lié.
+   * 
+   * @param {Object} params
+   * @param {string} params.tatoueurUserId ID du tatoueur qui toggle
+   * @param {string} params.tatoueurRole Rôle de l'utilisateur (doit être user_tatoueur)
+   * @param {boolean} params.enabled true = autoriser, false = refuser
+   * 
+   * @returns {Object} { error, message, permissions { allowSalonCreateAppointments } }
+   */
+  async updateSalonAppointmentCreationPermission({
+    tatoueurUserId,
+    tatoueurRole,
+    enabled,
+  }: {
+    tatoueurUserId: string;
+    tatoueurRole?: string;
+    enabled: boolean;
+  }) {
+    try {
+      // Seul un user_tatoueur peut modifier ses permissions
+      if (tatoueurRole !== 'user_tatoueur') {
+        return {
+          error: true,
+          message: 'Seuls les tatoueurs peuvent gérer cet accès.',
+        };
+      }
+
+      // Récupère le tatoueur et ses permissions actuelles
+      const linkedTatoueur = await this.prisma.user.findUnique({
+        where: { id: tatoueurUserId },
+        select: {
+          id: true,
+          role: true,
+          salonId: true,
+          salonCanCreateAppointments: true,
+        },
+      });
+
+      if (!linkedTatoueur || linkedTatoueur.role !== Role.user_tatoueur) {
+        return {
+          error: true,
+          message: 'Tatoueur introuvable ou invalide.',
+        };
+      }
+
+      // Un tatoueur DOIT être lié à un salon pour gérer ses permissions
+      if (!linkedTatoueur.salonId) {
+        return {
+          error: true,
+          message: 'Aucun salon lié actuellement.',
+        };
+      }
+
+      // Met à jour la permission
+      await this.prisma.user.update({
+        where: { id: tatoueurUserId },
+        data: { salonCanCreateAppointments: enabled },
+      });
+
+      // Invalide le cache de gestion des tatoueurs du salon
+      await Promise.all([
+        this.cacheService.del(`tatoueurs:user:${linkedTatoueur.salonId}`),
+        this.cacheService.del(`tatoueurs:user:${linkedTatoueur.salonId}:appointment-enabled`),
+        this.cacheService.del(`user:${tatoueurUserId}`),
+      ]);
+
+      return {
+        error: false,
+        message: enabled
+          ? 'Le salon peut maintenant créer des rendez-vous pour vous.'
+          : 'Le salon ne peut plus créer de rendez-vous pour vous.',
+        permissions: {
+          allowSalonCreateAppointments: enabled,
         },
       };
     } catch (error: unknown) {
