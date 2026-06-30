@@ -665,8 +665,55 @@ export class TatoueursService {
     }
   }
 
+  //! Récupérer ses valeurs de permissions actuelles
+  async getCurrentPermissions({
+    tatoueurUserId,
+    tatoueurRole,
+  }: {
+    tatoueurUserId: string;
+    tatoueurRole?: string;
+  }) {
+    try {
+      if (tatoueurRole !== 'user_tatoueur') {
+        return {
+          error: true,
+          message: 'Seuls les tatoueurs peuvent voir leurs permissions.',
+        };
+      }
+
+      const tatoueur = await this.prisma.user.findUnique({
+        where: { id: tatoueurUserId },
+        select: {
+          salonCanViewAppointments: true,
+          salonCanCreateAppointments: true,
+        },
+      });
+
+      if (!tatoueur) {
+        return {
+          error: true,
+          message: 'Tatoueur introuvable.',
+        };
+      }
+
+      return {
+        error: false,
+        permissions: {
+          allowSalonAgendaAccess: tatoueur.salonCanViewAppointments,
+          allowSalonCreateAppointments: tatoueur.salonCanCreateAppointments,
+        },
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return {
+        error: true,
+        message: errorMessage,
+      };
+    }
+  }
+
   /**
-   * Toggle pour le tatoueur lié : autoriser/refuser que le salon voit son agenda/RDV
+   *! Toggle pour le tatoueur lié : autoriser/refuser que le salon voit son agenda/RDV
    * 
    * Logique :
    * 1. Vérifie que l'appelant est un user_tatoueur
@@ -1133,6 +1180,7 @@ export class TatoueursService {
           role: true,
           salonId: true,
           appointmentBookingEnabled: true,
+          salonCanCreateAppointments: true,
         },
       });
 
@@ -1150,6 +1198,14 @@ export class TatoueursService {
         };
       }
 
+      if (appointmentBookingEnabled === true && linkedTatoueur?.salonCanCreateAppointments !== true) {
+        return {
+          error: true,
+          message:
+            "Ce tatoueur n'a pas autorisé votre salon à créer des RDV pour lui.",
+        };
+      }
+
       const updatedTatoueur = await this.prisma.user.update({
         where: { id: tatoueurUserId },
         data: {
@@ -1159,6 +1215,7 @@ export class TatoueursService {
           id: true,
           appointmentBookingEnabled: true,
           salonId: true,
+          salonCanCreateAppointments: true,
         },
       });
 

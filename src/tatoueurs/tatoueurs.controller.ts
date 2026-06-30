@@ -190,6 +190,16 @@ export class TatoueursController {
     });
   }
 
+  //! RECUPERER SES PERMISSIONS ACTUELLES
+  @UseGuards(JwtAuthGuard)
+  @Get('team-requests/permissions/current')
+  getCurrentPermissions(@Request() req: RequestWithUser) {
+    return this.tatoueursService.getCurrentPermissions({
+      tatoueurUserId: req.user.userId,
+      tatoueurRole: req.user.role,
+    });
+  }
+
   //! VOIR TOUS LES TATOUEURS ✅
   @Get()
   findAll() {

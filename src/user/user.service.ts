@@ -820,6 +820,84 @@ export class UserService {
   }
 
   //! -------------------------------------------------
+  //! GET USER PARAM BY ID
+  //! -------------------------------------------------
+  async getUserParamById({userId} : {userId: string}): Promise<CachedUser | null> {
+    const cacheKey = `user:param:${userId}`;
+
+    // Toujours invalider avant lecture pour forcer un profil à jour.
+    await this.cacheService.del(cacheKey);
+
+    // 2. D'abord récupérer le rôle de l'utilisateur
+    const userRole = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true }
+    });
+
+    if (!userRole) {
+      return null;
+    }
+
+    // 3. Récupérer les données selon le rôle
+    let user;
+
+    if (userRole.role === 'client') {
+      // Pour les clients : données de base + profil client
+      user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          phone: true,
+          image: true,
+          role: true,
+          updatedAt: true,
+          clientProfile: {
+            select: {
+              id: true,
+              pseudo: true,
+              birthDate: true,
+              city: true,
+              postalCode: true,
+              updatedAt: true
+            }
+          }
+        }
+      });
+    } else {
+      // Pour les salons : données existantes
+      user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          saasPlan: true,
+          email: true,
+          salonName: true,
+          firstName: true,
+          lastName: true,
+          phone: true,
+          address: true,
+          city: true,
+          postalCode: true,
+          role: true,
+          verifiedSalon: true,
+          isInspirationSalon: true,
+        }
+      });
+    }
+
+    // 4. Mettre en cache (TTL différent selon le rôle)
+    if (user) {
+      const ttl = userRole.role === 'client' ? 1800 : 3600; // 30min pour client, 1h pour salon
+      await this.cacheService.set(cacheKey, user, ttl);
+    }
+
+    return user as CachedUser | null;
+  }
+
+  //! -------------------------------------------------
   //! GET PHOTOS SALON
   //! -------------------------------------------------
   async getPhotosSalon({userId} : {userId: string}): Promise<Record<string, any>> {

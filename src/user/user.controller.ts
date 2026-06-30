@@ -208,6 +208,11 @@ export class UserController {
     return this.userService.updateHoursSalon({userId, salonHours: JSON.stringify(salonHours),}); // On appelle la méthode getUserById du service UserService
   }
 
+  @Get(":userId/param") // :userId est un paramètre dynamique qui sera récupéré dans la méthode getUser
+  getUserParam(@Param('userId') userId: string) { // On récupère le paramètre dynamique userId
+    return this.userService.getUserParamById({userId});
+  } 
+
   //! GET USER BY SLUG + LOCALISATION
   @Get(":nameSlug/:locSlug")
   getUserBySlugAndLocation(@Param('nameSlug') nameSlug: string, @Param('locSlug') locSlug: string) {
