@@ -3,11 +3,9 @@ import { ApiOperation, ApiResponse, ApiTags, ApiBearerAuth, ApiQuery } from '@ne
 import { AppointmentsService } from './appointments.service';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
-import { ProposeRescheduleDto, ClientRescheduleRequestDto } from './dto/reschedule-appointment.dto';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 // import { SaasLimitGuard } from 'src/saas/saas-limit.guard';
 // import { SaasLimit } from 'src/saas/saas-limit.decorator';
-import { CreateAppointmentRequestDto } from './dto/create-appointment-request.dto';
 import { SendCustomEmailDto } from './dto/send-custom-email.dto';
 import { RequestWithUser } from 'src/auth/jwt.strategy';
 import { CreateAppointmentConsumableDto } from './dto/create-appointment-consumable.dto';
@@ -63,14 +61,6 @@ export class AppointmentsController {
       rdvBody,
       clientUserId: resolvedClientUserId,
     });
-  }
-
-  //! DEMANDE DE RDV CLIENT
-  @ApiOperation({ summary: 'Créer une demande de RDV client (sans auth)' })
-  @ApiResponse({ status: 201, description: 'Demande créée, en attente de proposition de créneau.' })
-  @Post('appointment-request')
-  async createAppointmentRequest(@Body() dto: CreateAppointmentRequestDto) {
-    return await this.appointmentsService.createAppointmentRequest(dto);
   }
 
   //! VOIR TOUS LES RDV ✅
@@ -228,59 +218,6 @@ export class AppointmentsController {
     return this.appointmentsService.getSkinTones();
   }
 
-  //! VOIR LES DEMANDES DE RDV D'UN SALON ✅
-  @UseGuards(JwtAuthGuard)
-  @Get('appointment-requests')
-  async getAppointmentRequests(
-  @Request() req: RequestWithUser,
-  @Query('page') page?: string,
-  @Query('limit') limit?: string,
-  @Query('status') status?: string,
-  ) {
-    const userId = req.user.userId;
-    return await this.appointmentsService.getAppointmentRequestsBySalon( userId, Number(page) || 1, Number(limit) || 10, status);
-  }
-
-  //! RECUPERER LES DEMANDES DE RDV D'UN SALON (tous sauf les CONFIRMER)
-  @UseGuards(JwtAuthGuard)
-  @Get('appointment-requests/not-confirmed')
-  async getPendingAppointmentRequests(@Request() req: RequestWithUser) {
-    const userId = req.user.userId;
-    return await this.appointmentsService.getAppointmentRequestsBySalonNotConfirmed(userId);
-  }
-
-  //! RECUPERER LE NOMBRE DE DEMANDE EN ATTENTE
-  @Get('appointment-requests/not-confirmed/count/:userId')
-  async getPendingAppointmentRequestsCount(@Param('userId') userId: string) {
-    return await this.appointmentsService.getPendingAppointmentRequestsCount(userId);
-  }
-
-  //! PROPOSER UN CRENEAU POUR UNE DEMANDE DE RDV CLIENT
-  // @UseGuards(JwtAuthGuard)
-  // @Post('appointment-request/propose-slot/:requestId')
-  // async proposeSlotForAppointmentRequest(
-  //   @Param('requestId') requestId: string,
-  //   @Body() body: { slots: Array<{ from: Date; to: Date; tatoueurId?: string }>, message?: string }
-  // ) {
-  //   // Les dates sont envoyées en string, à convertir en Date
-  //   const { slots, message } = body;
-  //   if (!slots || slots.length === 0) {
-  //     throw new Error('At least one slot is required.');
-  //   }
-
-  //   const normalized = slots.map(s => ({
-  //     from: new Date(s.from),
-  //     to: new Date(s.to),
-  //     tatoueurId: s.tatoueurId,
-  //   }));
-
-  //   return await this.appointmentsService.proposeSlotForAppointmentRequest(
-  //     requestId,
-  //     normalized,
-  //     message,
-  //   );
-  // }
-
   //! TAUX DE REMPLISSAGE DES CRENEAUX PAR SEMAINE ✅
   @UseGuards(JwtAuthGuard)
   @Get('weekly-fill-rate')
@@ -422,30 +359,6 @@ export class AppointmentsController {
     return await this.appointmentsService.getTatoueurAppointments(tatoueurId);
   }
 
-  //! PROPOSER UNE REPROGRAMMATION DE RDV ✅
-  @UseGuards(JwtAuthGuard)
-  @Post('propose-reschedule')
-  async proposeReschedule(
-    @Request() req: RequestWithUser,
-    @Body() proposeData: ProposeRescheduleDto
-  ) {
-    console.log('Proposing reschedule with data:', proposeData); 
-    const userId = req.user.userId;
-    return await this.appointmentsService.proposeReschedule(proposeData, userId);
-  }
-
-  //! VALIDER TOKEN DE REPROGRAMMATION ✅
-  @Get('validate-reschedule-token/:token')
-  async validateRescheduleToken(@Param('token') token: string) {
-    return await this.appointmentsService.validateRescheduleToken(token);
-  }
-
-  //! RÉPONSE CLIENT POUR REPROGRAMMATION ✅
-  @Post('client-reschedule-response')
-  async handleClientRescheduleRequest(@Body() rescheduleData: ClientRescheduleRequestDto) {
-    return await this.appointmentsService.handleClientRescheduleRequest(rescheduleData);
-  }
-
   //! CONSOMMABLES - AJOUTER UN CONSOMMABLE A UN RDV
   @UseGuards(JwtAuthGuard)
   @Post(':appointmentId/consumables')
@@ -512,27 +425,6 @@ export class AppointmentsController {
       req.user.userId,
     );
   }
-
-  // //! VALIDER TOKEN DE DEMANDE
-  // @Get('validate-appointment-request-token/:token')
-  // async validateAppointmentRequestToken(@Param('token') token: string) {
-  //   return await this.appointmentsService.validateAppointmentRequestToken(token);
-  // }
-
-  // //! REPONSE CLIENT POUR DEMANDE DE RDV (ACCEPTER OU DECLINER)
-  // @Post('appointment-request-response')
-  // async handleAppointmentRequestResponse(@Body() body: { token: string; action: 'accept' | 'decline'; slotId: string; reason?: string }) {
-  //   const { token, action, slotId, reason } = body;
-  //   return await this.appointmentsService.handleAppointmentRequestResponse(token, action, slotId, reason);
-  // }
-  
-  // //! SALON : REFUSER LA DEMANDE DE RDV D'UN CLIENT
-  // @UseGuards(JwtAuthGuard)
-  // @Patch('decline-appointment-request')
-  // async declineAppointmentRequest(@Body() body: { appointmentRequestId: string; reason: string }) {
-  //   const { appointmentRequestId, reason } = body;
-  //   return await this.appointmentsService.declineAppointmentRequest(appointmentRequestId, reason);
-  // }
 
   //! ENVOYER UN EMAIL PERSONNALISÉ À UN CLIENT ✅
   @UseGuards(JwtAuthGuard)

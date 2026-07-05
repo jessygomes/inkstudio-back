@@ -5,6 +5,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { UserService } from './user.service';
 import { PrismaService } from 'src/database/prisma.service';
 import { CacheService } from 'src/redis/cache.service';
+import { MailService } from 'src/email/mailer.service';
 
 // Mock factories
 const createPrismaMock = () => {
@@ -41,6 +42,11 @@ const createCacheMock = () => ({
   set: jest.fn(),
   del: jest.fn(),
   delPattern: jest.fn(),
+});
+
+const createMailMock = () => ({
+  sendCustomEmail: jest.fn(),
+  sendPublicProfileContact: jest.fn(),
 });
 
 // Test data builders
@@ -120,10 +126,12 @@ describe('UserService', () => {
   let service: UserService;
   let prisma: ReturnType<typeof createPrismaMock>;
   let cache: ReturnType<typeof createCacheMock>;
+  let mail: ReturnType<typeof createMailMock>;
 
   beforeEach(async () => {
     prisma = createPrismaMock();
     cache = createCacheMock();
+    mail = createMailMock();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -135,6 +143,10 @@ describe('UserService', () => {
         {
           provide: CacheService,
           useValue: cache,
+        },
+        {
+          provide: MailService,
+          useValue: mail,
         },
       ],
     }).compile();

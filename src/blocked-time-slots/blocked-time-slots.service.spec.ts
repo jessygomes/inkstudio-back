@@ -17,9 +17,6 @@ const createPrismaMock = () => ({
   tatoueur: {
     findUnique: jest.fn(),
   },
-  proposedSlot: {
-    findMany: jest.fn(),
-  },
 });
 
 // DTO and data builders
@@ -49,24 +46,6 @@ const buildBlockedSlot = (overrides?: Partial<any>) => ({
   tatoueur: {
     id: 'tatoueur-1',
     name: 'Jean Dupont',
-  },
-  ...overrides,
-});
-
-const buildProposedSlot = (overrides?: Partial<any>) => ({
-  id: 'proposed-slot-1',
-  tatoueurId: 'tatoueur-1',
-  status: 'PENDING',
-  from: new Date('2026-02-20T10:00:00Z'),
-  to: new Date('2026-02-20T12:00:00Z'),
-  appointmentRequest: {
-    id: 'request-1',
-    clientFirstname: 'Alice',
-    clientLastname: 'Martin',
-    clientEmail: 'alice@example.com',
-    status: 'PENDING',
-    prestation: 'Tattoo Design',
-    createdAt: new Date('2026-02-10T00:00:00Z'),
   },
   ...overrides,
 });
@@ -672,130 +651,6 @@ describe('BlockedTimeSlotsService', () => {
     });
   });
 
-  describe('getProposedSlotsForSalon', () => {
-    it('should retrieve proposed slots for a tattoo artist within date range', async () => {
-      const slots = [
-        buildProposedSlot(),
-        buildProposedSlot({ id: 'proposed-slot-2' }),
-      ];
-      prismaMock.proposedSlot.findMany.mockResolvedValue(slots);
-
-      const result = await service.getProposedSlotsForSalon(
-        'tatoueur-1',
-        '2026-02-20T00:00:00Z',
-        '2026-02-28T23:59:59Z',
-      );
-
-      expect(result).toEqual(slots);
-      expect(result).toHaveLength(2);
-      expect(prismaMock.proposedSlot.findMany).toHaveBeenCalledWith({
-        where: {
-          tatoueurId: 'tatoueur-1',
-          status: 'PENDING',
-          from: {
-            gte: new Date('2026-02-20T00:00:00Z'),
-          },
-          to: {
-            lte: new Date('2026-02-28T23:59:59Z'),
-          },
-        },
-        include: {
-          appointmentRequest: {
-            select: {
-              id: true,
-              clientFirstname: true,
-              clientLastname: true,
-              clientEmail: true,
-              status: true,
-              prestation: true,
-              createdAt: true,
-            },
-          },
-        },
-        orderBy: { from: 'asc' },
-      });
-    });
-
-    it('should return empty array when no proposed slots exist', async () => {
-      prismaMock.proposedSlot.findMany.mockResolvedValue([]);
-
-      const result = await service.getProposedSlotsForSalon(
-        'tatoueur-1',
-        '2026-02-20T00:00:00Z',
-        '2026-02-28T23:59:59Z',
-      );
-
-      expect(result).toEqual([]);
-    });
-
-    it('should only fetch PENDING proposed slots', async () => {
-      prismaMock.proposedSlot.findMany.mockResolvedValue([]);
-
-      await service.getProposedSlotsForSalon(
-        'tatoueur-1',
-        '2026-02-20T00:00:00Z',
-        '2026-02-28T23:59:59Z',
-      );
-
-      const callArgs = prismaMock.proposedSlot.findMany.mock.calls[0][0];
-      expect(callArgs.where.status).toBe('PENDING');
-    });
-
-    it('should include appointment request details', async () => {
-      const slots = [buildProposedSlot()];
-      prismaMock.proposedSlot.findMany.mockResolvedValue(slots);
-
-      const result = await service.getProposedSlotsForSalon(
-        'tatoueur-1',
-        '2026-02-20T00:00:00Z',
-        '2026-02-28T23:59:59Z',
-      );
-
-      expect(result[0].appointmentRequest).toBeDefined();
-      expect(result[0].appointmentRequest.clientFirstname).toBe('Alice');
-      expect(result[0].appointmentRequest.clientEmail).toBe(
-        'alice@example.com',
-      );
-    });
-
-    it('should throw error on database failure', async () => {
-      prismaMock.proposedSlot.findMany.mockRejectedValue(
-        new Error('Database error'),
-      );
-
-      await expect(
-        service.getProposedSlotsForSalon(
-          'tatoueur-1',
-          '2026-02-20T00:00:00Z',
-          '2026-02-28T23:59:59Z',
-        ),
-      ).rejects.toThrow('Erreur lors de la récupération des créneaux proposés');
-    });
-
-    it('should order proposed slots by from date ascending', async () => {
-      const slots = [
-        buildProposedSlot({ from: new Date('2026-02-20T10:00:00Z') }),
-        buildProposedSlot({
-          from: new Date('2026-02-19T10:00:00Z'),
-          id: 'proposed-slot-2',
-        }),
-        buildProposedSlot({
-          from: new Date('2026-02-21T10:00:00Z'),
-          id: 'proposed-slot-3',
-        }),
-      ];
-      prismaMock.proposedSlot.findMany.mockResolvedValue(slots);
-
-      const result = await service.getProposedSlotsForSalon(
-        'tatoueur-1',
-        '2026-02-19T00:00:00Z',
-        '2026-02-21T23:59:59Z',
-      );
-
-      expect(result).toHaveLength(3);
-    });
-  });
-
   describe('Edge cases and error handling', () => {
     it('should handle multiple blocked slot operations sequentially', async () => {
       const slot1 = buildBlockedSlot();
@@ -852,19 +707,6 @@ describe('BlockedTimeSlotsService', () => {
       expect(result.blockedSlots).toBeDefined();
       expect(result.blockedSlots?.[0].reason).toBeNull();
       expect(result.blockedSlots?.[0].tatoueurId).toBeNull();
-    });
-
-    it('should handle empty proposed slots list', async () => {
-      prismaMock.proposedSlot.findMany.mockResolvedValue([]);
-
-      const result = await service.getProposedSlotsForSalon(
-        'tatoueur-1',
-        '2026-02-20T00:00:00Z',
-        '2026-02-28T23:59:59Z',
-      );
-
-      expect(result).toEqual([]);
-      expect(Array.isArray(result)).toBe(true);
     });
 
     it('should handle complex date range scenarios', async () => {

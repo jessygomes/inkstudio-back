@@ -318,6 +318,37 @@ export class MailService {
     );
   }
 
+  //! MAIL DE CONTACT DEPUIS LE PROFIL PUBLIC
+  async sendPublicProfileContact(
+    to: string,
+    data: EmailTemplateData,
+    salonName?: string,
+    replyTo?: string,
+    userId?: string,
+  ): Promise<MailgunResponse> {
+    const subject = `Nouveau message de contact - ${salonName || data.salonName || 'Inkera Studio'}`;
+    let dataWithSalon = { ...data, salonName: salonName || data.salonName };
+
+    if (userId) {
+      const salonColors = await this.getSalonColors(userId);
+      dataWithSalon = {
+        ...dataWithSalon,
+        colorProfile: salonColors.colorProfile,
+        colorProfileBis: salonColors.colorProfileBis,
+      };
+    }
+
+    const html = this.emailTemplateService.generatePublicContactEmail(dataWithSalon);
+
+    return await this.sendMail(
+      to,
+      subject,
+      html,
+      salonName || 'Tattoo Studio',
+      replyTo,
+    );
+  }
+
   //! MAIL DE NOTIFICATION DE RDV EN ATTENTE
   async sendPendingAppointmentNotification(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
     const subject = `Rendez-vous en attente de confirmation${salonName ? ` - ${salonName}` : ''}`;

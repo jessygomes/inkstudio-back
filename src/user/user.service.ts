@@ -2,7 +2,9 @@ import { AgendaMode } from '@prisma/client';
 import {Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CacheService } from 'src/redis/cache.service';
+import { MailService } from 'src/email/mailer.service';
 import { CachedUser, LinkedSalon, LinkedTatoueurUser, SlugUser } from 'utils/type';
+import { SendPublicContactEmailDto } from './dto/send-public-contact-email.dto';
 // import { User, Prisma } from '@prisma/client';
 
 type SlugUserCandidate = Pick<SlugUser, 'id' | 'role' | 'salonName' | 'city' | 'postalCode'>;
@@ -11,7 +13,98 @@ type SlugUserCandidate = Pick<SlugUser, 'id' | 'role' | 'salonName' | 'city' | '
 export class UserService {
   // Injecter le service Prisma dans le service User
   constructor(private prisma: PrismaService, 
-    private cacheService: CacheService) {}
+    private cacheService: CacheService,
+    private readonly mailService: MailService) {}
+
+  private escapeHtml(value: string): string {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  async sendPublicContactEmail({
+    targetUserId,
+    payload,
+    requesterIp,
+  }: {
+    targetUserId: string;
+    payload: SendPublicContactEmailDto;
+    requesterIp?: string;
+  }) {
+    try {
+      const targetUser = await this.prisma.user.findUnique({
+        where: { id: targetUserId },
+        select: {
+          id: true,
+          role: true,
+          email: true,
+          salonName: true,
+          firstName: true,
+          lastName: true,
+        },
+      });
+
+      if (!targetUser) {
+        return {
+          error: true,
+          message: 'Profil introuvable.',
+        };
+      }
+
+      const allowedRoles = ['user_salon', 'user_tatoueur'];
+      if (!allowedRoles.includes(targetUser.role)) {
+        return {
+          error: true,
+          message: 'Ce profil ne peut pas recevoir de messages de contact.',
+        };
+      }
+
+      if (!targetUser.email) {
+        return {
+          error: true,
+          message: 'Aucune adresse email de destination n\'est configurée pour ce profil.',
+        };
+      }
+
+      const requesterFullName = `${payload.firstName} ${payload.lastName}`.trim();
+      const profileDisplayName = targetUser.salonName?.trim()
+        || `${targetUser.firstName ?? ''} ${targetUser.lastName ?? ''}`.trim()
+        || 'ce profil';
+
+      await this.mailService.sendPublicProfileContact(
+        targetUser.email,
+        {
+          recipientName: profileDisplayName,
+          salonName: profileDisplayName,
+          publicContactDetails: {
+            senderFullName: this.escapeHtml(requesterFullName),
+            senderEmail: this.escapeHtml(payload.email),
+            bodyPart: this.escapeHtml(payload.bodyPart),
+            projectDescription: this.escapeHtml(payload.projectDescription),
+            sourceIp: requesterIp ? this.escapeHtml(requesterIp) : undefined,
+          },
+        },
+        profileDisplayName,
+        payload.email,
+        targetUserId,
+      );
+
+      return {
+        error: false,
+        message: 'Votre message a ete envoye avec succes.',
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+
+      return {
+        error: true,
+        message: `Envoi impossible pour le moment: ${errorMessage}`,
+      };
+    }
+  }
 
   private normalizeStyles(styleInput: unknown): string[] {
     return Array.isArray(styleInput)

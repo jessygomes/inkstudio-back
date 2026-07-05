@@ -57,6 +57,9 @@ const createEmailTemplateServiceMock = () => ({
   generateAppointmentCancellationEmail: jest
     .fn()
     .mockReturnValue('<html>Cancellation</html>'),
+  generatePublicContactEmail: jest
+    .fn()
+    .mockReturnValue('<html>Public contact</html>'),
   generateCustomEmail: jest.fn().mockReturnValue('<html>Custom</html>'),
   generatePendingAppointmentNotificationEmail: jest
     .fn()
@@ -624,6 +627,66 @@ describe('MailService', () => {
 
       expect(result).toEqual(buildMailgunResponse());
       expect(emailTemplateService.generateCustomEmail).toHaveBeenCalled();
+    });
+  });
+
+  describe('sendPublicProfileContact', () => {
+    it('should generate the dedicated public contact template', async () => {
+      const data = buildEmailTemplateData({
+        publicContactDetails: {
+          senderFullName: 'Alex Martin',
+          senderEmail: 'alex@example.com',
+          bodyPart: 'Avant-bras',
+          projectDescription: 'Projet floral fin',
+        },
+      });
+
+      const result = await service.sendPublicProfileContact(
+        'salon@example.com',
+        data,
+        'My Salon',
+        'alex@example.com',
+      );
+
+      expect(result).toEqual(buildMailgunResponse());
+      expect(
+        emailTemplateService.generatePublicContactEmail,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          salonName: 'My Salon',
+        }),
+      );
+    });
+
+    it('should include salon colors when userId is provided', async () => {
+      const data = buildEmailTemplateData({
+        publicContactDetails: {
+          senderFullName: 'Alex Martin',
+          senderEmail: 'alex@example.com',
+          bodyPart: 'Avant-bras',
+          projectDescription: 'Projet floral fin',
+        },
+      });
+      const userWithColors = buildUserWithColors();
+
+      prisma.user.findUnique.mockResolvedValue(userWithColors);
+
+      await service.sendPublicProfileContact(
+        'salon@example.com',
+        data,
+        'My Salon',
+        'alex@example.com',
+        'user-1',
+      );
+
+      expect(
+        emailTemplateService.generatePublicContactEmail,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          colorProfile: '#FF5733',
+          colorProfileBis: '#33FF57',
+        }),
+      );
     });
   });
 

@@ -77,7 +77,6 @@ model User {
   appointments              Appointment[]
   appointmentsAsPerformer    Appointment[]        @relation("AppointmentPerformer")
   appointmentConsumables    AppointmentConsumable[]
-  AppointmentRequest        AppointmentRequest[]
   blockedTimeSlots          BlockedTimeSlot[]
 
   Client                    Client[]
@@ -249,7 +248,6 @@ model Tatoueur {
   blockedTimeSlots   BlockedTimeSlot[]
   Portfolio          Portfolio[]
   Flash              Flash[]
-  rescheduleRequests RescheduleRequest[]
   user               User                @relation(fields: [userId], references: [id])
   TattooHistory      TattooHistory[]
 }
@@ -295,7 +293,6 @@ model Appointment {
 
   FollowUpRequest    FollowUpRequest?
   FollowUpSubmission FollowUpSubmission?
-  rescheduleRequests RescheduleRequest[]
   tattooDetail       TattooDetail?
   appointmentConsumables AppointmentConsumable[]
   TimeSlot           TimeSlot[]
@@ -669,7 +666,7 @@ model SaasPlanDetails {
   id                 String         @id @default(cuid())
   userId             String         @unique
   currentPlan        SaasPlan       @default(FREE)
-  agendaMode         AgendaMode     @default(GLOBAL)
+  agendaMode         AgendaMode     @default(PAR_TATOUEUR)
   planStatus         SaasPlanStatus @default(ACTIVE)
   startDate          DateTime       @default(now())
   endDate            DateTime?
@@ -1064,73 +1061,3 @@ enum FollowUpStatus {
 }
 
 
-//! ------------------------------------------------------------------------------------------------------------------------
-//! MODEL POUR LES DEMANDES DE RDV (avant confirmation)
-model AppointmentRequest {
-  id              String         @id @default(cuid())
-  userId          String
-  prestation      PrestationType
-  clientFirstname String
-  clientLastname  String
-  clientEmail     String
-  clientPhone     String?
-  clientBirthDate DateTime?
-  availability    String
-  details         String?
-  message         String?
-  status          String         @default("PENDING")
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  proposedDate    DateTime?
-  proposedFrom    DateTime?
-  proposedTo      DateTime?
-  tatoueurId      String?
-  token           String?        @unique
-  tokenExpiresAt  DateTime?
-  user            User           @relation(fields: [userId], references: [id])
-  slots           ProposedSlot[]
-}
-
-model ProposedSlot {
-  id                   String             @id @default(cuid())
-  appointmentRequestId String
-  from                 DateTime
-  to                   DateTime
-  tatoueurId           String?
-  status               String             @default("PENDING")
-  selectedAt           DateTime?
-  createdAt            DateTime           @default(now())
-  appointmentRequest   AppointmentRequest @relation(fields: [appointmentRequestId], references: [id])
-
-  @@index([appointmentRequestId])
-}
-
-//! MODEL POUR LES DEMANDES DE REPLANIFICATION DE RDV
-model RescheduleRequest {
-  id            String           @id @default(cuid())
-  appointmentId String
-  token         String           @unique
-  reason        String?
-  newTatoueurId String?
-  status        RescheduleStatus @default(PENDING)
-  clientMessage String?
-  expiresAt     DateTime
-  processedAt   DateTime?
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
-  appointment   Appointment      @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
-  newTatoueur   Tatoueur?        @relation(fields: [newTatoueurId], references: [id])
-
-  @@index([token])
-  @@index([appointmentId])
-  @@index([status])
-  @@index([expiresAt])
-}
-
-
-enum RescheduleStatus {
-  PENDING
-  ACCEPTED
-  DECLINED
-  EXPIRED
-}

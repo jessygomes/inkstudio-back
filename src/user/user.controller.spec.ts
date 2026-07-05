@@ -1,7 +1,8 @@
- 
 import { Test, TestingModule } from '@nestjs/testing';
 import { UserController } from './user.controller';
 import { UserService } from './user.service';
+import { PublicContactThrottleGuard } from './public-contact-throttle.guard';
+import { PublicContactRateLimiterService } from './public-contact-rate-limiter.service';
 
 describe('UserController', () => {
   let controller: UserController;
@@ -21,6 +22,17 @@ describe('UserController', () => {
             toggleInspirationSalon: jest.fn(),
           },
         },
+        {
+          provide: PublicContactRateLimiterService,
+          useValue: {
+            consume: jest.fn().mockResolvedValue({
+              allowed: true,
+              retryAfterSeconds: 0,
+              blockedBy: null,
+            }),
+          },
+        },
+        PublicContactThrottleGuard,
       ],
     }).compile();
 

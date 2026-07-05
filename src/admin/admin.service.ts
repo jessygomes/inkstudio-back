@@ -565,21 +565,6 @@ export class AdminService {
           });
         }
 
-        // Nettoyage autour des demandes de RDV avant suppression.
-        const appointmentRequests = await tx.appointmentRequest.findMany({
-          where: { userId },
-          select: { id: true },
-        });
-        const appointmentRequestIds = appointmentRequests.map((request) => request.id);
-
-        if (appointmentRequestIds.length > 0) {
-          await tx.proposedSlot.deleteMany({
-            where: { appointmentRequestId: { in: appointmentRequestIds } },
-          });
-        }
-
-        await tx.appointmentRequest.deleteMany({ where: { userId } });
-
         // Nettoyage des RDV où l'utilisateur est le salon propriétaire.
         const appointments = await tx.appointment.findMany({
           where: { userId },
@@ -592,7 +577,6 @@ export class AdminService {
           await tx.followUpRequest.deleteMany({ where: { appointmentId: { in: appointmentIds } } });
           await tx.followUpSubmission.deleteMany({ where: { appointmentId: { in: appointmentIds } } });
           await tx.appointmentConsumable.deleteMany({ where: { appointmentId: { in: appointmentIds } } });
-          await tx.rescheduleRequest.deleteMany({ where: { appointmentId: { in: appointmentIds } } });
           await tx.tattooDetail.deleteMany({ where: { appointmentId: { in: appointmentIds } } });
           await tx.timeSlot.deleteMany({ where: { appointmentId: { in: appointmentIds } } });
           await tx.conversation.deleteMany({ where: { appointmentId: { in: appointmentIds } } });

@@ -1,7 +1,5 @@
 import { Module } from '@nestjs/common';
 import { UserModule } from './user/user.module';
-import { UserController } from './user/user.controller';
-import { UserService } from './user/user.service';
 import { PrismaService } from './database/prisma.service';
 import { AuthModule } from './auth/auth.module';
 import { ConfigModule } from '@nestjs/config';
@@ -85,7 +83,6 @@ import { SalonAnalyticsModule } from './salon-analytics/salon-analytics.module';
     SalonAnalyticsModule,
   ],
   controllers: [
-    UserController,
     AppointmentsController,
     ClientsController,
     StocksController,
@@ -95,7 +92,6 @@ import { SalonAnalyticsModule } from './salon-analytics/salon-analytics.module';
     PiercingPriceController,
   ],
   providers: [
-    UserService,
     PrismaService,
     AppointmentsService,
     ClientsService,

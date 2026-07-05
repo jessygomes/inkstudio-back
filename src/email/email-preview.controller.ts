@@ -88,6 +88,14 @@ export class EmailPreviewController {
         tatoueurName: 'Luna',
         cancellationReason: 'Contrainte personnelle',
       },
+      publicContactDetails: {
+        senderFullName: 'Alex Martin',
+        senderEmail: 'alex@example.com',
+        bodyPart: 'Avant-bras',
+        projectDescription:
+          'Bonjour, je souhaiterais discuter d un projet floral fin en noir et gris avec quelques references deja preparees.',
+        sourceIp: '203.0.113.42',
+      },
       followUpDetails: {
         appointmentDate: 'Lundi 11 mai 2026',
         daysSince: 7,
@@ -131,9 +139,11 @@ export class EmailPreviewController {
         return this.emailTemplateService.generateAutoConfirmedAppointmentEmail(baseData);
       case 'client-email-verification':
         return this.emailTemplateService.generateClientEmailVerificationEmail(baseData);
+      case 'public-contact':
+        return this.emailTemplateService.generatePublicContactEmail(baseData);
       default:
         throw new BadRequestException(
-          `Unknown template '${template}'. Try: appointment-confirmation, new-appointment-notification, email-verification, trial-ending-soon, password-reset, followup-response, cicatrisation-followup, feedback-request, reschedule-proposal, reschedule-confirmation, retouches-reminder, password-change-confirmation, pending-appointment, auto-confirmed-appointment, client-email-verification`,
+          `Unknown template '${template}'. Try: appointment-confirmation, new-appointment-notification, email-verification, trial-ending-soon, password-reset, followup-response, cicatrisation-followup, feedback-request, reschedule-proposal, reschedule-confirmation, retouches-reminder, password-change-confirmation, pending-appointment, auto-confirmed-appointment, client-email-verification, public-contact`,
         );
     }
   }

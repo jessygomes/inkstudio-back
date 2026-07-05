@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Query, UseGuards, Request } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards, Request } from '@nestjs/common';
 import { UserService } from './user.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateAppointmentBookingDto, UpdateConfirmationSettingDto } from './dto/update-confirmation-setting.dto';
@@ -7,6 +7,8 @@ import { GetUsersDto } from './dto/get-users.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RequestWithUser } from '../auth/jwt.strategy';
 import { UpdateUserClientDto } from './dto/update-userClient.dto';
+import { SendPublicContactEmailDto } from './dto/send-public-contact-email.dto';
+import { PublicContactThrottleGuard } from './public-contact-throttle.guard';
 
 @Controller('users')
 export class UserController {
@@ -190,6 +192,21 @@ export class UserController {
   }
 
   //! 3️⃣ ROUTES AVEC PARAMÈTRES COMPLEXES
+  //! ENVOI D'UN MESSAGE DE CONTACT DEPUIS LE PROFIL PUBLIC
+  @UseGuards(PublicContactThrottleGuard)
+  @Post(':userId/contact')
+  async sendPublicContactEmail(
+    @Param('userId') userId: string,
+    @Body() body: SendPublicContactEmailDto,
+    @Request() req: { ip?: string },
+  ): Promise<{ error: boolean; message: string }> {
+    return await this.userService.sendPublicContactEmail({
+      targetUserId: userId,
+      payload: body,
+      requesterIp: req?.ip,
+    });
+  }
+
   //! RECUPERER LES PHOTOS DU SALON
   @Get(":userId/photos")
   getPhotosSalon(@Param('userId') userId: string) {

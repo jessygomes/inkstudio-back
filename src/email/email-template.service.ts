@@ -89,6 +89,15 @@ export interface EmailTemplateData {
   };
   customMessage?: string;
 
+  // Message de contact envoyé depuis un profil public
+  publicContactDetails?: {
+    senderFullName: string;
+    senderEmail: string;
+    bodyPart: string;
+    projectDescription: string;
+    sourceIp?: string;
+  };
+
   // Notification admin nouvel utilisateur
   newUserDetails?: {
     userEmail: string;
@@ -1021,6 +1030,58 @@ export class EmailTemplateService {
       content,
       data.subject,
       'Inkera Studio',
+    );
+  }
+
+  /**
+   *! Template pour message de contact reçu depuis le profil public
+   */
+  generatePublicContactEmail(data: EmailTemplateData): string {
+    const details = data.publicContactDetails;
+
+    const content = `
+      <div class="content">
+        <div class="greeting">Nouveau message depuis votre profil public 👋</div>
+
+        <div class="message">
+          <p>Vous avez reçu une nouvelle demande de contact pour <strong>${data.salonName || 'votre profil'}</strong>.</p>
+        </div>
+
+        <div class="details-card">
+          <div class="details-title">📩 Détails du message</div>
+          <ul class="details-list">
+            <li>
+              <span class="detail-label">👤 Nom :</span>
+              <span class="detail-value">${details?.senderFullName || 'Non renseigné'}</span>
+            </li>
+            <li>
+              <span class="detail-label">📧 Email :</span>
+              <span class="detail-value">${details?.senderEmail || 'Non renseigné'}</span>
+            </li>
+            <li>
+              <span class="detail-label">📍 Partie du corps :</span>
+              <span class="detail-value">${details?.bodyPart || 'Non renseigné'}</span>
+            </li>
+          </ul>
+        </div>
+
+        <div style="background: transparent; border: 2px solid #e5e7eb; border-radius: 12px; padding: 25px; margin: 25px 0;">
+          <div style="font-family: 'Montserrat Alternates', sans-serif; font-size: 18px; font-weight: 600; margin-bottom: 15px; color: #171717;">📝 Description du projet</div>
+          <div style="margin-top: 12px; line-height: 1.8; white-space: pre-wrap; color: #171717; font-family: 'Exo 2', sans-serif; font-size: 16px;">${details?.projectDescription || ''}</div>
+          ${details?.sourceIp ? `<div style="margin-top: 16px; font-size: 12px; color: #6b7280;">IP source: ${details.sourceIp}</div>` : ''}
+        </div>
+
+        <div class="message">
+          <p>Vous pouvez répondre directement à cet email pour reprendre contact avec la personne.</p>
+          <p style="margin-top: 12px;"><strong>L'équipe Inkera Studio ✨</strong></p>
+        </div>
+      </div>
+    `;
+
+    return this.getBaseTemplate(
+      content,
+      `Nouveau message de contact - ${data.salonName || 'Inkera Studio'}`,
+      data.salonName || 'Inkera Studio',
     );
   }
 
