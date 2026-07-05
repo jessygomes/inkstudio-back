@@ -21,7 +21,7 @@ export class UserService {
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
-      .replace(/\"/g, '&quot;')
+      .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
   }
 
@@ -94,7 +94,7 @@ export class UserService {
 
       return {
         error: false,
-        message: 'Votre message a ete envoye avec succes.',
+        message: 'Votre message a été envoyé avec succès.',
       };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
