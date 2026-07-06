@@ -96,6 +96,7 @@ export class FlashService {
           title: createFlashDto.title,
           style: normalizedStyles,
           dimension,
+          appointmentDurationMinutes: Math.max(15, Math.round(createFlashDto.appointmentDurationMinutes)),
           imageUrl: createFlashDto.imageUrl,
           price: createFlashDto.price,
           description: createFlashDto.description,
@@ -136,6 +137,7 @@ export class FlashService {
             imageUrl: string;
             description: string | null;
             price: number;
+            appointmentDurationMinutes: number;
             isAvailable: boolean;
           }[];
           pagination: {
@@ -236,6 +238,7 @@ export class FlashService {
             imageUrl: string;
             description: string | null;
             price: number;
+            appointmentDurationMinutes: number;
             isAvailable: boolean;
           }[];
           pagination: {

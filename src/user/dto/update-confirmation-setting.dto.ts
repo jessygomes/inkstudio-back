@@ -1,5 +1,5 @@
 import { AgendaMode } from '@prisma/client';
-import { IsBoolean, IsEnum } from 'class-validator';
+import { IsBoolean, IsEnum, IsInt, IsNumber, IsOptional, Min, ValidateIf } from 'class-validator';
 
 export class UpdateConfirmationSettingDto {
   @IsBoolean()
@@ -7,6 +7,21 @@ export class UpdateConfirmationSettingDto {
 }
 
 export class UpdateAppointmentBookingDto {
+  @IsOptional()
   @IsEnum(AgendaMode)
-  agendaMode: AgendaMode;
+  agendaMode?: AgendaMode;
+
+  @IsOptional()
+  @IsInt()
+  @Min(15)
+  projectAppointmentDurationMinutes?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  projectAppointmentIsFree?: boolean;
+
+  @ValidateIf((o: UpdateAppointmentBookingDto) => o.projectAppointmentIsFree === false)
+  @IsNumber()
+  @Min(0)
+  projectAppointmentPrice?: number;
 }

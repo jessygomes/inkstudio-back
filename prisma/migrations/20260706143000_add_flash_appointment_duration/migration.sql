@@ -1,0 +1,2 @@
+ALTER TABLE "Flash"
+ADD COLUMN "appointmentDurationMinutes" INTEGER NOT NULL DEFAULT 60;

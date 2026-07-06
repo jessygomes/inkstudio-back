@@ -1,4 +1,4 @@
-import { AgendaMode } from '@prisma/client';
+import { AgendaMode, SaasPlan } from '@prisma/client';
 import {Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CacheService } from 'src/redis/cache.service';
@@ -122,9 +122,15 @@ export class UserService {
   private buildAppointmentBookingSettings({
     role,
     agendaMode,
+    projectAppointmentDurationMinutes,
+    projectAppointmentIsFree,
+    projectAppointmentPrice,
   }: {
     role?: string | null;
     agendaMode?: AgendaMode | null;
+        projectAppointmentDurationMinutes?: number | null; // Duration in minutes
+        projectAppointmentIsFree?: boolean | null; // Is the appointment free?
+        projectAppointmentPrice?: number | null; // Price of the appointment
   }) {
     const effectiveAgendaMode =
       role === 'user_salon'
@@ -133,8 +139,24 @@ export class UserService {
           ? AgendaMode.GLOBAL
           : (agendaMode ?? AgendaMode.GLOBAL);
 
+    const canConfigureProjectSettings = role === 'user_salon' || role === 'user_tatoueur';
+    const normalizedDuration =
+      typeof projectAppointmentDurationMinutes === 'number'
+        ? Math.max(15, Math.round(projectAppointmentDurationMinutes))
+        : 60;
+    const normalizedIsFree = projectAppointmentIsFree ?? true;
+    const normalizedPrice =
+      normalizedIsFree
+        ? 0
+        : typeof projectAppointmentPrice === 'number'
+          ? Math.max(0, Number(projectAppointmentPrice))
+          : null;
+
     return {
       agendaMode: effectiveAgendaMode,
+      projectAppointmentDurationMinutes: canConfigureProjectSettings ? normalizedDuration : null,
+      projectAppointmentIsFree: canConfigureProjectSettings ? normalizedIsFree : true,
+      projectAppointmentPrice: canConfigureProjectSettings ? normalizedPrice : null,
     };
   }
 
@@ -461,6 +483,9 @@ export class UserService {
         prestations: true,
         style: true,
         appointmentBookingEnabled: true,
+        projectAppointmentDurationMinutes: true,
+        projectAppointmentIsFree: true,
+        projectAppointmentPrice: true,
         addConfirmationEnabled: true,
         colorProfile: true,
         colorProfileBis: true,
@@ -725,6 +750,9 @@ export class UserService {
       website: null,
       isLinkedUser: false,
       profileUserId: null,
+      projectAppointmentDurationMinutes: null,
+      projectAppointmentIsFree: true,
+      projectAppointmentPrice: 0,
     }));
 
     return {
@@ -884,6 +912,9 @@ export class UserService {
           verifiedSalon: true,
           prestations: true,
           style: true,
+          projectAppointmentDurationMinutes: true,
+          projectAppointmentIsFree: true,
+          projectAppointmentPrice: true,
           isInspirationSalon: true,
           Tatoueur: {
             select: {
@@ -977,6 +1008,9 @@ export class UserService {
           role: true,
           verifiedSalon: true,
           isInspirationSalon: true,
+          projectAppointmentDurationMinutes: true,
+          projectAppointmentIsFree: true,
+          projectAppointmentPrice: true,
         }
       });
     }
@@ -1176,8 +1210,6 @@ export class UserService {
     return user;
   }
 
-  
-
   //! -------------------------------------------------
   //! UPDATE HOURS SALON
   //! -------------------------------------------------
@@ -1348,6 +1380,9 @@ export class UserService {
       // 1. Vérifier dans Redis
       const cachedSetting = await this.cacheService.get<{
         agendaMode: AgendaMode;
+        projectAppointmentDurationMinutes: number | null;
+        projectAppointmentIsFree: boolean;
+        projectAppointmentPrice: number | null;
       }>(cacheKey);
       
       if (cachedSetting) {
@@ -1364,6 +1399,9 @@ export class UserService {
         },
         select: {
           role: true,
+          projectAppointmentDurationMinutes: true,
+          projectAppointmentIsFree: true,
+          projectAppointmentPrice: true,
           saasPlanDetails: {
             select: {
               agendaMode: true,
@@ -1372,10 +1410,23 @@ export class UserService {
         },
       });
 
-      const setting = user
+      const typedUser = user as {
+        role?: string | null;
+        projectAppointmentDurationMinutes?: number | null;
+        projectAppointmentIsFree?: boolean | null;
+        projectAppointmentPrice?: number | null;
+        saasPlanDetails?: {
+          agendaMode?: AgendaMode | null;
+        } | null;
+      } | null;
+
+      const setting = typedUser
         ? this.buildAppointmentBookingSettings({
-            role: user.role,
-            agendaMode: user.saasPlanDetails?.agendaMode,
+            role: typedUser.role,
+            agendaMode: typedUser.saasPlanDetails?.agendaMode,
+            projectAppointmentDurationMinutes: typedUser.projectAppointmentDurationMinutes,
+            projectAppointmentIsFree: typedUser.projectAppointmentIsFree,
+            projectAppointmentPrice: typedUser.projectAppointmentPrice,
           })
         : null;
 
@@ -1402,7 +1453,19 @@ export class UserService {
   //! METTRE À JOUR : AGENDA GLOBAL OU AGENDA TATOUEUR
 
   //! ------------------------------------------------------------------------------
-  async updateAppointmentBooking({userId, agendaMode}: {userId: string, agendaMode: AgendaMode}) {
+  async updateAppointmentBooking({
+    userId,
+    agendaMode,
+    projectAppointmentDurationMinutes,
+    projectAppointmentIsFree,
+    projectAppointmentPrice,
+  }: {
+    userId: string;
+    agendaMode?: AgendaMode;
+    projectAppointmentDurationMinutes?: number;
+    projectAppointmentIsFree?: boolean;
+    projectAppointmentPrice?: number;
+  }) {
     try {
       const existingUser = await this.prisma.user.findUnique({
         where: {
@@ -1410,25 +1473,63 @@ export class UserService {
         },
         select: {
           role: true,
+          projectAppointmentDurationMinutes: true,
+          projectAppointmentIsFree: true,
+          projectAppointmentPrice: true,
           saasPlanDetails: {
             select: {
               currentPlan: true,
+              agendaMode: true,
             },
           },
         },
       });
 
-      if (!existingUser) {
+      const typedExistingUser = existingUser as {
+        role?: string | null;
+        projectAppointmentDurationMinutes?: number | null;
+        projectAppointmentIsFree?: boolean | null;
+        projectAppointmentPrice?: number | null;
+        saasPlanDetails?: {
+          currentPlan?: SaasPlan | null;
+          agendaMode?: AgendaMode | null;
+        } | null;
+      } | null;
+
+      if (!typedExistingUser) {
         return {
           error: true,
           message: 'Utilisateur introuvable',
         };
       }
 
+      const canConfigureProjectSettings =
+        typedExistingUser.role === 'user_salon' || typedExistingUser.role === 'user_tatoueur';
+
+      if (!canConfigureProjectSettings) {
+        return {
+          error: true,
+          message: 'Seuls les profils salon et tatoueur peuvent configurer les paramètres de rendez-vous projet.',
+        };
+      }
+
       const nextSettings = this.buildAppointmentBookingSettings({
-        role: existingUser.role,
-        agendaMode,
+        role: typedExistingUser.role,
+        agendaMode: agendaMode ?? typedExistingUser.saasPlanDetails?.agendaMode,
+        projectAppointmentDurationMinutes:
+          projectAppointmentDurationMinutes ?? typedExistingUser.projectAppointmentDurationMinutes,
+        projectAppointmentIsFree:
+          projectAppointmentIsFree ?? typedExistingUser.projectAppointmentIsFree,
+        projectAppointmentPrice:
+          projectAppointmentPrice ?? typedExistingUser.projectAppointmentPrice,
       });
+
+      if (nextSettings.projectAppointmentIsFree === false && nextSettings.projectAppointmentPrice === null) {
+        return {
+          error: true,
+          message: 'Un prix est requis lorsque la prestation projet n\'est pas gratuite.',
+        };
+      }
 
       await this.prisma.saasPlanDetails.upsert({
         where: { userId },
@@ -1437,24 +1538,38 @@ export class UserService {
         },
         create: {
           userId,
-          ...(existingUser.saasPlanDetails?.currentPlan
-            ? { currentPlan: existingUser.saasPlanDetails.currentPlan }
+          ...(typedExistingUser.saasPlanDetails?.currentPlan
+            ? { currentPlan: typedExistingUser.saasPlanDetails.currentPlan }
             : {}),
           agendaMode: nextSettings.agendaMode,
+        },
+      });
+
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          projectAppointmentDurationMinutes: nextSettings.projectAppointmentDurationMinutes,
+          projectAppointmentIsFree: nextSettings.projectAppointmentIsFree,
+          projectAppointmentPrice: nextSettings.projectAppointmentPrice,
         },
       });
 
       // Invalider le cache après update
       await this.cacheService.del(`user:${userId}`);
       await this.cacheService.del(`user:appointment-booking:${userId}`);
+      await this.cacheService.delPattern('user:slug:*');
 
       return {
         error: false,
-        message: nextSettings.agendaMode === AgendaMode.PAR_TATOUEUR
-          ? 'Agenda par tatoueur activé avec succès.'
-          : 'Agenda global activé avec succès.',
+        message:
+          nextSettings.projectAppointmentIsFree
+            ? 'Paramètres projet mis à jour : prestation gratuite.'
+            : 'Paramètres projet mis à jour avec durée et prix.',
         user: {
           agendaMode: nextSettings.agendaMode,
+          projectAppointmentDurationMinutes: nextSettings.projectAppointmentDurationMinutes,
+          projectAppointmentIsFree: nextSettings.projectAppointmentIsFree,
+          projectAppointmentPrice: nextSettings.projectAppointmentPrice,
         },
       };
     } catch (error: unknown) {

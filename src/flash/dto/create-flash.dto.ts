@@ -13,6 +13,11 @@ export class CreateFlashDto {
   @Min(0)
   price: number;
 
+  @Type(() => Number)
+  @IsNumber()
+  @Min(15)
+  appointmentDurationMinutes: number;
+
   @IsOptional()
   @IsString()
   description?: string;

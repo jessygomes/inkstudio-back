@@ -187,6 +187,9 @@ export class AppointmentsService {
         isLinkedToSalon: false,
         // Tatoueur interne : pas de permission liée à un salon
         allowSalonCreateAppointments: null as boolean | null,
+        projectAppointmentDurationMinutes: null as number | null,
+        projectAppointmentIsFree: null as boolean | null,
+        projectAppointmentPrice: null as number | null,
       };
     }
 
@@ -202,6 +205,9 @@ export class AppointmentsService {
         salonName: true,
         firstName: true,
         lastName: true,
+        projectAppointmentDurationMinutes: true,
+        projectAppointmentIsFree: true,
+        projectAppointmentPrice: true,
       },
     });
 
@@ -224,6 +230,9 @@ export class AppointmentsService {
         // 🔐 Permission persisted lors de l'acceptance de la demande d'équipe
         // null si non lié, boolean si lié
         allowSalonCreateAppointments: performerUser.salonCanCreateAppointments,
+        projectAppointmentDurationMinutes: performerUser.projectAppointmentDurationMinutes,
+        projectAppointmentIsFree: performerUser.projectAppointmentIsFree,
+        projectAppointmentPrice: performerUser.projectAppointmentPrice,
       };
     }
 
@@ -235,6 +244,9 @@ export class AppointmentsService {
       linkedSalonId: null as string | null,
       isLinkedToSalon: false,
       allowSalonCreateAppointments: null as boolean | null,
+      projectAppointmentDurationMinutes: null as number | null,
+      projectAppointmentIsFree: null as boolean | null,
+      projectAppointmentPrice: null as number | null,
     };
   }
 
@@ -1278,7 +1290,7 @@ export class AppointmentsService {
         };
       }
 
-      const { title, prestation, start, end, clientFirstname, clientLastname, clientEmail, clientPhone, clientBirthdate, tatoueurId, visio, visioRoom, skin, moodboardId } = rdvBody;
+      const { title, prestation, start, end, clientFirstname, clientLastname, clientEmail, clientPhone, clientBirthdate, tatoueurId, visio, visioRoom, skin, moodboardId, flashId } = rdvBody;
 
       const skinValidationError = this.validateSkinToneForPrestation(prestation, skin);
       if (skinValidationError) {
@@ -1289,7 +1301,7 @@ export class AppointmentsService {
       }
 
       // S'assurer que title a toujours une valeur
-      const appointmentTitle = title || `${prestation} - ${clientFirstname} ${clientLastname}`;
+      let appointmentTitle = title || `${prestation} - ${clientFirstname} ${clientLastname}`;
 
       // Convertir la date de naissance en objet Date si elle est fournie
       const parsedBirthdate = clientBirthdate ? new Date(clientBirthdate) : null;
@@ -1337,6 +1349,9 @@ export class AppointmentsService {
           addConfirmationEnabled: true,
           salonName: true,
           email: true,
+          projectAppointmentDurationMinutes: true,
+          projectAppointmentIsFree: true,
+          projectAppointmentPrice: true,
           saasPlan: true,
           saasPlanDetails: {
             select: {
@@ -1366,6 +1381,9 @@ export class AppointmentsService {
         linkedSalonId: null as string | null,
         isLinkedToSalon: false,
         allowSalonCreateAppointments: null as boolean | null,
+        projectAppointmentDurationMinutes: null as number | null,
+        projectAppointmentIsFree: null as boolean | null,
+        projectAppointmentPrice: null as number | null,
       };
 
       let artist: { id: string; name: string } | null = null;
@@ -1393,10 +1411,85 @@ export class AppointmentsService {
         }
       }
 
+      const flashOwnerScope = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          role: true,
+          linkedTatoueurs: {
+            select: {
+              id: true,
+            },
+          },
+        },
+      });
+
+      const linkedTatoueurUserIds = flashOwnerScope?.role === 'user_salon'
+        ? (flashOwnerScope.linkedTatoueurs ?? []).map((tatoueurUser) => tatoueurUser.id)
+        : [];
+
+      const flashOwnerIds = Array.from(new Set([userId, ...linkedTatoueurUserIds]));
+
+      const selectedFlash = flashId
+        ? await this.prisma.flash.findFirst({
+            where: {
+              id: flashId,
+              isAvailable: true,
+              userId: flashOwnerIds.length === 1 ? flashOwnerIds[0] : { in: flashOwnerIds },
+            },
+            select: {
+              id: true,
+              title: true,
+              price: true,
+              appointmentDurationMinutes: true,
+            },
+          })
+        : null;
+
+      if (flashId && !selectedFlash) {
+        return {
+          error: true,
+          message: 'Flash introuvable ou indisponible pour ce profil.',
+        };
+      }
+
+      if (!title && selectedFlash) {
+        appointmentTitle = `FLASH - ${selectedFlash.title}`;
+      }
+
+      const projectDurationMinutes = prestation === PrestationType.PROJET
+        ? (selectedTatoueur.projectAppointmentDurationMinutes
+            ?? salonConfig.projectAppointmentDurationMinutes
+            ?? 60)
+        : null;
+
+      const projectIsFree = prestation === PrestationType.PROJET
+        ? (selectedTatoueur.projectAppointmentIsFree
+            ?? salonConfig.projectAppointmentIsFree
+            ?? true)
+        : null;
+
+      const projectPrice = prestation === PrestationType.PROJET
+        ? (projectIsFree
+            ? 0
+            : (selectedTatoueur.projectAppointmentPrice
+                ?? salonConfig.projectAppointmentPrice
+                ?? 0))
+        : null;
+
+      const flashDurationMinutes = selectedFlash
+        ? Math.max(15, Math.round(Number(selectedFlash.appointmentDurationMinutes) || 60))
+        : null;
+
+      const effectiveStartDate = new Date(start);
+      const effectiveDurationMinutes = flashDurationMinutes ?? projectDurationMinutes;
+      const effectiveEndDate = effectiveDurationMinutes
+        ? new Date(effectiveStartDate.getTime() + effectiveDurationMinutes * 60 * 1000)
+        : new Date(end);
+
       const existingAppointment = await this.findAppointmentConflict({
         userId,
-        start: new Date(start),
-        end: new Date(end),
+        start: effectiveStartDate,
+        end: effectiveEndDate,
         tatoueurId: selectedTatoueur.tatoueurId,
         performerUserId: selectedTatoueur.performerUserId,
         agendaMode,
@@ -1508,8 +1601,8 @@ export class AppointmentsService {
             userId,
             title: appointmentTitle,
             prestation,
-            start: new Date(start),
-            end: new Date(end),
+            start: effectiveStartDate,
+            end: effectiveEndDate,
             tatoueurId: selectedTatoueur.tatoueurId ?? undefined,
             performerUserId: selectedTatoueur.performerUserId ?? undefined,
             clientId: client.id,
@@ -1585,6 +1678,8 @@ export class AppointmentsService {
           });
         } else {
           // Pour les autres prestations (TATTOO, PROJET, RETOUCHE)
+          const flashPrice = selectedFlash ? Math.max(0, Number(selectedFlash.price)) : null;
+
           const tattooDetail = await this.prisma.tattooDetail.create({
             data: {
               appointmentId: newAppointment.id,
@@ -1595,8 +1690,18 @@ export class AppointmentsService {
               colorStyle: rdvBody.colorStyle || '',
               reference: rdvBody.reference,
               sketch: rdvBody.sketch,
-              estimatedPrice: rdvBody.estimatedPrice || 0,
-              price: rdvBody.price || 0,
+              estimatedPrice:
+                selectedFlash
+                  ? (flashPrice ?? 0)
+                  : prestation === PrestationType.PROJET
+                  ? (projectPrice ?? 0)
+                  : (rdvBody.estimatedPrice || 0),
+              price:
+                selectedFlash
+                  ? (flashPrice ?? 0)
+                  : prestation === PrestationType.PROJET
+                  ? (projectPrice ?? 0)
+                  : (rdvBody.price || 0),
             },
           });
 

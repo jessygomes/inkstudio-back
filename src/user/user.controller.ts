@@ -92,6 +92,9 @@ export class UserController {
     return this.userService.updateAppointmentBooking({
       userId,
       agendaMode: body.agendaMode,
+      projectAppointmentDurationMinutes: body.projectAppointmentDurationMinutes,
+      projectAppointmentIsFree: body.projectAppointmentIsFree,
+      projectAppointmentPrice: body.projectAppointmentPrice,
     });
   }
 

@@ -929,6 +929,9 @@ describe('UserService', () => {
     it('should return appointment booking setting from cache', async () => {
       const cachedSetting = {
         agendaMode: AgendaMode.PAR_TATOUEUR,
+        projectAppointmentDurationMinutes: 60,
+        projectAppointmentIsFree: true,
+        projectAppointmentPrice: 0,
       };
       cache.get.mockResolvedValue(cachedSetting);
 
@@ -942,7 +945,11 @@ describe('UserService', () => {
 
     it('should fetch appointment booking setting from database', async () => {
       const mockUser = {
+        role: 'user_salon',
         saasPlan: SaasPlan.BUSINESS,
+        projectAppointmentDurationMinutes: 45,
+        projectAppointmentIsFree: false,
+        projectAppointmentPrice: 80,
         saasPlanDetails: {
           currentPlan: SaasPlan.BUSINESS,
           agendaMode: AgendaMode.GLOBAL,
@@ -957,12 +964,18 @@ describe('UserService', () => {
 
       expect(result.error).toBe(false);
       expect(result.user).toEqual({
-        agendaMode: AgendaMode.GLOBAL,
+        agendaMode: AgendaMode.PAR_TATOUEUR,
+        projectAppointmentDurationMinutes: 45,
+        projectAppointmentIsFree: false,
+        projectAppointmentPrice: 80,
       });
       expect(cache.set).toHaveBeenCalledWith(
         'user:appointment-booking:user-1',
         {
-          agendaMode: AgendaMode.GLOBAL,
+          agendaMode: AgendaMode.PAR_TATOUEUR,
+          projectAppointmentDurationMinutes: 45,
+          projectAppointmentIsFree: false,
+          projectAppointmentPrice: 80,
         },
         3600,
       );
@@ -971,7 +984,11 @@ describe('UserService', () => {
     it('should force global agenda for non-business plans', async () => {
       cache.get.mockResolvedValue(null);
       prisma.user.findUnique.mockResolvedValue({
+        role: 'user_tatoueur',
         saasPlan: SaasPlan.PRO,
+        projectAppointmentDurationMinutes: null,
+        projectAppointmentIsFree: true,
+        projectAppointmentPrice: null,
         saasPlanDetails: {
           currentPlan: SaasPlan.PRO,
           agendaMode: AgendaMode.GLOBAL,
@@ -985,6 +1002,9 @@ describe('UserService', () => {
       expect(result.error).toBe(false);
       expect(result.user).toEqual({
         agendaMode: AgendaMode.GLOBAL,
+        projectAppointmentDurationMinutes: 60,
+        projectAppointmentIsFree: true,
+        projectAppointmentPrice: 0,
       });
     });
 
@@ -1003,19 +1023,28 @@ describe('UserService', () => {
   describe('updateAppointmentBooking', () => {
     it('should update appointment booking setting for business plan', async () => {
       prisma.user.findUnique.mockResolvedValue({
+        role: 'user_salon',
         saasPlan: SaasPlan.BUSINESS,
+        projectAppointmentDurationMinutes: 60,
+        projectAppointmentIsFree: true,
+        projectAppointmentPrice: null,
         saasPlanDetails: {
           currentPlan: SaasPlan.BUSINESS,
+          agendaMode: AgendaMode.PAR_TATOUEUR,
         },
       });
       prisma.saasPlanDetails.upsert.mockResolvedValue({
         userId: 'user-1',
         agendaMode: AgendaMode.PAR_TATOUEUR,
       });
+      prisma.user.update.mockResolvedValue({ id: 'user-1' });
 
       const result = await service.updateAppointmentBooking({
         userId: 'user-1',
         agendaMode: AgendaMode.PAR_TATOUEUR,
+        projectAppointmentDurationMinutes: 75,
+        projectAppointmentIsFree: false,
+        projectAppointmentPrice: 120,
       });
 
       expect(result.error).toBe(false);
@@ -1028,21 +1057,30 @@ describe('UserService', () => {
           userId: 'user-1',
           currentPlan: SaasPlan.BUSINESS,
           agendaMode: AgendaMode.PAR_TATOUEUR,
+        },
+      });
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-1' },
+        data: {
+          projectAppointmentDurationMinutes: 75,
+          projectAppointmentIsFree: false,
+          projectAppointmentPrice: 120,
         },
       });
       expect(cache.del).toHaveBeenCalledWith('user:appointment-booking:user-1');
     });
 
-    it('should force global agenda for non-business plans', async () => {
+    it('should reject unsupported roles for project settings', async () => {
       prisma.user.findUnique.mockResolvedValue({
+        role: 'client',
         saasPlan: SaasPlan.PRO,
+        projectAppointmentDurationMinutes: null,
+        projectAppointmentIsFree: true,
+        projectAppointmentPrice: null,
         saasPlanDetails: {
           currentPlan: SaasPlan.PRO,
+          agendaMode: AgendaMode.GLOBAL,
         },
-      });
-      prisma.saasPlanDetails.upsert.mockResolvedValue({
-        userId: 'user-1',
-        agendaMode: AgendaMode.GLOBAL,
       });
 
       const result = await service.updateAppointmentBooking({
@@ -1050,31 +1088,21 @@ describe('UserService', () => {
         agendaMode: AgendaMode.PAR_TATOUEUR,
       });
 
-      expect(result.error).toBe(false);
-      expect(result.message).toContain('réservé au plan BUSINESS');
-      expect(prisma.saasPlanDetails.upsert).toHaveBeenCalledWith({
-        where: { userId: 'user-1' },
-        update: {
-          agendaMode: AgendaMode.GLOBAL,
-        },
-        create: {
-          userId: 'user-1',
-          currentPlan: SaasPlan.PRO,
-          agendaMode: AgendaMode.GLOBAL,
-        },
-      });
+      expect(result.error).toBe(true);
+      expect(result.message).toContain('Seuls les profils salon et tatoueur');
     });
 
     it('should handle update error', async () => {
       prisma.user.findUnique.mockResolvedValue({
+        role: 'user_salon',
         saasPlan: SaasPlan.BUSINESS,
+        projectAppointmentDurationMinutes: 60,
+        projectAppointmentIsFree: true,
+        projectAppointmentPrice: null,
         saasPlanDetails: {
           currentPlan: SaasPlan.BUSINESS,
+          agendaMode: AgendaMode.PAR_TATOUEUR,
         },
-      });
-      prisma.saasPlanDetails.upsert.mockResolvedValue({
-        userId: 'user-1',
-        agendaMode: AgendaMode.PAR_TATOUEUR,
       });
       prisma.saasPlanDetails.upsert.mockRejectedValue(
         new Error('Update error'),

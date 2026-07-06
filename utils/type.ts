@@ -19,6 +19,9 @@ export type CachedUser = {
   role?: string,
   prestations?: string[],
   style?: string[],
+  projectAppointmentDurationMinutes?: number | null,
+  projectAppointmentIsFree?: boolean,
+  projectAppointmentPrice?: number | null,
   Tatoueur?: any, // You can further type this if needed
 };
 
@@ -36,6 +39,9 @@ export type InternalTatoueur = {
   style: string[],
   skills: string[],
   rdvBookingEnabled: boolean,
+  projectAppointmentDurationMinutes?: number | null,
+  projectAppointmentIsFree?: boolean,
+  projectAppointmentPrice?: number | null,
 };
 
 export type SlugUser = {
@@ -65,6 +71,9 @@ export type LinkedTatoueurUser = {
   style: string[],
   prestations: string[],
   appointmentBookingEnabled: boolean,
+  projectAppointmentDurationMinutes?: number | null,
+  projectAppointmentIsFree?: boolean,
+  projectAppointmentPrice?: number | null,
 };
 
 export type LinkedSalon = {

@@ -1010,7 +1010,11 @@ describe('AppointmentsService', () => {
         where: {
           userId,
           status: { in: ['PENDING', 'CONFIRMED', 'RESCHEDULING'] },
-          start: { lt: new Date(createByClientDto.end) },
+          start: {
+            lt: new Date(
+              new Date(createByClientDto.start).getTime() + 60 * 60 * 1000,
+            ),
+          },
           end: { gt: new Date(createByClientDto.start) },
           tatoueurId,
         },

@@ -53,6 +53,12 @@ model User {
   // DEPRECATED: Ancien champ pour contrôle agenda (conservé pour compatibilité)
   // À remplacer par salonCanCreateAppointments pour les tatoueurs liés
   appointmentBookingEnabled Boolean              @default(false)
+
+  // Paramètres de réservation pour la prestation PROJET
+  // Ces valeurs sont exposées au client lors de la prise de RDV PROJET.
+  projectAppointmentDurationMinutes Int?         @default(60)
+  projectAppointmentIsFree       Boolean         @default(true)
+  projectAppointmentPrice         Float?
   
   // Permissions pour user_tatoueur lié à un salon
   // Autorise le user_salon à voir l'agenda et les RDV du user_tatoueur
@@ -532,6 +538,7 @@ model Flash {
   title       String
   style       String[]
   dimension   String?
+  appointmentDurationMinutes Int @default(60)
   description String?
   imageUrl    String
   price       Float

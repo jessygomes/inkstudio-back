@@ -99,6 +99,11 @@ export class CreateAppointmentDto {
   @IsString()
   moodboardId?: string;
 
+  @ApiPropertyOptional({ description: 'ID du flash sélectionné (optionnel)' })
+  @IsOptional()
+  @IsString()
+  flashId?: string;
+
   // Infos projet (facultatif)
   @ApiPropertyOptional() @IsOptional() @IsString() description?: string;
   @ApiPropertyOptional({ example: 'avant-bras' }) @IsOptional() @IsString() zone?: string;
