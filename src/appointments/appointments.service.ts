@@ -3948,7 +3948,12 @@ async cancelAppointmentByClient(appointmentId: string, clientUserId: string, rea
           
           // 2. Programmer le rappel retouches uniquement pour les TATTOO
           if (appointment.prestation === 'TATTOO') {
-            this.followupSchedulerService.scheduleRetouchesReminderFromCompletion(appointment.id, completedTime);
+            await Promise.resolve(
+              this.followupSchedulerService.scheduleRetouchesReminderFromCompletion(
+                appointment.id,
+                completedTime,
+              ),
+            );
           }
         } catch (followupError) {
           console.error('⚠️ Erreur lors de la programmation des suivis:', followupError);

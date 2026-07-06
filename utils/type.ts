@@ -22,6 +22,8 @@ export type CachedUser = {
   projectAppointmentDurationMinutes?: number | null,
   projectAppointmentIsFree?: boolean,
   projectAppointmentPrice?: number | null,
+  followUpEmailDelayDays?: number,
+  retouchEmailDelayDays?: number,
   Tatoueur?: any, // You can further type this if needed
 };
 
@@ -42,6 +44,8 @@ export type InternalTatoueur = {
   projectAppointmentDurationMinutes?: number | null,
   projectAppointmentIsFree?: boolean,
   projectAppointmentPrice?: number | null,
+  followUpEmailDelayDays?: number,
+  retouchEmailDelayDays?: number,
 };
 
 export type SlugUser = {

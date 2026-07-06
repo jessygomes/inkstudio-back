@@ -932,6 +932,8 @@ describe('UserService', () => {
         projectAppointmentDurationMinutes: 60,
         projectAppointmentIsFree: true,
         projectAppointmentPrice: 0,
+        followUpEmailDelayDays: 7,
+        retouchEmailDelayDays: 30,
       };
       cache.get.mockResolvedValue(cachedSetting);
 
@@ -950,6 +952,8 @@ describe('UserService', () => {
         projectAppointmentDurationMinutes: 45,
         projectAppointmentIsFree: false,
         projectAppointmentPrice: 80,
+        followUpEmailDelayDays: 9,
+        retouchEmailDelayDays: 35,
         saasPlanDetails: {
           currentPlan: SaasPlan.BUSINESS,
           agendaMode: AgendaMode.GLOBAL,
@@ -968,6 +972,8 @@ describe('UserService', () => {
         projectAppointmentDurationMinutes: 45,
         projectAppointmentIsFree: false,
         projectAppointmentPrice: 80,
+        followUpEmailDelayDays: 9,
+        retouchEmailDelayDays: 35,
       });
       expect(cache.set).toHaveBeenCalledWith(
         'user:appointment-booking:user-1',
@@ -976,6 +982,8 @@ describe('UserService', () => {
           projectAppointmentDurationMinutes: 45,
           projectAppointmentIsFree: false,
           projectAppointmentPrice: 80,
+          followUpEmailDelayDays: 9,
+          retouchEmailDelayDays: 35,
         },
         3600,
       );
@@ -989,6 +997,8 @@ describe('UserService', () => {
         projectAppointmentDurationMinutes: null,
         projectAppointmentIsFree: true,
         projectAppointmentPrice: null,
+        followUpEmailDelayDays: null,
+        retouchEmailDelayDays: null,
         saasPlanDetails: {
           currentPlan: SaasPlan.PRO,
           agendaMode: AgendaMode.GLOBAL,
@@ -1005,6 +1015,8 @@ describe('UserService', () => {
         projectAppointmentDurationMinutes: 60,
         projectAppointmentIsFree: true,
         projectAppointmentPrice: 0,
+        followUpEmailDelayDays: 7,
+        retouchEmailDelayDays: 30,
       });
     });
 
@@ -1028,6 +1040,8 @@ describe('UserService', () => {
         projectAppointmentDurationMinutes: 60,
         projectAppointmentIsFree: true,
         projectAppointmentPrice: null,
+        followUpEmailDelayDays: 7,
+        retouchEmailDelayDays: 30,
         saasPlanDetails: {
           currentPlan: SaasPlan.BUSINESS,
           agendaMode: AgendaMode.PAR_TATOUEUR,
@@ -1045,6 +1059,8 @@ describe('UserService', () => {
         projectAppointmentDurationMinutes: 75,
         projectAppointmentIsFree: false,
         projectAppointmentPrice: 120,
+        followUpEmailDelayDays: 10,
+        retouchEmailDelayDays: 40,
       });
 
       expect(result.error).toBe(false);
@@ -1065,6 +1081,8 @@ describe('UserService', () => {
           projectAppointmentDurationMinutes: 75,
           projectAppointmentIsFree: false,
           projectAppointmentPrice: 120,
+          followUpEmailDelayDays: 10,
+          retouchEmailDelayDays: 40,
         },
       });
       expect(cache.del).toHaveBeenCalledWith('user:appointment-booking:user-1');
@@ -1077,6 +1095,8 @@ describe('UserService', () => {
         projectAppointmentDurationMinutes: null,
         projectAppointmentIsFree: true,
         projectAppointmentPrice: null,
+        followUpEmailDelayDays: 7,
+        retouchEmailDelayDays: 30,
         saasPlanDetails: {
           currentPlan: SaasPlan.PRO,
           agendaMode: AgendaMode.GLOBAL,
@@ -1099,6 +1119,8 @@ describe('UserService', () => {
         projectAppointmentDurationMinutes: 60,
         projectAppointmentIsFree: true,
         projectAppointmentPrice: null,
+        followUpEmailDelayDays: 7,
+        retouchEmailDelayDays: 30,
         saasPlanDetails: {
           currentPlan: SaasPlan.BUSINESS,
           agendaMode: AgendaMode.PAR_TATOUEUR,

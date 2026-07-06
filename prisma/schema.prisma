@@ -59,6 +59,11 @@ model User {
   projectAppointmentDurationMinutes Int?         @default(60)
   projectAppointmentIsFree       Boolean         @default(true)
   projectAppointmentPrice         Float?
+
+  // Paramètres de suivi post-RDV (en jours après completion)
+  // Valeurs par défaut: suivi cicatrisation J+7, retouches J+30
+  followUpEmailDelayDays         Int             @default(7)
+  retouchEmailDelayDays          Int             @default(30)
   
   // Permissions pour user_tatoueur lié à un salon
   // Autorise le user_salon à voir l'agenda et les RDV du user_tatoueur
@@ -1066,5 +1071,3 @@ enum FollowUpStatus {
   SUBMITTED
   EXPIRED
 }
-
-

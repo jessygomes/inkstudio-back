@@ -95,6 +95,8 @@ export class UserController {
       projectAppointmentDurationMinutes: body.projectAppointmentDurationMinutes,
       projectAppointmentIsFree: body.projectAppointmentIsFree,
       projectAppointmentPrice: body.projectAppointmentPrice,
+      followUpEmailDelayDays: body.followUpEmailDelayDays,
+      retouchEmailDelayDays: body.retouchEmailDelayDays,
     });
   }
 

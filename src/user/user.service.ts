@@ -125,12 +125,16 @@ export class UserService {
     projectAppointmentDurationMinutes,
     projectAppointmentIsFree,
     projectAppointmentPrice,
+    followUpEmailDelayDays,
+    retouchEmailDelayDays,
   }: {
     role?: string | null;
     agendaMode?: AgendaMode | null;
-        projectAppointmentDurationMinutes?: number | null; // Duration in minutes
-        projectAppointmentIsFree?: boolean | null; // Is the appointment free?
-        projectAppointmentPrice?: number | null; // Price of the appointment
+    projectAppointmentDurationMinutes?: number | null;
+    projectAppointmentIsFree?: boolean | null;
+    projectAppointmentPrice?: number | null;
+    followUpEmailDelayDays?: number | null;
+    retouchEmailDelayDays?: number | null;
   }) {
     const effectiveAgendaMode =
       role === 'user_salon'
@@ -151,12 +155,22 @@ export class UserService {
         : typeof projectAppointmentPrice === 'number'
           ? Math.max(0, Number(projectAppointmentPrice))
           : null;
+    const normalizedFollowUpDelayDays =
+      typeof followUpEmailDelayDays === 'number'
+        ? Math.max(1, Math.round(followUpEmailDelayDays))
+        : 7;
+    const normalizedRetouchDelayDays =
+      typeof retouchEmailDelayDays === 'number'
+        ? Math.max(1, Math.round(retouchEmailDelayDays))
+        : 30;
 
     return {
       agendaMode: effectiveAgendaMode,
       projectAppointmentDurationMinutes: canConfigureProjectSettings ? normalizedDuration : null,
       projectAppointmentIsFree: canConfigureProjectSettings ? normalizedIsFree : true,
       projectAppointmentPrice: canConfigureProjectSettings ? normalizedPrice : null,
+      followUpEmailDelayDays: canConfigureProjectSettings ? normalizedFollowUpDelayDays : 7,
+      retouchEmailDelayDays: canConfigureProjectSettings ? normalizedRetouchDelayDays : 30,
     };
   }
 
@@ -916,6 +930,9 @@ export class UserService {
           projectAppointmentIsFree: true,
           projectAppointmentPrice: true,
           isInspirationSalon: true,
+          followUpEmailDelayDays: true,
+          retouchEmailDelayDays: true,
+          appointmentBookingEnabled: true,
           Tatoueur: {
             select: {
               id: true,
@@ -1383,6 +1400,8 @@ export class UserService {
         projectAppointmentDurationMinutes: number | null;
         projectAppointmentIsFree: boolean;
         projectAppointmentPrice: number | null;
+        followUpEmailDelayDays: number;
+        retouchEmailDelayDays: number;
       }>(cacheKey);
       
       if (cachedSetting) {
@@ -1402,6 +1421,8 @@ export class UserService {
           projectAppointmentDurationMinutes: true,
           projectAppointmentIsFree: true,
           projectAppointmentPrice: true,
+          followUpEmailDelayDays: true,
+          retouchEmailDelayDays: true,
           saasPlanDetails: {
             select: {
               agendaMode: true,
@@ -1415,6 +1436,8 @@ export class UserService {
         projectAppointmentDurationMinutes?: number | null;
         projectAppointmentIsFree?: boolean | null;
         projectAppointmentPrice?: number | null;
+        followUpEmailDelayDays?: number | null;
+        retouchEmailDelayDays?: number | null;
         saasPlanDetails?: {
           agendaMode?: AgendaMode | null;
         } | null;
@@ -1427,6 +1450,8 @@ export class UserService {
             projectAppointmentDurationMinutes: typedUser.projectAppointmentDurationMinutes,
             projectAppointmentIsFree: typedUser.projectAppointmentIsFree,
             projectAppointmentPrice: typedUser.projectAppointmentPrice,
+            followUpEmailDelayDays: typedUser.followUpEmailDelayDays,
+            retouchEmailDelayDays: typedUser.retouchEmailDelayDays,
           })
         : null;
 
@@ -1459,12 +1484,16 @@ export class UserService {
     projectAppointmentDurationMinutes,
     projectAppointmentIsFree,
     projectAppointmentPrice,
+    followUpEmailDelayDays,
+    retouchEmailDelayDays,
   }: {
     userId: string;
     agendaMode?: AgendaMode;
     projectAppointmentDurationMinutes?: number;
     projectAppointmentIsFree?: boolean;
     projectAppointmentPrice?: number;
+    followUpEmailDelayDays?: number;
+    retouchEmailDelayDays?: number;
   }) {
     try {
       const existingUser = await this.prisma.user.findUnique({
@@ -1476,6 +1505,8 @@ export class UserService {
           projectAppointmentDurationMinutes: true,
           projectAppointmentIsFree: true,
           projectAppointmentPrice: true,
+          followUpEmailDelayDays: true,
+          retouchEmailDelayDays: true,
           saasPlanDetails: {
             select: {
               currentPlan: true,
@@ -1490,6 +1521,8 @@ export class UserService {
         projectAppointmentDurationMinutes?: number | null;
         projectAppointmentIsFree?: boolean | null;
         projectAppointmentPrice?: number | null;
+        followUpEmailDelayDays?: number | null;
+        retouchEmailDelayDays?: number | null;
         saasPlanDetails?: {
           currentPlan?: SaasPlan | null;
           agendaMode?: AgendaMode | null;
@@ -1522,6 +1555,10 @@ export class UserService {
           projectAppointmentIsFree ?? typedExistingUser.projectAppointmentIsFree,
         projectAppointmentPrice:
           projectAppointmentPrice ?? typedExistingUser.projectAppointmentPrice,
+        followUpEmailDelayDays:
+          followUpEmailDelayDays ?? typedExistingUser.followUpEmailDelayDays,
+        retouchEmailDelayDays:
+          retouchEmailDelayDays ?? typedExistingUser.retouchEmailDelayDays,
       });
 
       if (nextSettings.projectAppointmentIsFree === false && nextSettings.projectAppointmentPrice === null) {
@@ -1551,6 +1588,8 @@ export class UserService {
           projectAppointmentDurationMinutes: nextSettings.projectAppointmentDurationMinutes,
           projectAppointmentIsFree: nextSettings.projectAppointmentIsFree,
           projectAppointmentPrice: nextSettings.projectAppointmentPrice,
+          followUpEmailDelayDays: nextSettings.followUpEmailDelayDays,
+          retouchEmailDelayDays: nextSettings.retouchEmailDelayDays,
         },
       });
 
@@ -1570,6 +1609,8 @@ export class UserService {
           projectAppointmentDurationMinutes: nextSettings.projectAppointmentDurationMinutes,
           projectAppointmentIsFree: nextSettings.projectAppointmentIsFree,
           projectAppointmentPrice: nextSettings.projectAppointmentPrice,
+          followUpEmailDelayDays: nextSettings.followUpEmailDelayDays,
+          retouchEmailDelayDays: nextSettings.retouchEmailDelayDays,
         },
       };
     } catch (error: unknown) {

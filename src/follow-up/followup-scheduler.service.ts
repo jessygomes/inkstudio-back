@@ -7,11 +7,49 @@ import { randomUUID } from 'crypto';
 export class FollowupSchedulerService {
   private readonly logger = new Logger(FollowupSchedulerService.name);
   private scheduledJobs = new Map<string, NodeJS.Timeout>();
+  private readonly defaultFollowUpDelayDays = 7;
+  private readonly defaultRetouchDelayDays = 30;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly mailService: MailService,
   ) {}
+
+  private normalizeDelayDays(value: number | null | undefined, fallback: number): number {
+    if (typeof value !== 'number' || Number.isNaN(value)) {
+      return fallback;
+    }
+
+    return Math.max(1, Math.round(value));
+  }
+
+  private async resolveDelayDaysForAppointment(appointmentId: string): Promise<{
+    followUpDelayDays: number;
+    retouchDelayDays: number;
+  }> {
+    const appointment = await this.prisma.appointment.findUnique({
+      where: { id: appointmentId },
+      select: {
+        user: {
+          select: {
+            followUpEmailDelayDays: true,
+            retouchEmailDelayDays: true,
+          },
+        },
+      },
+    });
+
+    return {
+      followUpDelayDays: this.normalizeDelayDays(
+        appointment?.user?.followUpEmailDelayDays,
+        this.defaultFollowUpDelayDays,
+      ),
+      retouchDelayDays: this.normalizeDelayDays(
+        appointment?.user?.retouchEmailDelayDays,
+        this.defaultRetouchDelayDays,
+      ),
+    };
+  }
 
   /**
    * Planifie l'envoi d'un email de suivi selon l'environnement
@@ -24,13 +62,14 @@ export class FollowupSchedulerService {
     try {
       // Déterminer le délai selon l'environnement
       const isProduction = process.env.NODE_ENV === 'production';
-      const delayMinutes = isProduction ? 7 * 24 * 60 : 10; // 1 semaine en production, 10 min en test
+      const { followUpDelayDays } = await this.resolveDelayDaysForAppointment(appointmentId);
+      const delayMinutes = isProduction ? followUpDelayDays * 24 * 60 : 10;
       
       // Calculer le délai
       const followupTime = new Date(endTime.getTime() + delayMinutes * 60 * 1000);
       const delayMs = Math.max(0, followupTime.getTime() - Date.now());
 
-      this.logger.log(`📅 Planification du suivi (${isProduction ? 'PRODUCTION - 1 semaine' : 'TEST - 10 minutes'}) pour le RDV ${appointmentId} dans ${Math.round(delayMs / 1000)} secondes`);
+      this.logger.log(`📅 Planification du suivi (${isProduction ? `PRODUCTION - J+${followUpDelayDays}` : 'TEST - 10 minutes'}) pour le RDV ${appointmentId} dans ${Math.round(delayMs / 1000)} secondes`);
 
       // Si le RDV est déjà passé (+ 10 min), envoyer immédiatement
       if (delayMs === 0) {
@@ -202,13 +241,14 @@ export class FollowupSchedulerService {
     try {
       // Déterminer le délai selon l'environnement
       const isProduction = process.env.NODE_ENV === 'production';
-      const delayMinutes = isProduction ? 7 * 24 * 60 : 10; // 7 jours en production, 10 min en développement
+      const { followUpDelayDays } = await this.resolveDelayDaysForAppointment(appointmentId);
+      const delayMinutes = isProduction ? followUpDelayDays * 24 * 60 : 10;
       
       // Calculer le délai à partir du moment de completion
       const followupTime = new Date(completionTime.getTime() + delayMinutes * 60 * 1000);
       const delayMs = Math.max(0, followupTime.getTime() - Date.now());
 
-      this.logger.log(`📅 Planification du suivi cicatrisation (${isProduction ? 'PRODUCTION - 7 jours' : 'DÉVELOPPEMENT - 10 minutes'}) pour le RDV ${appointmentId} dans ${Math.round(delayMs / 1000)} secondes`);
+      this.logger.log(`📅 Planification du suivi cicatrisation (${isProduction ? `PRODUCTION - J+${followUpDelayDays}` : 'DÉVELOPPEMENT - 10 minutes'}) pour le RDV ${appointmentId} dans ${Math.round(delayMs / 1000)} secondes`);
 
       // Si le délai est déjà passé, envoyer immédiatement
       if (delayMs === 0) {
@@ -249,17 +289,18 @@ export class FollowupSchedulerService {
    * @param appointmentId - ID du rendez-vous
    * @param completionTime - Moment où le RDV a été marqué comme terminé
    */
-  scheduleRetouchesReminderFromCompletion(appointmentId: string, completionTime: Date): void {
+  async scheduleRetouchesReminderFromCompletion(appointmentId: string, completionTime: Date): Promise<void> {
     try {
       // Déterminer le délai selon l'environnement
       const isProduction = process.env.NODE_ENV === 'production';
+      const { retouchDelayDays } = await this.resolveDelayDaysForAppointment(appointmentId);
       
       let reminderTime: Date;
       let delayMs: number;
       
       if (isProduction) {
-        // Production : 30 jours après la completion
-        reminderTime = new Date(completionTime.getTime() + 30 * 24 * 60 * 60 * 1000);
+        // Production : délai configurable en jours après la completion
+        reminderTime = new Date(completionTime.getTime() + retouchDelayDays * 24 * 60 * 60 * 1000);
         delayMs = Math.max(0, reminderTime.getTime() - Date.now());
       } else {
         // Développement : 15 minutes après la completion
@@ -271,7 +312,7 @@ export class FollowupSchedulerService {
         ? `${Math.round(delayMs / (1000 * 60 * 60 * 24))} jours`
         : `${Math.round(delayMs / (1000 * 60))} minutes`;
 
-      this.logger.log(`📅 Planification du rappel retouches (${isProduction ? 'PRODUCTION - 30 jours' : 'DÉVELOPPEMENT - 15 minutes'}) pour le RDV ${appointmentId} dans ${delayDescription}`);
+      this.logger.log(`📅 Planification du rappel retouches (${isProduction ? `PRODUCTION - J+${retouchDelayDays}` : 'DÉVELOPPEMENT - 15 minutes'}) pour le RDV ${appointmentId} dans ${delayDescription}`);
 
       // Si la date est déjà passée, ne pas envoyer
       if (delayMs === 0) {
@@ -303,6 +344,7 @@ export class FollowupSchedulerService {
 
     } catch (error) {
       this.logger.error(`❌ Erreur lors de la planification du rappel retouches pour ${appointmentId}:`, error);
+      throw error;
     }
   }
 

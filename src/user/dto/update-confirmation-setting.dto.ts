@@ -24,4 +24,14 @@ export class UpdateAppointmentBookingDto {
   @IsNumber()
   @Min(0)
   projectAppointmentPrice?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  followUpEmailDelayDays?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  retouchEmailDelayDays?: number;
 }
