@@ -12,6 +12,7 @@ const createPrismaMock = () => ({
     create: jest.fn(),
     findMany: jest.fn(),
     findUnique: jest.fn(),
+    findFirst: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),
     count: jest.fn(),
@@ -214,17 +215,16 @@ describe('StocksService', () => {
       );
     });
 
-    it('should return error when no stocks found', async () => {
+    it('should return empty stocks list when no stocks found', async () => {
       cache.get.mockResolvedValue(null);
       prisma.stockItem.count.mockResolvedValue(0);
       prisma.stockItem.findMany.mockResolvedValue([]);
 
       const result = await service.getStocksBySalon('user-1', 1, 12, '');
 
-      expect((result as unknown as any).error).toBe(true);
-      expect((result as unknown as any).message).toContain(
-        'Aucun élément de stock trouvé',
-      );
+      expect((result as unknown as any).error).toBe(false);
+      expect((result as unknown as any).stockItems).toEqual([]);
+      expect((result as unknown as any).pagination.totalStockItems).toBe(0);
     });
   });
 
@@ -233,24 +233,24 @@ describe('StocksService', () => {
       const mockStockItem = buildStockItem();
       cache.get.mockResolvedValue(mockStockItem);
 
-      const result = await service.getStockItemById('stock-1');
+      const result = await service.getStockItemById('stock-1', 'user-1');
 
-      expect(cache.get).toHaveBeenCalledWith('stockitem:stock-1');
+      expect(cache.get).toHaveBeenCalledWith('stockitem:user-1:stock-1');
       expect(result).toEqual(mockStockItem);
-      expect(prisma.stockItem.findUnique).not.toHaveBeenCalled();
+      expect(prisma.stockItem.findFirst).not.toHaveBeenCalled();
     });
 
     it('should fetch stock item from database when not in cache', async () => {
       const mockStockItem = buildStockItem();
       cache.get.mockResolvedValue(null);
-      prisma.stockItem.findUnique.mockResolvedValue(mockStockItem);
+      prisma.stockItem.findFirst.mockResolvedValue(mockStockItem);
       cache.set.mockResolvedValue(undefined);
 
-      const result = await service.getStockItemById('stock-1');
+      const result = await service.getStockItemById('stock-1', 'user-1');
 
       expect(result).toEqual(mockStockItem);
       expect(cache.set).toHaveBeenCalledWith(
-        'stockitem:stock-1',
+        'stockitem:user-1:stock-1',
         mockStockItem,
         600,
       );
@@ -258,9 +258,9 @@ describe('StocksService', () => {
 
     it('should return error when stock item not found', async () => {
       cache.get.mockResolvedValue(null);
-      prisma.stockItem.findUnique.mockResolvedValue(null);
+      prisma.stockItem.findFirst.mockResolvedValue(null);
 
-      const result = await service.getStockItemById('stock-1');
+      const result = await service.getStockItemById('stock-1', 'user-1');
 
       expect((result as unknown as any).error).toBe(true);
       expect((result as unknown as any).message).toContain(
@@ -270,9 +270,9 @@ describe('StocksService', () => {
 
     it('should handle database error', async () => {
       cache.get.mockResolvedValue(null);
-      prisma.stockItem.findUnique.mockRejectedValue(new Error('DB error'));
+      prisma.stockItem.findFirst.mockRejectedValue(new Error('DB error'));
 
-      const result = await service.getStockItemById('stock-1');
+      const result = await service.getStockItemById('stock-1', 'user-1');
 
       expect((result as unknown as any).error).toBe(true);
       expect((result as unknown as any).message).toContain('DB error');
@@ -283,28 +283,53 @@ describe('StocksService', () => {
     it('should update stock item successfully', async () => {
       const stockDto = buildCreateStockDto({ quantity: 75 });
       const updatedStockItem = buildStockItem({ ...stockDto });
+      prisma.stockItem.findUnique.mockResolvedValue({ userId: 'user-1' });
       prisma.stockItem.update.mockResolvedValue(updatedStockItem);
       cache.del.mockResolvedValue(undefined);
       cache.delPattern.mockResolvedValue(undefined);
 
-      const result = await service.updateStockItem('stock-1', stockDto);
+      const result = await service.updateStockItem(
+        'stock-1',
+        stockDto,
+        'user-1',
+      );
 
       expect(result.error).toBe(false);
       expect(result.message).toContain(
         'Élément de stock mis à jour avec succès',
       );
       expect(result.stockItem).toEqual(updatedStockItem);
-      expect(cache.del).toHaveBeenCalledWith('stockitem:stock-1');
+      expect(cache.del).toHaveBeenCalledWith('stockitem:user-1:stock-1');
       expect(cache.delPattern).toHaveBeenCalledWith(
         `stocks:salon:${updatedStockItem.userId}:*`,
       );
     });
 
+    it('should reject update when item does not belong to authenticated user', async () => {
+      const stockDto = buildCreateStockDto();
+      prisma.stockItem.findUnique.mockResolvedValue({ userId: 'user-other' });
+
+      const result = await service.updateStockItem(
+        'stock-1',
+        stockDto,
+        'user-1',
+      );
+
+      expect(result.error).toBe(true);
+      expect(result.message).toContain('Non autorisé à modifier');
+      expect(prisma.stockItem.update).not.toHaveBeenCalled();
+    });
+
     it('should handle update error', async () => {
       const stockDto = buildCreateStockDto();
+      prisma.stockItem.findUnique.mockResolvedValue({ userId: 'user-1' });
       prisma.stockItem.update.mockRejectedValue(new Error('Update failed'));
 
-      const result = await service.updateStockItem('stock-1', stockDto);
+      const result = await service.updateStockItem(
+        'stock-1',
+        stockDto,
+        'user-1',
+      );
 
       expect(result.error).toBe(true);
       expect(result.message).toContain('Update failed');
@@ -363,7 +388,11 @@ describe('StocksService', () => {
       cache.del.mockResolvedValue(undefined);
       cache.delPattern.mockResolvedValue(undefined);
 
-      const result = await service.updateStockQuantityItem('stock-1', 75);
+      const result = await service.updateStockQuantityItem(
+        'stock-1',
+        75,
+        'user-1',
+      );
 
       expect(result.error).toBe(false);
       expect(result.message).toContain('mise à jour avec succès');
@@ -371,7 +400,11 @@ describe('StocksService', () => {
     });
 
     it('should reject negative quantity', async () => {
-      const result = await service.updateStockQuantityItem('stock-1', -5);
+      const result = await service.updateStockQuantityItem(
+        'stock-1',
+        -5,
+        'user-1',
+      );
 
       expect(result.error).toBe(true);
       expect(result.message).toContain('La quantité ne peut pas être négative');
@@ -380,7 +413,11 @@ describe('StocksService', () => {
     it('should return error when stock item not found', async () => {
       prisma.stockItem.findUnique.mockResolvedValue(null);
 
-      const result = await service.updateStockQuantityItem('stock-1', 50);
+      const result = await service.updateStockQuantityItem(
+        'stock-1',
+        50,
+        'user-1',
+      );
 
       expect(result.error).toBe(true);
       expect(result.message).toContain('Élément de stock non trouvé');
@@ -394,19 +431,39 @@ describe('StocksService', () => {
       cache.del.mockResolvedValue(undefined);
       cache.delPattern.mockResolvedValue(undefined);
 
-      await service.updateStockQuantityItem('stock-1', 50);
+      await service.updateStockQuantityItem('stock-1', 50, 'user-1');
 
-      expect(cache.del).toHaveBeenCalledWith('stockitem:stock-1');
+      expect(cache.del).toHaveBeenCalledWith('stockitem:user-1:stock-1');
       expect(cache.delPattern).toHaveBeenCalledWith('stocks:salon:user-1:*');
     });
 
     it('should handle database error', async () => {
       prisma.stockItem.findUnique.mockRejectedValue(new Error('DB error'));
 
-      const result = await service.updateStockQuantityItem('stock-1', 50);
+      const result = await service.updateStockQuantityItem(
+        'stock-1',
+        50,
+        'user-1',
+      );
 
       expect(result.error).toBe(true);
       expect(result.message).toContain('Erreur lors de la mise à jour');
+    });
+
+    it('should reject quantity update when item belongs to another user', async () => {
+      prisma.stockItem.findUnique.mockResolvedValue(
+        buildStockItem({ userId: 'user-other' }),
+      );
+
+      const result = await service.updateStockQuantityItem(
+        'stock-1',
+        50,
+        'user-1',
+      );
+
+      expect(result.error).toBe(true);
+      expect(result.message).toContain('Non autorisé à modifier');
+      expect(prisma.stockItem.update).not.toHaveBeenCalled();
     });
   });
 
@@ -418,7 +475,7 @@ describe('StocksService', () => {
       cache.del.mockResolvedValue(undefined);
       cache.delPattern.mockResolvedValue(undefined);
 
-      const result = await service.deleteStockItem('stock-1');
+      const result = await service.deleteStockItem('stock-1', 'user-1');
 
       expect(result.error).toBe(false);
       expect(result.message).toContain('supprimé avec succès');
@@ -431,7 +488,7 @@ describe('StocksService', () => {
     it('should return error when stock item not found', async () => {
       prisma.stockItem.findUnique.mockResolvedValue(null);
 
-      const result = await service.deleteStockItem('stock-1');
+      const result = await service.deleteStockItem('stock-1', 'user-1');
 
       expect(result.error).toBe(true);
       expect(result.message).toContain('Élément de stock introuvable');
@@ -444,9 +501,9 @@ describe('StocksService', () => {
       cache.del.mockResolvedValue(undefined);
       cache.delPattern.mockResolvedValue(undefined);
 
-      await service.deleteStockItem('stock-1');
+      await service.deleteStockItem('stock-1', 'user-1');
 
-      expect(cache.del).toHaveBeenCalledWith('stockitem:stock-1');
+      expect(cache.del).toHaveBeenCalledWith('stockitem:user-1:stock-1');
       expect(cache.delPattern).toHaveBeenCalledWith('stocks:salon:user-1:*');
     });
 
@@ -454,10 +511,20 @@ describe('StocksService', () => {
       prisma.stockItem.findUnique.mockResolvedValue({ userId: 'user-1' });
       prisma.stockItem.delete.mockRejectedValue(new Error('Delete failed'));
 
-      const result = await service.deleteStockItem('stock-1');
+      const result = await service.deleteStockItem('stock-1', 'user-1');
 
       expect(result.error).toBe(true);
       expect(result.message).toContain('Delete failed');
+    });
+
+    it('should reject delete when item belongs to another user', async () => {
+      prisma.stockItem.findUnique.mockResolvedValue({ userId: 'user-other' });
+
+      const result = await service.deleteStockItem('stock-1', 'user-1');
+
+      expect(result.error).toBe(true);
+      expect(result.message).toContain('Non autorisé à supprimer');
+      expect(prisma.stockItem.delete).not.toHaveBeenCalled();
     });
   });
 });

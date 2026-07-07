@@ -166,7 +166,7 @@ describe('TimeSlotService', () => {
       expect(prisma.appointment.findFirst).toHaveBeenNthCalledWith(1, {
         where: {
           userId: 'user-1',
-          status: { in: ['PENDING', 'CONFIRMED', 'RESCHEDULING'] },
+          status: { in: ['PENDING', 'CONFIRMED'] },
           start: { lt: firstSlotEnd },
           end: { gt: firstSlotStart },
         },
@@ -175,7 +175,7 @@ describe('TimeSlotService', () => {
       expect(prisma.appointment.findFirst).toHaveBeenNthCalledWith(2, {
         where: {
           userId: 'user-1',
-          status: { in: ['PENDING', 'CONFIRMED', 'RESCHEDULING'] },
+          status: { in: ['PENDING', 'CONFIRMED'] },
           start: { lt: secondSlotEnd },
           end: { gt: secondSlotStart },
         },
@@ -333,7 +333,7 @@ describe('TimeSlotService', () => {
       expect(prisma.appointment.findFirst).toHaveBeenNthCalledWith(1, {
         where: {
           userId: tatoueur.userId,
-          status: { in: ['PENDING', 'CONFIRMED', 'RESCHEDULING'] },
+          status: { in: ['PENDING', 'CONFIRMED'] },
           start: { lt: firstSlotEnd },
           end: { gt: firstSlotStart },
           OR: [{ tatoueurId: tatoueur.id }, { performerUserId: tatoueur.id }],
@@ -343,7 +343,7 @@ describe('TimeSlotService', () => {
       expect(prisma.appointment.findFirst).toHaveBeenNthCalledWith(2, {
         where: {
           userId: tatoueur.userId,
-          status: { in: ['PENDING', 'CONFIRMED', 'RESCHEDULING'] },
+          status: { in: ['PENDING', 'CONFIRMED'] },
           start: { lt: secondSlotEnd },
           end: { gt: secondSlotStart },
           OR: [{ tatoueurId: tatoueur.id }, { performerUserId: tatoueur.id }],
@@ -395,7 +395,7 @@ describe('TimeSlotService', () => {
       expect(prisma.appointment.findFirst).toHaveBeenNthCalledWith(1, {
         where: {
           userId: 'salon-1',
-          status: { in: ['PENDING', 'CONFIRMED', 'RESCHEDULING'] },
+          status: { in: ['PENDING', 'CONFIRMED'] },
           start: { lt: firstSlotEnd },
           end: { gt: firstSlotStart },
           OR: [

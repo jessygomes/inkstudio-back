@@ -40,9 +40,11 @@ export class PortfolioController {
     @Param('userId') userId: string,
     @Query('tatoueurId') tatoueurId?: string,
     @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
     const pageNumber = page ? Number.parseInt(page, 10) : 1;
-    return this.portfolioService.getPortfolioPhotos(userId, tatoueurId, pageNumber);
+    const limitNumber = limit ? Number.parseInt(limit, 10) : undefined;
+    return this.portfolioService.getPortfolioPhotos(userId, tatoueurId, pageNumber, limitNumber);
   }
 
   //! MODIFIER UNE PHOTO DU PORTFOLIO

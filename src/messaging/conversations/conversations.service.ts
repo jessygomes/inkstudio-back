@@ -311,6 +311,14 @@ export class ConversationsService {
       );
     }
 
+    // Règle métier: seul le salon peut changer le statut (ACTIVE/ARCHIVED).
+    // Empêche le contournement de l'endpoint dédié /archive via PATCH standard.
+    if (dto.status !== undefined && conversation.salonId !== userId) {
+      throw new ForbiddenException(
+        'Seul le salon peut modifier le statut de la conversation',
+      );
+    }
+
     const updated = await this.prisma.conversation.update({
       where: { id: conversationId },
       data: dto,

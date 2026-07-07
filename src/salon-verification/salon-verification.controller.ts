@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Body, Patch, Param } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  ForbiddenException,
+} from '@nestjs/common';
 import { SalonVerificationService } from './salon-verification.service';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { UseGuards, Request } from '@nestjs/common';
@@ -18,7 +26,22 @@ export class SalonVerificationController {
     @Body('fileUrl') fileUrl: string,
   ) {
     const userId = req.user.userId;
-    return await this.salonVerificationService.submitDocument(userId, type, fileUrl);
+    const role = req.user.role;
+
+    const allowedRoles = ['user_salon', 'user_tatoueur'];
+
+    if (!role || !allowedRoles.includes(role)) {
+      throw new ForbiddenException(
+        'Seuls les salons et tatoueurs peuvent soumettre des documents de vérification.',
+      );
+    }
+
+    return await this.salonVerificationService.submitDocument(
+      userId,
+      role,
+      type,
+      fileUrl,
+    );
   }
 
   //! RÉCUPÉRER LES DOCUMENTS D'UN SALON

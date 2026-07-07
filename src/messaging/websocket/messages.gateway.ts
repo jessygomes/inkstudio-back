@@ -139,17 +139,18 @@ export class MessagesGateway
 
       // Enregistrer la connexion en mémoire
       this.socketUserMap.set(client.id, userId);
+      client.data.userId = userId;
 
       if (!this.userConnections.has(userId)) {
         this.userConnections.set(userId, new Set());
       }
       this.userConnections.get(userId)!.add(client.id);
 
-      // Enregistrer en Redis pour le scaling horizontal
-      // Purge agressive: on remplace toutes les connexions par la connexion courante.
-      // TODO: passer sur heartbeat + nettoyage ciblé pour réactiver le multi-onglets (option 2/3).
-       
-      await this.redisOnlineStatusService.resetUserConnections(userId, client.id);
+      // Room dédiée utilisateur pour les notifications ciblées cross-instance
+      void client.join?.(`user-${userId}`);
+
+      // Enregistrer en Redis pour le scaling horizontal (préserve multi-onglets)
+      await this.redisOnlineStatusService.markUserOnline(userId, client.id);
 
       // Récupérer les infos de l'utilisateur pour la notification
       const user = await this.prisma.user.findUnique({
@@ -379,17 +380,20 @@ export class MessagesGateway
           ? conversation.clientUserId
           : conversation.salonId;
 
-      const otherUserSockets = this.userConnections.get(otherUserId) || new Set();
       let isRecipientInRoom = false;
+      const conversationRoom = `conversation-${conversationId}`;
 
-      if (this.server?.sockets?.sockets) {
-        for (const socketId of otherUserSockets) {
-          const socket = this.server.sockets.sockets.get(socketId);
-          if (socket && socket.rooms.has(`conversation-${conversationId}`)) {
-            isRecipientInRoom = true;
-            break;
-          }
-        }
+      try {
+        // fetchSockets interroge toutes les instances via l'adapter Redis
+        const roomSockets = await this.server.in(conversationRoom).fetchSockets();
+        isRecipientInRoom = roomSockets.some(
+          (socket) => socket.data?.userId === otherUserId,
+        );
+      } catch (error: unknown) {
+        this.logger.error(
+          'Erreur lors de la vérification de présence cross-instance:',
+          this.getErrorMessage(error),
+        );
       }
 
       // Si le destinataire est dans la room, marquer le message comme lu automatiquement
@@ -416,18 +420,10 @@ export class MessagesGateway
       const unreadCount =
         await this.notificationService.getTotalUnreadCount(otherUserId);
 
-      // Envoyer le notification seulement aux connexions de l'autre utilisateur
-      const otherUserConnections = this.userConnections.get(otherUserId);
-      if (otherUserConnections && this.server?.sockets?.sockets) {
-        otherUserConnections.forEach((socketId) => {
-          const socket = this.server.sockets.sockets.get(socketId);
-          if (socket?.emit) {
-            socket.emit('unread-count-updated', {
-              totalUnread: unreadCount,
-            } as UnreadCountUpdatedEvent);
-          }
-        });
-      }
+      // Notifier l'utilisateur destinataire (local + remote instances)
+      this.notifyUser(otherUserId, 'unread-count-updated', {
+        totalUnread: unreadCount,
+      } as UnreadCountUpdatedEvent);
 
       // Arrêter le typing indicator
       const typingKey = `typing-${conversationId}`;
@@ -641,15 +637,8 @@ export class MessagesGateway
    * Envoyer une notification à un utilisateur spécifique
    */
   notifyUser(userId: string, event: string, data: any) {
-    const connections = this.userConnections.get(userId);
-    if (connections) {
-      connections.forEach((socketId) => {
-        const socket = this.server.sockets.sockets.get(socketId);
-        if (socket) {
-          socket.emit(event, data);
-        }
-      });
-    }
+    // Room utilisateur dédiée: fonctionne en mono-instance et multi-instance
+    void this.server.to(`user-${userId}`).emit(event, data);
   }
 
   /**

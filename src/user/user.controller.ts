@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards, Request } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Param, Patch, Post, Query, UseGuards, Request } from '@nestjs/common';
 import { UserService } from './user.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateAppointmentBookingDto, UpdateConfirmationSettingDto } from './dto/update-confirmation-setting.dto';
@@ -218,16 +218,42 @@ export class UserController {
     return this.userService.getPhotosSalon({userId});
   }
 
+  @UseGuards(JwtAuthGuard)
   @Patch(":userId/photos")
-  addOrUpdatePhotoSalon(@Param('userId') userId: string, @Body() body: string[] | {photoUrls: string[]}) {
+  addOrUpdatePhotoSalon(
+    @Param('userId') userId: string,
+    @Request() req: RequestWithUser,
+    @Body() body: string[] | {photoUrls: string[]},
+  ) {
+    if (req.user.userId !== userId) {
+      throw new ForbiddenException('Vous ne pouvez modifier que vos propres photos.');
+    }
+
     // Le body peut être soit un tableau directement, soit un objet avec photoUrls
     const salonPhotos = Array.isArray(body) ? body : body.photoUrls;
-    return this.userService.addOrUpdatePhotoSalon({userId, salonPhotos});
+    return this.userService.addOrUpdatePhotoSalon({
+      userId,
+      requesterUserId: req.user.userId,
+      salonPhotos,
+    });
   }
 
+  @UseGuards(JwtAuthGuard)
   @Patch(":userId/hours")
-  updateHoursSalon(@Param('userId') userId: string,  @Body() salonHours: Record<string, { start: string; end: string } | null>) { // On récupère le paramètre dynamique userId
-    return this.userService.updateHoursSalon({userId, salonHours: JSON.stringify(salonHours),}); // On appelle la méthode getUserById du service UserService
+  updateHoursSalon(
+    @Param('userId') userId: string,
+    @Request() req: RequestWithUser,
+    @Body() salonHours: Record<string, { start: string; end: string } | null>,
+  ) { // On récupère le paramètre dynamique userId
+    if (req.user.userId !== userId) {
+      throw new ForbiddenException('Vous ne pouvez modifier que vos propres horaires.');
+    }
+
+    return this.userService.updateHoursSalon({
+      userId,
+      requesterUserId: req.user.userId,
+      salonHours: JSON.stringify(salonHours),
+    }); // On appelle la méthode getUserById du service UserService
   }
 
   @Get(":userId/param") // :userId est un paramètre dynamique qui sera récupéré dans la méthode getUser

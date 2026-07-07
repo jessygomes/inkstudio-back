@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { AgendaMode, AppointmentStatus, Prisma, PrestationType as PrismaPrestationType } from '@prisma/client';
+import { AgendaMode, AppointmentStatus, Prisma, PrestationType as PrismaPrestationType, SaasPlan } from '@prisma/client';
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CreateAppointmentDto, PrestationType } from './dto/create-appointment.dto';
@@ -13,9 +13,6 @@ import { VideoCallService } from 'src/video-call/video-call.service';
 import { CacheService } from 'src/redis/cache.service';
 import { ConversationsService } from 'src/messaging/conversations/conversations.service';
 import { SKIN_REQUIRED_PRESTATIONS, SKIN_TONE_OPTIONS, SkinTone } from './constants/skin-tone.constants';
-import { CreateAppointmentConsumableDto } from './dto/create-appointment-consumable.dto';
-import { UpdateAppointmentConsumableDto } from './dto/update-appointment-consumable.dto';
-import { SearchAppointmentConsumablesDto } from './dto/search-appointment-consumables.dto';
 import { CreateAppointmentByClientResponse } from './dto/create-appointment-by-client.dto';
 
 @Injectable()
@@ -93,6 +90,7 @@ export class AppointmentsService {
       where: { id: userId },
       select: {
         role: true,
+        saasPlan: true,
         // Récupère uniquement les tatoueurs liés qui ont AUTORISÉ le salon à voir leurs RDV
         linkedTatoueurs: {
           where: {
@@ -120,6 +118,11 @@ export class AppointmentsService {
 
     // Pour un user_salon : voir les RDV qu'il crée + RDV de ses tatoueurs liés (si permission accordée)
     if (user?.role === 'user_salon') {
+      // Règle métier: un salon FREE ne peut pas voir les RDV de ses tatoueurs liés.
+      if (user.saasPlan === SaasPlan.FREE) {
+        return { userId };
+      }
+
       const linkedTatoueurIds = (user.linkedTatoueurs ?? []).map((tatoueur) => tatoueur.id);
 
       if (linkedTatoueurIds.length === 0) {
@@ -369,7 +372,7 @@ export class AppointmentsService {
   }) {
     const where: Record<string, any> = {
       userId,
-      status: { in: ['PENDING', 'CONFIRMED', 'RESCHEDULING'] },
+      status: { in: ['PENDING', 'CONFIRMED'] },
       start: { lt: end },
       end: { gt: start },
     };
@@ -390,327 +393,6 @@ export class AppointmentsService {
       where,
       select: { id: true },
     });
-  }
-
-  private async getConsumableAppointmentForUser(appointmentId: string, userId: string) {
-    const appointment = await this.prisma.appointment.findFirst({
-      where: {
-        id: appointmentId,
-        userId,
-      },
-      select: {
-        id: true,
-        prestation: true,
-      },
-    });
-
-    if (!appointment) {
-      return {
-        appointment: null,
-        error: {
-          error: true,
-          message: 'Rendez-vous introuvable ou non autorisé.',
-        },
-      };
-    }
-
-    const allowedPrestations = ['TATTOO', 'PIERCING', 'RETOUCHE'];
-    if (!allowedPrestations.includes(appointment.prestation)) {
-      return {
-        appointment: null,
-        error: {
-          error: true,
-          message: 'Les consommables sont disponibles uniquement pour Tattoo, Retouche et Piercing.',
-        },
-      };
-    }
-
-    return {
-      appointment,
-      error: null,
-    };
-  }
-
-  //! ------------------------------------------------------------------------------
-
-  //! CONSOMMABLES - CREER
-
-  //! ------------------------------------------------------------------------------
-  async createAppointmentConsumable(
-    appointmentId: string,
-    userId: string,
-    dto: CreateAppointmentConsumableDto,
-  ) {
-    try {
-      const validation = await this.getConsumableAppointmentForUser(appointmentId, userId);
-      if (validation.error) {
-        return validation.error;
-      }
-
-      const consumable = await this.prisma.appointmentConsumable.create({
-        data: {
-          appointmentId,
-          userId,
-          stockItemId: dto.stockItemId,
-          category: dto.category,
-          productName: dto.productName,
-          brand: dto.brand,
-          reference: dto.reference,
-          pigment: dto.pigment,
-          lotNumber: dto.lotNumber,
-          expirationDate: dto.expirationDate ? new Date(dto.expirationDate) : undefined,
-          quantity: dto.quantity,
-          unit: dto.unit,
-          notes: dto.notes,
-        },
-      });
-
-      await this.cacheService.del(`appointment:${appointmentId}`);
-
-      return {
-        error: false,
-        message: 'Consommable ajouté au rendez-vous.',
-        consumable,
-      };
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-      return {
-        error: true,
-        message: errorMessage,
-      };
-    }
-  }
-
-  //! ------------------------------------------------------------------------------
-
-  //! CONSOMMABLES - LISTER PAR RDV
-
-  //! ------------------------------------------------------------------------------
-  async getAppointmentConsumables(appointmentId: string, userId: string) {
-    try {
-      const validation = await this.getConsumableAppointmentForUser(appointmentId, userId);
-      if (validation.error) {
-        return validation.error;
-      }
-
-      const consumables = await this.prisma.appointmentConsumable.findMany({
-        where: {
-          appointmentId,
-          userId,
-        },
-        orderBy: {
-          createdAt: 'desc',
-        },
-      });
-
-      return {
-        error: false,
-        consumables,
-      };
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-      return {
-        error: true,
-        message: errorMessage,
-      };
-    }
-  }
-
-  //! ------------------------------------------------------------------------------
-
-  //! CONSOMMABLES - RECHERCHE LOT/REFERENCE/DATE
-
-  //! ------------------------------------------------------------------------------
-  async searchAppointmentConsumables(userId: string, query: SearchAppointmentConsumablesDto) {
-    try {
-      const page = Math.max(1, Number(query.page) || 1);
-      const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
-      const skip = (page - 1) * limit;
-
-      const where: any = {
-        userId,
-      };
-
-      if (query.lotNumber?.trim()) {
-        where.lotNumber = {
-          contains: query.lotNumber.trim(),
-          mode: 'insensitive',
-        };
-      }
-
-      if (query.reference?.trim()) {
-        where.reference = {
-          contains: query.reference.trim(),
-          mode: 'insensitive',
-        };
-      }
-
-      if (query.expirationDateFrom || query.expirationDateTo) {
-        where.expirationDate = {};
-
-        if (query.expirationDateFrom) {
-          where.expirationDate.gte = new Date(query.expirationDateFrom);
-        }
-
-        if (query.expirationDateTo) {
-          where.expirationDate.lte = new Date(query.expirationDateTo);
-        }
-      }
-
-      const [total, consumables] = await this.prisma.$transaction([
-        this.prisma.appointmentConsumable.count({ where }),
-        this.prisma.appointmentConsumable.findMany({
-          where,
-          skip,
-          take: limit,
-          orderBy: {
-            createdAt: 'desc',
-          },
-          include: {
-            appointment: {
-              select: {
-                id: true,
-                prestation: true,
-                start: true,
-                end: true,
-              },
-            },
-          },
-        }),
-      ]);
-
-      return {
-        error: false,
-        consumables,
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages: Math.max(1, Math.ceil(total / limit)),
-        },
-      };
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-      return {
-        error: true,
-        message: errorMessage,
-      };
-    }
-  }
-
-  //! ------------------------------------------------------------------------------
-
-  //! CONSOMMABLES - METTRE A JOUR
-
-  //! ------------------------------------------------------------------------------
-  async updateAppointmentConsumable(
-    appointmentId: string,
-    consumableId: string,
-    userId: string,
-    dto: UpdateAppointmentConsumableDto,
-  ) {
-    try {
-      const validation = await this.getConsumableAppointmentForUser(appointmentId, userId);
-      if (validation.error) {
-        return validation.error;
-      }
-
-      const existingConsumable = await this.prisma.appointmentConsumable.findFirst({
-        where: {
-          id: consumableId,
-          appointmentId,
-          userId,
-        },
-        select: { id: true },
-      });
-
-      if (!existingConsumable) {
-        return {
-          error: true,
-          message: 'Consommable introuvable pour ce rendez-vous.',
-        };
-      }
-
-      const consumable = await this.prisma.appointmentConsumable.update({
-        where: { id: consumableId },
-        data: {
-          stockItemId: dto.stockItemId,
-          category: dto.category,
-          productName: dto.productName,
-          brand: dto.brand,
-          reference: dto.reference,
-          pigment: dto.pigment,
-          lotNumber: dto.lotNumber,
-          expirationDate: dto.expirationDate ? new Date(dto.expirationDate) : undefined,
-          quantity: dto.quantity,
-          unit: dto.unit,
-          notes: dto.notes,
-        },
-      });
-
-      await this.cacheService.del(`appointment:${appointmentId}`);
-
-      return {
-        error: false,
-        message: 'Consommable mis à jour.',
-        consumable,
-      };
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-      return {
-        error: true,
-        message: errorMessage,
-      };
-    }
-  }
-
-  //! ------------------------------------------------------------------------------
-
-  //! CONSOMMABLES - SUPPRIMER
-
-  //! ------------------------------------------------------------------------------
-  async deleteAppointmentConsumable(appointmentId: string, consumableId: string, userId: string) {
-    try {
-      const validation = await this.getConsumableAppointmentForUser(appointmentId, userId);
-      if (validation.error) {
-        return validation.error;
-      }
-
-      const existingConsumable = await this.prisma.appointmentConsumable.findFirst({
-        where: {
-          id: consumableId,
-          appointmentId,
-          userId,
-        },
-        select: { id: true },
-      });
-
-      if (!existingConsumable) {
-        return {
-          error: true,
-          message: 'Consommable introuvable pour ce rendez-vous.',
-        };
-      }
-
-      await this.prisma.appointmentConsumable.delete({
-        where: {
-          id: consumableId,
-        },
-      });
-
-      await this.cacheService.del(`appointment:${appointmentId}`);
-
-      return {
-        error: false,
-        message: 'Consommable supprimé.',
-      };
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-      return {
-        error: true,
-        message: errorMessage,
-      };
-    }
   }
 
   //! ------------------------------------------------------------------------------
@@ -868,6 +550,16 @@ export class AppointmentsService {
         };
       }
 
+      if (
+        (salonConfig.role === 'user_salon' || salonConfig.role === 'user_tatoueur')
+        && salonConfig.saasPlan === SaasPlan.FREE
+      ) {
+        return {
+          error: true,
+          message: 'Ce profil est en plan FREE et ne peut pas recevoir de nouveaux rendez-vous.',
+        };
+      }
+
       const agendaMode = this.resolveAppointmentAgendaMode({
         role: salonConfig.role,
         agendaMode: salonConfig.saasPlanDetails?.agendaMode,
@@ -967,6 +659,9 @@ export class AppointmentsService {
         const tempAppointmentId = crypto.randomBytes(8).toString('hex');
         generatedVisioRoom = this.videoCallService.generateVideoCallLink(tempAppointmentId, salonConfig?.salonName || undefined);
       }
+      const visioSecurityInstruction = visio
+        ? this.videoCallService.getLobbyActivationInstruction()
+        : undefined;
 
       const moodboardValidation = await this.resolveValidatedMoodboardId({
         moodboardId,
@@ -1163,6 +858,7 @@ export class AppointmentsService {
           message: 'Rendez-vous projet créé avec détail tatouage.',
           appointment: newAppointment,
           clientLinked: !!clientUser, // Indiquer si le client était connecté
+          visioSecurityInstruction,
           // tattooDetail,
         };
       }
@@ -1265,6 +961,7 @@ export class AppointmentsService {
         message: 'Rendez-vous créé avec succès.',
         appointment: newAppointment,
         clientLinked: !!clientUser, // Indiquer si le client était connecté
+        visioSecurityInstruction,
       };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
@@ -1366,6 +1063,16 @@ export class AppointmentsService {
         return {
           error: true,
           message: 'Salon introuvable.',
+        };
+      }
+
+      if (
+        (salonConfig.role === 'user_salon' || salonConfig.role === 'user_tatoueur')
+        && salonConfig.saasPlan === SaasPlan.FREE
+      ) {
+        return {
+          error: true,
+          message: 'Ce profil est en plan FREE et ne peut pas recevoir de nouveaux rendez-vous.',
         };
       }
 
@@ -1582,6 +1289,9 @@ export class AppointmentsService {
         const tempAppointmentId = crypto.randomBytes(8).toString('hex');
         generatedVisioRoom = this.videoCallService.generateVideoCallLink(tempAppointmentId, salonConfig?.salonName || undefined);
       }
+      const visioSecurityInstruction = visio
+        ? this.videoCallService.getLobbyActivationInstruction()
+        : undefined;
 
       const moodboardValidation = await this.resolveValidatedMoodboardId({
         moodboardId,
@@ -1847,6 +1557,7 @@ export class AppointmentsService {
           appointment: newAppointment,
           // tattooDetail,
           status: appointmentStatus,
+          visioSecurityInstruction,
         };
       }
 
@@ -2029,6 +1740,7 @@ export class AppointmentsService {
           : `Rendez-vous créé avec succès.`,
         appointment: newAppointment,
         status: appointmentStatus,
+        visioSecurityInstruction,
       };
     } catch (error: unknown) {
       this.logger.error('createByClient failed', error as any);
@@ -3270,8 +2982,11 @@ export class AppointmentsService {
         };
       }
 
-      // Déterminer le nouveau statut selon le paramètre addConfirmationEnabled du salon
-      const newAppointmentStatus = existingAppointment.user.addConfirmationEnabled ? 'PENDING' : existingAppointment.status;
+      // Si addConfirmationEnabled est false, le salon doit reconfirmer la modification.
+      const nextAppointmentStatus =
+        existingAppointment.user?.addConfirmationEnabled === false
+          ? 'PENDING'
+          : existingAppointment.status;
 
       // Mettre à jour le rendez-vous (dates, heure et tatoueur)
       const updatedAppointment = await this.prisma.appointment.update({
@@ -3280,7 +2995,7 @@ export class AppointmentsService {
           start: new Date(start),
           end: new Date(end),
           tatoueurId: tatoueurId || existingAppointment.tatoueurId,
-          status: newAppointmentStatus,
+          status: nextAppointmentStatus,
         },
         include: {
           client: true,
@@ -3347,9 +3062,10 @@ export class AppointmentsService {
           })}`;
 
           // Créer un message personnalisé pour le salon
-          const statusInfo = newAppointmentStatus === 'PENDING'
-            ? '⚠️ Ce rendez-vous est en attente de votre confirmation.'
-            : '✅ Ce rendez-vous a été automatiquement confirmé.';
+          const statusInfo =
+            nextAppointmentStatus === 'PENDING'
+              ? '⚠️ Ce rendez-vous est en attente de votre confirmation.'
+              : '✅ Le rendez-vous a été directement reprogrammé.';
 
           const emailBody = `
             <strong>${clientName}</strong> a modifié son rendez-vous.
@@ -3404,11 +3120,12 @@ export class AppointmentsService {
 
       return {
         error: false,
-        message: newAppointmentStatus === 'PENDING'
-          ? 'Rendez-vous modifié et en attente de confirmation du salon.'
-          : 'Rendez-vous modifié avec succès.',
+        message:
+          nextAppointmentStatus === 'PENDING'
+            ? 'Rendez-vous modifié et en attente de confirmation du salon.'
+            : 'Rendez-vous modifié avec succès.',
         appointment: updatedAppointment,
-        status: newAppointmentStatus,
+        status: nextAppointmentStatus,
       };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
@@ -3563,6 +3280,8 @@ export class AppointmentsService {
     },
     data: {
       status: 'CANCELED',
+      visio: false,
+      visioRoom: null,
     },
     include: {
       client: true,
@@ -3736,7 +3455,9 @@ async cancelAppointmentByClient(appointmentId: string, clientUserId: string, rea
     const updatedAppointment = await this.prisma.appointment.update({
       where: { id: appointmentId },
       data: {
-        status: 'CANCELED'
+        status: 'CANCELED',
+        visio: false,
+        visioRoom: null,
       }
     });
 
@@ -3895,7 +3616,11 @@ async cancelAppointmentByClient(appointmentId: string, clientUserId: string, rea
     try {
       const appointment = await this.prisma.appointment.update({
         where: { id },
-        data: { status },
+        data: {
+          status,
+          visio: false,
+          visioRoom: null,
+        },
         include: {
           tatoueur: true,
           client: true,
@@ -4729,7 +4454,7 @@ async cancelAppointmentByClient(appointmentId: string, clientUserId: string, rea
       const pendingAppointments = await this.prisma.appointment.findMany({
         where: {
           ...visibilityWhere,
-          status: { in: ['PENDING', 'RESCHEDULING'] }, // Filtrer les RDV en attente et en reprogrammation
+          status: 'PENDING',
         },
         include: {
           tatoueur: {

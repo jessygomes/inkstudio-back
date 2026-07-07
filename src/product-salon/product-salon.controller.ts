@@ -26,14 +26,20 @@ export class ProductSalonController {
   //! MODIFIER UN PRODUIT
   @UseGuards(JwtAuthGuard)
   @Patch(':id')
-  async updateProduct(@Param('id') id: string, @Body() updateData: Partial<CreateProductDto>) {
-    return this.productSalonService.updateProduct(id, updateData);
+  async updateProduct(
+    @Request() req: RequestWithUser,
+    @Param('id') id: string,
+    @Body() updateData: Partial<CreateProductDto>,
+  ) {
+    const userId = req.user.userId;
+    return this.productSalonService.updateProduct(id, updateData, userId);
   }
 
   //! SUPPRIMER UN PRODUIT
   @UseGuards(JwtAuthGuard)
   @Delete(':id')
-  async deleteProduct(@Param('id') id: string) {
-    return this.productSalonService.deleteProduct(id);
+  async deleteProduct(@Request() req: RequestWithUser, @Param('id') id: string) {
+    const userId = req.user.userId;
+    return this.productSalonService.deleteProduct(id, userId);
   }
 }

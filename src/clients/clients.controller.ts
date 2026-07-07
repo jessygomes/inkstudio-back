@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Param,
   Patch,
@@ -17,6 +18,8 @@ import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientConsentDto } from './dto/update-client-consent.dto';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { RequestWithUser } from 'src/auth/jwt.strategy';
+import { SaasLimitGuard } from 'src/saas/saas-limit.guard';
+import { SaasLimit } from 'src/saas/saas-limit.decorator';
 // import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 
 @Controller('clients')
@@ -24,7 +27,8 @@ export class ClientsController {
   constructor(private readonly clientsService: ClientsService) {}
 
   //! CREER UN CLIENT ✅
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, SaasLimitGuard)
+  @SaasLimit('client')
   @Post()
   create(@Request() req: RequestWithUser, @Body() clientBody: CreateClientDto) {
     const userId = req.user.userId;
@@ -56,36 +60,52 @@ export class ClientsController {
   }
 
   //! NOMBRE DE NVX CLIENTS PAR MOIS ✅
+  @UseGuards(JwtAuthGuard, SaasLimitGuard)
+  @SaasLimit('dashboard')
   @Get('new-clients-count/:id')
   async getNewClientsCountByMonth(
+    @Request() req: RequestWithUser,
     @Param('id') id: string,
     @Query('month') month: number,
     @Query('year') year: number
   ) {
+    if (req.user.userId !== id) {
+      throw new ForbiddenException('Acces non autorise a ces statistiques.');
+    }
+
     return this.clientsService.getNewClientsCountByMonth(id, month, year);
   }
 
   //! RECHERCHER UN CLIENT PAR NOM OU EMAIL (pour le formulaire de réservation) ✅
+  @UseGuards(JwtAuthGuard)
   @Get('search')
   async getSearchClient(
+    @Request() req: RequestWithUser,
     @Query('query') query: string,
-    @Query('userId') userId: string
   ) {
+    const userId = req.user.userId;
     const clients = await this.clientsService.searchClients(query, userId);
     return clients; // même si []
   }
 
   //! VOIR UN SEUL CLIENT ✅
   @Get(':id')
-  getOneClient(@Param('id') id: string) {
-    return this.clientsService.getClientById(id);
+  @UseGuards(JwtAuthGuard)
+  getOneClient(@Request() req: RequestWithUser, @Param('id') id: string) {
+    const userId = req.user.userId;
+    return this.clientsService.getClientById(id, userId);
   }
 
   //! MODIFIER UN CLIENT ✅
   @UseGuards(JwtAuthGuard)
   @Patch('update/:id')
-  updateClient(@Param('id') id: string, @Body() clientBody: CreateClientDto) {
-    return this.clientsService.updateClient(id, clientBody); 
+  updateClient(
+    @Request() req: RequestWithUser,
+    @Param('id') id: string,
+    @Body() clientBody: CreateClientDto,
+  ) {
+    const userId = req.user.userId;
+    return this.clientsService.updateClient(id, userId, clientBody);
   }
 
   //! METTRE A JOUR LE CONSENTEMENT D'UN CLIENT ✅
@@ -103,7 +123,8 @@ export class ClientsController {
   //! SUPPRIMER UN CLIENT ✅
   @UseGuards(JwtAuthGuard)
   @Delete('delete/:id')
-  deleteClient(@Param('id') id: string) {
-    return this.clientsService.deleteClient(id);
+  deleteClient(@Request() req: RequestWithUser, @Param('id') id: string) {
+    const userId = req.user.userId;
+    return this.clientsService.deleteClient(id, userId);
   }
 }

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call */
 import { Test, TestingModule } from '@nestjs/testing';
-import { AgendaMode, SaasPlan } from '@prisma/client';
+import { AgendaMode } from '@prisma/client';
 import { BlockedTimeSlotsService } from './blocked-time-slots.service';
 import { PrismaService } from 'src/database/prisma.service';
 
@@ -10,7 +10,6 @@ const createPrismaMock = () => ({
     create: jest.fn(),
     findMany: jest.fn(),
     findFirst: jest.fn(),
-    findUnique: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),
   },
@@ -301,9 +300,8 @@ describe('BlockedTimeSlotsService', () => {
       prismaMock.tatoueur.findUnique.mockResolvedValue({
         userId: 'salon-1',
         user: {
-          saasPlan: SaasPlan.BUSINESS,
+          role: 'user_salon',
           saasPlanDetails: {
-            currentPlan: SaasPlan.BUSINESS,
             agendaMode: AgendaMode.PAR_TATOUEUR,
           },
         },
@@ -335,9 +333,8 @@ describe('BlockedTimeSlotsService', () => {
       prismaMock.tatoueur.findUnique.mockResolvedValue({
         userId: 'salon-1',
         user: {
-          saasPlan: SaasPlan.BUSINESS,
+          role: 'user_salon',
           saasPlanDetails: {
-            currentPlan: SaasPlan.BUSINESS,
             agendaMode: AgendaMode.PAR_TATOUEUR,
           },
         },
@@ -354,9 +351,8 @@ describe('BlockedTimeSlotsService', () => {
       prismaMock.tatoueur.findUnique.mockResolvedValue({
         userId: 'salon-1',
         user: {
-          saasPlan: SaasPlan.BUSINESS,
+          role: 'user_salon',
           saasPlanDetails: {
-            currentPlan: SaasPlan.BUSINESS,
             agendaMode: AgendaMode.PAR_TATOUEUR,
           },
         },
@@ -375,9 +371,8 @@ describe('BlockedTimeSlotsService', () => {
       prismaMock.tatoueur.findUnique.mockResolvedValue({
         userId: 'salon-1',
         user: {
-          saasPlan: SaasPlan.PRO,
+          role: null,
           saasPlanDetails: {
-            currentPlan: SaasPlan.PRO,
             agendaMode: AgendaMode.GLOBAL,
           },
         },
@@ -507,12 +502,13 @@ describe('BlockedTimeSlotsService', () => {
         endDate: new Date(updateDto.endDate),
       });
 
-      prismaMock.blockedTimeSlot.findUnique.mockResolvedValue(existingSlot);
+      prismaMock.blockedTimeSlot.findFirst.mockResolvedValue(existingSlot);
       prismaMock.blockedTimeSlot.update.mockResolvedValue(updatedSlot);
 
       const result = await service.updateBlockedSlot(
         'blocked-slot-1',
         updateDto,
+        'salon-1',
       );
 
       expect(result.error).toBe(false);
@@ -522,15 +518,18 @@ describe('BlockedTimeSlotsService', () => {
 
     it('should return error when blocked slot does not exist', async () => {
       const updateDto = buildUpdateBlockedSlotDto();
-      prismaMock.blockedTimeSlot.findUnique.mockResolvedValue(null);
+      prismaMock.blockedTimeSlot.findFirst.mockResolvedValue(null);
 
       const result = await service.updateBlockedSlot(
         'nonexistent-id',
         updateDto,
+        'salon-1',
       );
 
       expect(result.error).toBe(true);
-      expect(result.message).toBe('Créneau bloqué introuvable.');
+      expect(result.message).toBe(
+        'Créneau bloqué introuvable ou non autorisé.',
+      );
     });
 
     it('should update only startDate when provided', async () => {
@@ -549,12 +548,13 @@ describe('BlockedTimeSlotsService', () => {
         endDate: new Date('2026-02-15T12:00:00Z'),
       });
 
-      prismaMock.blockedTimeSlot.findUnique.mockResolvedValue(existingSlot);
+      prismaMock.blockedTimeSlot.findFirst.mockResolvedValue(existingSlot);
       prismaMock.blockedTimeSlot.update.mockResolvedValue(updatedSlot);
 
       const result = await service.updateBlockedSlot(
         'blocked-slot-1',
         updateDto,
+        'salon-1',
       );
 
       expect(result.error).toBe(false);
@@ -567,11 +567,12 @@ describe('BlockedTimeSlotsService', () => {
         endDate: '2026-02-16T14:00:00Z',
       });
 
-      prismaMock.blockedTimeSlot.findUnique.mockResolvedValue(existingSlot);
+      prismaMock.blockedTimeSlot.findFirst.mockResolvedValue(existingSlot);
 
       const result = await service.updateBlockedSlot(
         'blocked-slot-1',
         updateDto,
+        'salon-1',
       );
 
       expect(result.error).toBe(true);
@@ -585,12 +586,13 @@ describe('BlockedTimeSlotsService', () => {
       const updateDto = buildUpdateBlockedSlotDto({ reason: null });
       const updatedSlot = buildBlockedSlot({ reason: null });
 
-      prismaMock.blockedTimeSlot.findUnique.mockResolvedValue(existingSlot);
+      prismaMock.blockedTimeSlot.findFirst.mockResolvedValue(existingSlot);
       prismaMock.blockedTimeSlot.update.mockResolvedValue(updatedSlot);
 
       const result = await service.updateBlockedSlot(
         'blocked-slot-1',
         updateDto,
+        'salon-1',
       );
 
       expect(result.error).toBe(false);
@@ -598,13 +600,14 @@ describe('BlockedTimeSlotsService', () => {
 
     it('should handle database errors gracefully', async () => {
       const updateDto = buildUpdateBlockedSlotDto();
-      prismaMock.blockedTimeSlot.findUnique.mockRejectedValue(
+      prismaMock.blockedTimeSlot.findFirst.mockRejectedValue(
         new Error('Database error'),
       );
 
       const result = await service.updateBlockedSlot(
         'blocked-slot-1',
         updateDto,
+        'salon-1',
       );
 
       expect(result.error).toBe(true);
@@ -615,10 +618,13 @@ describe('BlockedTimeSlotsService', () => {
   describe('deleteBlockedSlot', () => {
     it('should delete a blocked slot successfully', async () => {
       const existingSlot = buildBlockedSlot();
-      prismaMock.blockedTimeSlot.findUnique.mockResolvedValue(existingSlot);
+      prismaMock.blockedTimeSlot.findFirst.mockResolvedValue(existingSlot);
       prismaMock.blockedTimeSlot.delete.mockResolvedValue(existingSlot);
 
-      const result = await service.deleteBlockedSlot('blocked-slot-1');
+      const result = await service.deleteBlockedSlot(
+        'blocked-slot-1',
+        'salon-1',
+      );
 
       expect(result.error).toBe(false);
       expect(result.message).toBe('Créneau bloqué supprimé avec succès.');
@@ -628,23 +634,31 @@ describe('BlockedTimeSlotsService', () => {
     });
 
     it('should return error when blocked slot does not exist', async () => {
-      prismaMock.blockedTimeSlot.findUnique.mockResolvedValue(null);
+      prismaMock.blockedTimeSlot.findFirst.mockResolvedValue(null);
 
-      const result = await service.deleteBlockedSlot('nonexistent-id');
+      const result = await service.deleteBlockedSlot(
+        'nonexistent-id',
+        'salon-1',
+      );
 
       expect(result.error).toBe(true);
-      expect(result.message).toBe('Créneau bloqué introuvable.');
+      expect(result.message).toBe(
+        'Créneau bloqué introuvable ou non autorisé.',
+      );
       expect(prismaMock.blockedTimeSlot.delete).not.toHaveBeenCalled();
     });
 
     it('should handle database errors gracefully', async () => {
       const existingSlot = buildBlockedSlot();
-      prismaMock.blockedTimeSlot.findUnique.mockResolvedValue(existingSlot);
+      prismaMock.blockedTimeSlot.findFirst.mockResolvedValue(existingSlot);
       prismaMock.blockedTimeSlot.delete.mockRejectedValue(
         new Error('Database error'),
       );
 
-      const result = await service.deleteBlockedSlot('blocked-slot-1');
+      const result = await service.deleteBlockedSlot(
+        'blocked-slot-1',
+        'salon-1',
+      );
 
       expect(result.error).toBe(true);
       expect(result.message).toBe('Database error');
@@ -684,11 +698,14 @@ describe('BlockedTimeSlotsService', () => {
 
     it('should preserve data integrity across operations', async () => {
       const slot = buildBlockedSlot();
-      prismaMock.blockedTimeSlot.findUnique.mockResolvedValue(slot);
+      prismaMock.blockedTimeSlot.findFirst.mockResolvedValue(slot);
       prismaMock.blockedTimeSlot.findMany.mockResolvedValue([slot]);
 
       const result1 = await service.getBlockedSlotsBySalon('salon-1');
-      const result2 = await service.deleteBlockedSlot('blocked-slot-1');
+      const result2 = await service.deleteBlockedSlot(
+        'blocked-slot-1',
+        'salon-1',
+      );
 
       expect(result1.blockedSlots).toBeDefined();
       expect(result1.blockedSlots?.[0].id).toBe(slot.id);

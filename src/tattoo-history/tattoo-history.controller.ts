@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Request, UseGuards }
 import { TattooHistoryService } from './tattoo-history.service';
 import { CreateTattooHistoryDto } from './dto/create-tattoohistory.dto';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
+import { RequestWithUser } from 'src/auth/jwt.strategy';
 
 @Controller('tattoo-history')
 export class TattooHistoryController {
@@ -14,15 +15,17 @@ export class TattooHistoryController {
   }
 
   //! MODIFIER UN HISTORIQUE DE TATOUAGE ✅
+  @UseGuards(JwtAuthGuard)
   @Patch('update/:id')
-  async updateHistory(@Param('id') id: string, @Body() body: CreateTattooHistoryDto) {
-    return this.tattooHistoryService.updateHistory(id, body);
+  async updateHistory(@Request() req: RequestWithUser, @Param('id') id: string, @Body() body: CreateTattooHistoryDto) {
+    return this.tattooHistoryService.updateHistory(id, body, req.user.userId);
   }
 
   //! SUPPRIMER UN HISTORIQUE DE TATOUAGE ✅
+  @UseGuards(JwtAuthGuard)
   @Delete('delete/:id')
-  async deleteHistory(@Param('id') id: string) {
-    return this.tattooHistoryService.deleteHistory(id);
+  async deleteHistory(@Request() req: RequestWithUser, @Param('id') id: string) {
+    return this.tattooHistoryService.deleteHistory(id, req.user.userId);
   }
 
   //! TODO : AFFICHER TOUS LES HISTORIQUES DES TATOUAGES DE TOUS LES CLIENTS DU SALON ✅

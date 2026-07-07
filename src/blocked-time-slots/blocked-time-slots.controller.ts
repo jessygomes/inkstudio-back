@@ -53,16 +53,19 @@ export class BlockedTimeSlotsController {
   @UseGuards(JwtAuthGuard)
   @Put(':id')
   async updateBlockedSlot(
+    @Request() req: RequestWithUser,
     @Param('id') id: string,
     @Body() updateBlockedSlotDto: UpdateBlockedSlotDto
   ) {
-    return this.blockedSlotsService.updateBlockedSlot(id, updateBlockedSlotDto);
+    const userId = req.user.userId;
+    return this.blockedSlotsService.updateBlockedSlot(id, updateBlockedSlotDto, userId);
   }
 
   //! SUPPRIMER UN CRÉNEAU BLOQUÉ
   @UseGuards(JwtAuthGuard)
   @Delete(':id')
-  async deleteBlockedSlot(@Param('id') id: string) {
-    return this.blockedSlotsService.deleteBlockedSlot(id);
+  async deleteBlockedSlot(@Request() req: RequestWithUser, @Param('id') id: string) {
+    const userId = req.user.userId;
+    return this.blockedSlotsService.deleteBlockedSlot(id, userId);
   }
 }

@@ -4,9 +4,10 @@ import { SaasModule } from 'src/saas/saas.module';
 import { CacheService } from 'src/redis/cache.service';
 import { StocksController } from './stocks.controller';
 import { StocksService } from './stocks.service';
+import { AppointmentConsumablesModule } from 'src/appointment-consumables/appointment-consumables.module';
 
 @Module({
-  imports: [SaasModule],
+  imports: [SaasModule, AppointmentConsumablesModule],
   controllers: [StocksController],
   providers: [StocksService, PrismaService, CacheService],
 })

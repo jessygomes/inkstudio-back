@@ -7,15 +7,6 @@ export class SaasController {
   constructor(private readonly saasService: SaasService) {}
 
   /**
-   *! 📊 RÉCUPÉRER LES STATISTIQUES D'UTILISATION DU SALON
-   * GET /saas/usage
-   */
-  @Get('usage')
-  async getUsageStats(@Param('userId') userId: string) {
-    return await this.saasService.getUsageStats(userId);
-  }
-
-  /**
    * 📝 RÉCUPÉRER LES DÉTAILS DU PLAN
    * GET /saas/plan/:userID
    */
@@ -24,14 +15,6 @@ export class SaasController {
     return await this.saasService.getUserPlanDetails(userId);
   }
 
-  /**
-   *! ✅ VÉRIFIER LES LIMITES ACTUELLES
-   * GET /saas/limits
-   */
-  @Get('limits')
-  async checkLimits(@Param('userId') userId: string) {
-    return await this.saasService.checkLimits(userId);
-  }
 
   /**
    *! 🔧 VÉRIFIER SI UNE FONCTIONNALITÉ EST DISPONIBLE

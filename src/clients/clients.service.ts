@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CreateClientDto } from './dto/create-client.dto';
-import { SaasService } from 'src/saas/saas.service';
 import { CacheService } from 'src/redis/cache.service';
 import { UpdateClientConsentDto } from './dto/update-client-consent.dto';
 
@@ -9,7 +8,6 @@ import { UpdateClientConsentDto } from './dto/update-client-consent.dto';
 export class ClientsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly saasService: SaasService,
     private cacheService: CacheService
   ) {}
 
@@ -46,17 +44,6 @@ export class ClientsService {
         tattooHistory,
       } = clientBody;
 
-      // 🔒 VÉRIFIER LES LIMITES SAAS AVANT DE CRÉER LE CLIENT
-      const canCreateClient = await this.saasService.canPerformAction(userId, 'client');
-      
-      if (!canCreateClient) {
-        const limits = await this.saasService.checkLimits(userId);
-        return {
-          error: true,
-          message: `Limite de fiches clients atteinte (${limits.limits.clients}). Passez au plan PRO ou BUSINESS pour continuer.`,
-        };
-      }
-  
       // Créer le client
       const newClient = await this.prisma.client.create({
         data: {
@@ -220,9 +207,9 @@ export class ClientsService {
   // }
 
   //! VOIR UN SEUL CLIENT
-  async getClientById(clientId: string) {
+  async getClientById(clientId: string, userId: string) {
     try {
-      const cacheKey = `client:${clientId}`;
+      const cacheKey = `client:${clientId}:user:${userId}`;
 
       // 1. Vérifier dans Redis
       const cachedClient = await this.cacheService.get<{
@@ -238,8 +225,11 @@ export class ClientsService {
       }
 
       // 2. Sinon, aller chercher en DB
-      const client = await this.prisma.client.findUnique({
-        where: { id: clientId },
+      const client = await this.prisma.client.findFirst({
+        where: {
+          id: clientId,
+          userId,
+        },
         include: {
           tattooDetails: true,
           medicalHistory: true,
@@ -249,7 +239,7 @@ export class ClientsService {
       });
 
       if (!client) {
-        throw new Error('Client introuvable.');
+        throw new Error('Client introuvable ou non autorisé.');
       }
 
       // 3. Mettre en cache (TTL 10 minutes pour un client spécifique)
@@ -570,7 +560,7 @@ async searchClients(query: string, userId: string) {
         },
       });
 
-      await this.cacheService.del(`client:${clientId}`);
+      await this.cacheService.del(`client:${clientId}:user:${userId}`);
       await this.cacheService.delPattern(`clients:salon:${userId}:*`);
       await this.cacheService.delPattern(`clients:search:${userId}:*`);
 
@@ -589,8 +579,26 @@ async searchClients(query: string, userId: string) {
   }
 
   //! MODIFIER UN CLIENT
-  async updateClient(clientId: string, clientBody: CreateClientDto) {
+  async updateClient(clientId: string, userId: string, clientBody: CreateClientDto) {
     try {
+      const existingClient = await this.prisma.client.findFirst({
+        where: {
+          id: clientId,
+          userId,
+        },
+        select: {
+          id: true,
+          userId: true,
+        },
+      });
+
+      if (!existingClient) {
+        return {
+          error: true,
+          message: 'Client introuvable ou non autorisé.',
+        };
+      }
+
       const { firstName, lastName, email, phone, birthDate, address,
         consentSigned,
         consentSignedAt,
@@ -691,7 +699,7 @@ async searchClients(query: string, userId: string) {
       }
 
       // Invalider le cache après update
-      await this.cacheService.del(`client:${clientId}`);
+      await this.cacheService.del(`client:${clientId}:user:${updatedClient.userId}`);
       await this.cacheService.delPattern(`clients:salon:${updatedClient.userId}:*`);
       await this.cacheService.delPattern(`clients:search:${updatedClient.userId}:*`);
 
@@ -707,16 +715,22 @@ async searchClients(query: string, userId: string) {
   }
 
   //! SUPPRIMER UN CLIENT
-  async deleteClient(clientId: string) {
+  async deleteClient(clientId: string, userId: string) {
     try {
-      // Récupérer le userId avant suppression pour invalider le cache
-      const clientToDelete = await this.prisma.client.findUnique({
-        where: { id: clientId },
+      // Vérifier que le client appartient au salon connecté
+      const clientToDelete = await this.prisma.client.findFirst({
+        where: {
+          id: clientId,
+          userId,
+        },
         select: { userId: true }
       });
 
       if (!clientToDelete) {
-        throw new Error('Client introuvable.');
+        return {
+          error: true,
+          message: 'Client introuvable ou non autorisé.',
+        };
       }
 
       // Utiliser une transaction atomique pour supprimer les relations liées puis le client
@@ -746,7 +760,7 @@ async searchClients(query: string, userId: string) {
       ]);
 
       // Invalider le cache après suppression
-      await this.cacheService.del(`client:${clientId}`);
+      await this.cacheService.del(`client:${clientId}:user:${clientToDelete.userId}`);
       await this.cacheService.delPattern(`clients:salon:${clientToDelete.userId}:*`);
       await this.cacheService.delPattern(`clients:search:${clientToDelete.userId}:*`);
 

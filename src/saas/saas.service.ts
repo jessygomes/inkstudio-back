@@ -1,7 +1,8 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { AgendaMode, SaasPlan, SaasPlanStatus } from '@prisma/client';
 import { freePlan, proPlan, businessPlan } from '../../utils/data';
+import { SaasGuardAction } from './saas-limit.decorator';
 
 type UpdatePlanOptions = {
   planStatus?: SaasPlanStatus;
@@ -38,82 +39,38 @@ export class SaasService {
     return planDetails;
   }
 
-  /**
-   * 📊 VÉRIFIER LES LIMITES D'UTILISATION
-   */
-  async checkLimits(userId: string) {
-    const planDetails = await this.getUserPlanDetails(userId);
-    
-    // Compter l'utilisation actuelle
-    const [appointmentsCount, clientsCount, tattoeursCount, portfolioCount] = await Promise.all([
-      this.getMonthlyAppointmentsCount(userId),
-      this.prisma.client.count({ where: { userId } }),
-      this.prisma.tatoueur.count({ where: { userId } }),
-      this.prisma.portfolio.count({ where: { userId } }),
-    ]);
-
-    return {
-      planDetails,
-      usage: {
-        appointments: appointmentsCount,
-        clients: clientsCount,
-        tattooeurs: tattoeursCount,
-        portfolioImages: portfolioCount,
-      },
-      limits: {
-        appointments: planDetails.maxAppointments,
-        clients: planDetails.maxClients,
-        tattooeurs: planDetails.maxTattooeurs,
-        portfolioImages: planDetails.maxPortfolioImages,
-      },
-      hasReached: {
-        appointments: planDetails.maxAppointments !== -1 && appointmentsCount >= planDetails.maxAppointments,
-        clients: planDetails.maxClients !== -1 && clientsCount >= planDetails.maxClients,
-        tattooeurs: planDetails.maxTattooeurs !== -1 && tattoeursCount >= planDetails.maxTattooeurs,
-        portfolioImages: planDetails.maxPortfolioImages !== -1 && portfolioCount >= planDetails.maxPortfolioImages,
-      },
-    };
-  }
-
-  /**
-   * ✅ VÉRIFIER SI UNE ACTION EST AUTORISÉE
-   */
-  async canPerformAction(userId: string, action: 'appointment' | 'client' | 'tatoueur' | 'portfolio'): Promise<boolean> {
-    const limits = await this.checkLimits(userId);
-    
-    // Mapper les actions vers les clés correctes
-    const limitKey = action === 'appointment' ? 'appointments' : 
-                    action === 'client' ? 'clients' :
-                    action === 'tatoueur' ? 'tattooeurs' : 
-                    action === 'portfolio' ? 'portfolioImages' : action;
-
-    const currentLimit = limits.limits[limitKey];
-    
-    // Si la limite est -1 (illimitée), toujours autoriser
-    if (currentLimit === -1) {
-      return true;
+  async enforceSaasAccess(userId: string, action: SaasGuardAction) {
+    if (action !== 'appointment' && action !== 'client' && action !== 'dashboard' && action !== 'stock') {
+      return;
     }
-    
-    return !limits.hasReached[limitKey];
-  }
 
-  /**
-   * 🚫 VÉRIFIER ET LANCER UNE ERREUR SI LIMITE ATTEINTE
-   */
-  async enforceLimit(userId: string, action: 'appointment' | 'client' | 'tatoueur' | 'portfolio') {
-    const canPerform = await this.canPerformAction(userId, action);
-    
-    if (!canPerform) {
-      const limits = await this.checkLimits(userId);
-      const actionName = {
-        appointment: 'rendez-vous',
-        client: 'fiches clients',
-        tatoueur: 'tatoueurs',
-        portfolio: 'images portfolio'
-      }[action];
-      
-      throw new BadRequestException(
-        `Limite ${actionName} atteinte (${limits.limits[action === 'appointment' ? 'appointments' : action === 'tatoueur' ? 'tattooeurs' : action === 'portfolio' ? 'portfolioImages' : action]}). Passez au plan PRO ou BUSINESS pour continuer.`
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        role: true,
+        saasPlan: true,
+      },
+    });
+
+    if (!user) {
+      throw new ForbiddenException('Utilisateur introuvable.');
+    }
+
+    const isRestrictedRole = user.role === 'user_salon' || user.role === 'user_tatoueur';
+    const isFreePlan = user.saasPlan === SaasPlan.FREE;
+
+    if (isRestrictedRole && isFreePlan) {
+      const actionLabel =
+        action === 'appointment'
+          ? 'créer des rendez-vous'
+          : action === 'client'
+            ? 'créer des fiches clients'
+            : action === 'stock'
+              ? 'gérer le stock'
+              : 'accéder aux statistiques du dashboard';
+
+      throw new ForbiddenException(
+        `Le plan FREE ne permet pas de ${actionLabel}. Passez au plan PRO ou BUSINESS.`,
       );
     }
   }
@@ -213,25 +170,6 @@ export class SaasService {
         planStatus: SaasPlanStatus.EXPIRED,
         currentPlan: SaasPlan.FREE,
         ...freeConfig,
-      },
-    });
-  }
-
-  /**
-   * 📅 COMPTER LES RDV DU MOIS EN COURS
-   */
-  private async getMonthlyAppointmentsCount(userId: string): Promise<number> {
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-
-    return await this.prisma.appointment.count({
-      where: {
-        userId,
-        start: {
-          gte: startOfMonth,
-          lte: endOfMonth,
-        },
       },
     });
   }
@@ -413,10 +351,10 @@ export class SaasService {
       case SaasPlan.FREE:
         return {
           agendaMode: AgendaMode.GLOBAL,
-          maxAppointments: 5,   // 5 RDV par mois
-          maxClients: 5,        // 5 clients max
-          maxTattooeurs: 1,
-          maxPortfolioImages: 5,
+          maxAppointments: -1,
+          maxClients: -1,
+          maxTattooeurs: -1,
+          maxPortfolioImages: -1,
           hasAdvancedStats: false,
           hasEmailReminders: false,
           hasCustomBranding: false,
@@ -427,10 +365,10 @@ export class SaasService {
       case SaasPlan.PRO:
         return {
           agendaMode: AgendaMode.GLOBAL,
-          maxAppointments: 150,
-          maxClients: 200,
-          maxTattooeurs: 3,
-          maxPortfolioImages: 30,
+          maxAppointments: -1,
+          maxClients: -1,
+          maxTattooeurs: -1,
+          maxPortfolioImages: -1,
           hasAdvancedStats: true,
           hasEmailReminders: true,
           hasCustomBranding: false,
@@ -469,34 +407,6 @@ export class SaasService {
    */
   async upgradeToPremium(userId: string, endDate?: Date | null) {
     return await this.updateUserPlan(userId, SaasPlan.BUSINESS, endDate);
-  }
-
-  /**
-   * 📊 OBTENIR LES STATISTIQUES D'UTILISATION
-   */
-  async getUsageStats(userId: string) {
-    const limits = await this.checkLimits(userId);
-    
-    return {
-      plan: limits.planDetails.currentPlan,
-      status: limits.planDetails.planStatus,
-      endDate: limits.planDetails.endDate,
-      usage: limits.usage,
-      limits: limits.limits,
-      percentageUsed: {
-        appointments: limits.limits.appointments === -1 ? 0 : Math.round((limits.usage.appointments / limits.limits.appointments) * 100),
-        clients: limits.limits.clients === -1 ? 0 : Math.round((limits.usage.clients / limits.limits.clients) * 100),
-        tattooeurs: limits.limits.tattooeurs === -1 ? 0 : Math.round((limits.usage.tattooeurs / limits.limits.tattooeurs) * 100),
-        portfolioImages: limits.limits.portfolioImages === -1 ? 0 : Math.round((limits.usage.portfolioImages / limits.limits.portfolioImages) * 100),
-      },
-      features: {
-        agendaMode: limits.planDetails.agendaMode,
-        advancedStats: limits.planDetails.hasAdvancedStats,
-        emailReminders: limits.planDetails.hasEmailReminders,
-        customBranding: limits.planDetails.hasCustomBranding,
-        apiAccess: limits.planDetails.hasApiAccess,
-      },
-    };
   }
 
   /**

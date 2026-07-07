@@ -70,6 +70,17 @@ export class StripeService {
     });
   }
 
+  private sanitizeIdempotencyPart(value: string): string {
+    return value.replace(/[^a-zA-Z0-9_-]/g, '_');
+  }
+
+  private buildIdempotencyKey(parts: Array<string | number>): string {
+    return parts
+      .map((part) => this.sanitizeIdempotencyPart(String(part)))
+      .join(':')
+      .slice(0, 255);
+  }
+
   private rethrowStripeOperationalError(operation: string, error: unknown): never {
     if (error instanceof BadRequestException || error instanceof NotFoundException) {
       throw error;
@@ -254,9 +265,27 @@ export class StripeService {
       return user.stripeCustomerId;
     }
 
+    const refreshedUser = await this.prisma.user.findUnique({
+      where: { id: user.id },
+      select: { stripeCustomerId: true },
+    });
+
+    if (refreshedUser?.stripeCustomerId) {
+      return refreshedUser.stripeCustomerId;
+    }
+
+    const customerCreateIdempotencyKey = this.buildIdempotencyKey([
+      'stripe',
+      'customer',
+      'create',
+      user.id,
+    ]);
+
     const customer = await this.stripe.customers.create({
       email: user.email,
       name: user.salonName || user.email,
+    }, {
+      idempotencyKey: customerCreateIdempotencyKey,
     });
 
     await this.persistStripeCustomerId(user.id, customer.id);
@@ -336,6 +365,16 @@ export class StripeService {
       const user = await this.getUserOrThrow(userId);
       const customerId = await this.getOrCreateCustomerId(user);
       const priceId = this.getPriceIdForPlan(plan);
+      const checkoutIdempotencyWindow = Math.floor(Date.now() / 30000);
+      const checkoutIdempotencyKey = this.buildIdempotencyKey([
+        'stripe',
+        'checkout',
+        'session',
+        'create',
+        user.id,
+        plan,
+        checkoutIdempotencyWindow,
+      ]);
 
     // ✅ ÉTAPE 4 : Créer la session de checkout Stripe
     /*
@@ -377,6 +416,8 @@ export class StripeService {
         userId: user.id,
         plan: plan,
       },
+    }, {
+      idempotencyKey: checkoutIdempotencyKey,
     });
 
       if (!session.url) {
@@ -470,6 +511,16 @@ export class StripeService {
           userId: user.id,
           plan,
         },
+      },
+      {
+        idempotencyKey: this.buildIdempotencyKey([
+          'stripe',
+          'subscription',
+          'update',
+          subscription.id,
+          targetPriceId,
+          'resume',
+        ]),
       },
     );
 
@@ -659,6 +710,13 @@ export class StripeService {
       // La souscription reste active jusqu'à la fin de la période déjà payée.
       subscription = await this.stripe.subscriptions.update(subscription.id, {
         cancel_at_period_end: true,
+      }, {
+        idempotencyKey: this.buildIdempotencyKey([
+          'stripe',
+          'subscription',
+          'cancel-at-period-end',
+          subscription.id,
+        ]),
       });
     }
 

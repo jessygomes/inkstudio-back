@@ -4,13 +4,10 @@ import { AppointmentsService } from './appointments.service';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
-// import { SaasLimitGuard } from 'src/saas/saas-limit.guard';
-// import { SaasLimit } from 'src/saas/saas-limit.decorator';
+import { SaasLimitGuard } from 'src/saas/saas-limit.guard';
+import { SaasLimit } from 'src/saas/saas-limit.decorator';
 import { SendCustomEmailDto } from './dto/send-custom-email.dto';
 import { RequestWithUser } from 'src/auth/jwt.strategy';
-import { CreateAppointmentConsumableDto } from './dto/create-appointment-consumable.dto';
-import { UpdateAppointmentConsumableDto } from './dto/update-appointment-consumable.dto';
-import { SearchAppointmentConsumablesDto } from './dto/search-appointment-consumables.dto';
 import {
   CreateAppointmentByClientRequestDto,
   CreateAppointmentByClientResponse,
@@ -26,9 +23,9 @@ export class AppointmentsController {
   @ApiOperation({ summary: 'Créer un RDV (salon authentifié)' })
   @ApiResponse({ status: 201, description: 'RDV créé avec succès.' })
   @ApiResponse({ status: 401, description: 'Non authentifié.' })
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, SaasLimitGuard)
+  @SaasLimit('appointment')
   @Post()
-  // @SaasLimit('appointment')
   async create(@Request() req: RequestWithUser, @Body() rdvBody: CreateAppointmentDto) {
     const userId = req.user.userId; // Permettre aussi de passer userId dans le body pour les RDV clients
     return await this.appointmentsService.create({userId, rdvBody });
@@ -168,7 +165,8 @@ export class AppointmentsController {
   @ApiOperation({ summary: 'RDV du jour (ou d\'une date) pour le dashboard' })
   @ApiQuery({ name: 'date', required: false, example: '2026-06-17', description: 'Date cible (YYYY-MM-DD). Défaut: aujourd\'hui.' })
   @ApiResponse({ status: 200, description: 'RDV de la journée.' })
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, SaasLimitGuard)
+  @SaasLimit('dashboard')
   @Get('today')
   async getTodaysAppointments(
     @Request() req: RequestWithUser,
@@ -219,7 +217,8 @@ export class AppointmentsController {
   }
 
   //! TAUX DE REMPLISSAGE DES CRENEAUX PAR SEMAINE ✅
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, SaasLimitGuard)
+  @SaasLimit('dashboard')
   @Get('weekly-fill-rate')
   async getWeeklyFillRate(
     @Request() req: RequestWithUser,
@@ -231,7 +230,8 @@ export class AppointmentsController {
   }
 
   //! TAUX D'ANNULATION DES RDV ✅
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, SaasLimitGuard)
+  @SaasLimit('dashboard')
   @Get('cancellation-rate')
   async getGlobalCancellationRate(@Request() req: RequestWithUser) {
     const userId = req.user.userId;
@@ -239,7 +239,8 @@ export class AppointmentsController {
   }
 
   //! TOTAL DES RDV PAYES PAR MOIS ✅
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, SaasLimitGuard)
+  @SaasLimit('dashboard')
   @Get('monthly-paid-appointments')
   async getMonthlyPaidAppointments(
     @Request() req: RequestWithUser,
@@ -357,73 +358,6 @@ export class AppointmentsController {
   @Get('tatoueur/:id')
   async getAppointmentsByTatoueurId(@Param('id') tatoueurId: string) {
     return await this.appointmentsService.getTatoueurAppointments(tatoueurId);
-  }
-
-  //! CONSOMMABLES - AJOUTER UN CONSOMMABLE A UN RDV
-  @UseGuards(JwtAuthGuard)
-  @Post(':appointmentId/consumables')
-  async createAppointmentConsumable(
-    @Request() req: RequestWithUser,
-    @Param('appointmentId') appointmentId: string,
-    @Body() dto: CreateAppointmentConsumableDto,
-  ) {
-    return this.appointmentsService.createAppointmentConsumable(
-      appointmentId,
-      req.user.userId,
-      dto,
-    );
-  }
-
-  //! CONSOMMABLES - LISTER LES CONSOMMABLES D'UN RDV
-  @UseGuards(JwtAuthGuard)
-  @Get(':appointmentId/consumables')
-  async getAppointmentConsumables(
-    @Request() req: RequestWithUser,
-    @Param('appointmentId') appointmentId: string,
-  ) {
-    return this.appointmentsService.getAppointmentConsumables(appointmentId, req.user.userId);
-  }
-
-  //! CONSOMMABLES - RECHERCHE PAR LOT/REFERENCE/DATE
-  @UseGuards(JwtAuthGuard)
-  @Get('consumables/search')
-  async searchAppointmentConsumables(
-    @Request() req: RequestWithUser,
-    @Query() query: SearchAppointmentConsumablesDto,
-  ) {
-    return this.appointmentsService.searchAppointmentConsumables(req.user.userId, query);
-  }
-
-  //! CONSOMMABLES - MODIFIER UN CONSOMMABLE
-  @UseGuards(JwtAuthGuard)
-  @Patch(':appointmentId/consumables/:consumableId')
-  async updateAppointmentConsumable(
-    @Request() req: RequestWithUser,
-    @Param('appointmentId') appointmentId: string,
-    @Param('consumableId') consumableId: string,
-    @Body() dto: UpdateAppointmentConsumableDto,
-  ) {
-    return this.appointmentsService.updateAppointmentConsumable(
-      appointmentId,
-      consumableId,
-      req.user.userId,
-      dto,
-    );
-  }
-
-  //! CONSOMMABLES - SUPPRIMER UN CONSOMMABLE
-  @UseGuards(JwtAuthGuard)
-  @Delete(':appointmentId/consumables/:consumableId')
-  async deleteAppointmentConsumable(
-    @Request() req: RequestWithUser,
-    @Param('appointmentId') appointmentId: string,
-    @Param('consumableId') consumableId: string,
-  ) {
-    return this.appointmentsService.deleteAppointmentConsumable(
-      appointmentId,
-      consumableId,
-      req.user.userId,
-    );
   }
 
   //! ENVOYER UN EMAIL PERSONNALISÉ À UN CLIENT ✅

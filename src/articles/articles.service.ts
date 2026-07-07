@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CacheService } from 'src/redis/cache.service';
 import { CreateArticleDto } from './dto/create-article.dto';
@@ -11,8 +11,16 @@ export class ArticlesService {
     private readonly cacheService: CacheService,
   ) {}
 
-  async createArticle(createArticleDto: CreateArticleDto) {
+  private ensureAdminRole(role?: string): void {
+    if (role !== 'admin') {
+      throw new ForbiddenException('Acces reserve aux administrateurs.');
+    }
+  }
+
+  async createArticle(role: string | undefined, createArticleDto: CreateArticleDto) {
     try {
+      this.ensureAdminRole(role);
+
       const article = await this.prisma.article.create({
         data: {
           title: createArticleDto.title.trim(),
@@ -166,8 +174,10 @@ export class ArticlesService {
     }
   }
 
-  async getAdminArticles() {
+  async getAdminArticles(role: string | undefined) {
     try {
+      this.ensureAdminRole(role);
+
       return await this.prisma.article.findMany({
         orderBy: {
           createdAt: 'desc',
@@ -182,8 +192,10 @@ export class ArticlesService {
     }
   }
 
-  async updateArticle(id: string, updateArticleDto: UpdateArticleDto) {
+  async updateArticle(role: string | undefined, id: string, updateArticleDto: UpdateArticleDto) {
     try {
+      this.ensureAdminRole(role);
+
       const existingArticle = await this.prisma.article.findUnique({
         where: { id },
       });
@@ -222,8 +234,10 @@ export class ArticlesService {
     }
   }
 
-  async deleteArticle(id: string) {
+  async deleteArticle(role: string | undefined, id: string) {
     try {
+      this.ensureAdminRole(role);
+
       const existingArticle = await this.prisma.article.findUnique({
         where: { id },
       });

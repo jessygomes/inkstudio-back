@@ -10,6 +10,7 @@ const createPrismaMock = () => ({
   },
   productSalon: {
     create: jest.fn(),
+    count: jest.fn(),
     findMany: jest.fn(),
     findUnique: jest.fn(),
     update: jest.fn(),
@@ -90,7 +91,7 @@ describe('ProductSalonService', () => {
 
   describe('getAllProducts', () => {
     it('returns cached products when present', async () => {
-      const cached = [{ id: 'pr1' }];
+      const cached = { products: [{ id: 'pr1' }], pagination: { page: 1 } };
       cache.get.mockResolvedValue(cached);
 
       const result = await service.getAllProducts('u1');
@@ -99,8 +100,9 @@ describe('ProductSalonService', () => {
       expect(prisma.productSalon.findMany).not.toHaveBeenCalled();
     });
 
-    it('fetches products, caches them, and returns list', async () => {
+    it('fetches products, caches them, and returns paginated response', async () => {
       cache.get.mockResolvedValue(null);
+      prisma.productSalon.count.mockResolvedValue(2);
       prisma.productSalon.findMany.mockResolvedValue([
         { id: 'pr1' },
         { id: 'pr2' },
@@ -108,13 +110,27 @@ describe('ProductSalonService', () => {
 
       const result = await service.getAllProducts('u1');
 
-      expect(result).toHaveLength(2);
-      expect(cache.set).toHaveBeenCalledWith('products:salon:u1', result, 1200);
+      expect(result).toEqual({
+        products: [{ id: 'pr1' }, { id: 'pr2' }],
+        pagination: {
+          page: 1,
+          pageSize: 10,
+          total: 2,
+          totalPages: 1,
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+      });
+      expect(cache.set).toHaveBeenCalledWith(
+        'products:salon:u1:page:1',
+        result,
+        1200,
+      );
     });
 
     it('returns error on retrieval failure', async () => {
       cache.get.mockResolvedValue(null);
-      prisma.productSalon.findMany.mockRejectedValue(new Error('db fail'));
+      prisma.productSalon.count.mockRejectedValue(new Error('db fail'));
 
       const result = await service.getAllProducts('u1');
 
@@ -126,20 +142,35 @@ describe('ProductSalonService', () => {
     it('returns error when product not found', async () => {
       prisma.productSalon.findUnique.mockResolvedValue(null);
 
-      const result = await service.updateProduct('pr1', { name: 'New' });
+      const result = await service.updateProduct('pr1', { name: 'New' }, 'u1');
 
       expect(result).toEqual({ error: true, message: 'Produit non trouvé' });
       expect(prisma.productSalon.update).not.toHaveBeenCalled();
     });
 
-    it('updates product, invalidates cache, and returns payload', async () => {
+    it('returns error when authenticated user does not own the product', async () => {
+      prisma.productSalon.findUnique.mockResolvedValue({
+        id: 'pr1',
+        userId: 'u-other',
+      });
+
+      const result = await service.updateProduct('pr1', { name: 'New' }, 'u1');
+
+      expect(result).toEqual({
+        error: true,
+        message: 'Non autorisé à modifier ce produit.',
+      });
+      expect(prisma.productSalon.update).not.toHaveBeenCalled();
+    });
+
+    it('updates owned product, invalidates cache, and returns payload', async () => {
       prisma.productSalon.findUnique.mockResolvedValue({
         id: 'pr1',
         userId: 'u1',
       });
       prisma.productSalon.update.mockResolvedValue({ id: 'pr1', name: 'New' });
 
-      const result = await service.updateProduct('pr1', { name: 'New' });
+      const result = await service.updateProduct('pr1', { name: 'New' }, 'u1');
 
       expect(result).toEqual({
         error: false,
@@ -148,38 +179,41 @@ describe('ProductSalonService', () => {
       });
       expect(cache.del).toHaveBeenCalledWith('products:salon:u1');
     });
-
-    it('returns error message when update throws', async () => {
-      prisma.productSalon.findUnique.mockResolvedValue({
-        id: 'pr1',
-        userId: 'u1',
-      });
-      prisma.productSalon.update.mockRejectedValue(new Error('boom'));
-
-      const result = await service.updateProduct('pr1', { name: 'New' });
-
-      expect(result).toEqual({ error: true, message: 'boom' });
-    });
   });
 
   describe('deleteProduct', () => {
     it('returns error when product not found', async () => {
       prisma.productSalon.findUnique.mockResolvedValue(null);
 
-      const result = await service.deleteProduct('pr1');
+      const result = await service.deleteProduct('pr1', 'u1');
 
       expect(result).toEqual({ error: true, message: 'Produit non trouvé' });
       expect(prisma.productSalon.delete).not.toHaveBeenCalled();
     });
 
-    it('deletes product, invalidates cache, and returns success message', async () => {
+    it('returns error when authenticated user does not own the product', async () => {
+      prisma.productSalon.findUnique.mockResolvedValue({
+        id: 'pr1',
+        userId: 'u-other',
+      });
+
+      const result = await service.deleteProduct('pr1', 'u1');
+
+      expect(result).toEqual({
+        error: true,
+        message: 'Non autorisé à supprimer ce produit.',
+      });
+      expect(prisma.productSalon.delete).not.toHaveBeenCalled();
+    });
+
+    it('deletes owned product, invalidates cache, and returns success message', async () => {
       prisma.productSalon.findUnique.mockResolvedValue({
         id: 'pr1',
         userId: 'u1',
       });
       prisma.productSalon.delete.mockResolvedValue({});
 
-      const result = await service.deleteProduct('pr1');
+      const result = await service.deleteProduct('pr1', 'u1');
 
       expect(result).toEqual({
         error: false,
@@ -195,7 +229,7 @@ describe('ProductSalonService', () => {
       });
       prisma.productSalon.delete.mockRejectedValue(new Error('boom'));
 
-      const result = await service.deleteProduct('pr1');
+      const result = await service.deleteProduct('pr1', 'u1');
 
       expect(result).toEqual({ error: true, message: 'boom' });
     });

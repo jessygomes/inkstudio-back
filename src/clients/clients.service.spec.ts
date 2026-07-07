@@ -2,7 +2,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ClientsService } from './clients.service';
 import { PrismaService } from 'src/database/prisma.service';
-import { SaasService } from 'src/saas/saas.service';
 import { CacheService } from 'src/redis/cache.service';
 import { CreateClientDto } from './dto/create-client.dto';
 
@@ -10,6 +9,7 @@ const createPrismaMock = () => ({
   $transaction: jest.fn(),
   client: {
     create: jest.fn(),
+    findFirst: jest.fn(),
     findUnique: jest.fn(),
     count: jest.fn(),
     findMany: jest.fn(),
@@ -50,11 +50,6 @@ const createCacheMock = () => ({
   delPattern: jest.fn(),
 });
 
-const createSaasMock = () => ({
-  canPerformAction: jest.fn(() => Promise.resolve(true)),
-  checkLimits: jest.fn(() => Promise.resolve({ limits: { clients: 10 } })),
-});
-
 const buildClientDto = (
   overrides: Partial<CreateClientDto> = {},
 ): CreateClientDto => ({
@@ -75,45 +70,32 @@ describe('ClientsService', () => {
   let service: ClientsService;
   let prisma: ReturnType<typeof createPrismaMock>;
   let cache: ReturnType<typeof createCacheMock>;
-  let saas: ReturnType<typeof createSaasMock>;
 
   beforeEach(async () => {
     prisma = createPrismaMock();
     cache = createCacheMock();
-    saas = createSaasMock();
 
-    // $transaction should execute provided callback with prisma
-    prisma.$transaction.mockImplementation(<T>(fn: (p: typeof prisma) => T) =>
-      fn(prisma),
+    // Support callback and array transaction styles.
+    prisma.$transaction.mockImplementation(
+      <T>(arg: ((p: typeof prisma) => T) | T[]) => {
+        if (typeof arg === 'function') {
+          return (arg as (p: typeof prisma) => T)(prisma);
+        }
+
+        return Promise.all(arg as Promise<unknown>[]) as T;
+      },
     );
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ClientsService,
         { provide: PrismaService, useValue: prisma },
-        { provide: SaasService, useValue: saas },
         { provide: CacheService, useValue: cache },
       ],
     }).compile();
 
     service = module.get<ClientsService>(ClientsService);
     jest.clearAllMocks();
-  });
-
-  it('denies client creation when SaaS limits reached', async () => {
-    saas.canPerformAction.mockResolvedValue(false);
-    saas.checkLimits.mockResolvedValue({ limits: { clients: 5 } });
-
-    const result = await service.createClient({
-      userId: 'u1',
-      clientBody: buildClientDto(),
-    });
-
-    expect(result).toEqual({
-      error: true,
-      message: expect.stringContaining('Limite de fiches clients atteinte (5)'),
-    });
-    expect(prisma.client.create).not.toHaveBeenCalled();
   });
 
   it('creates client and does not create optional details when absent', async () => {
@@ -198,19 +180,19 @@ describe('ClientsService', () => {
     const cached = { id: 'c1', firstName: 'A', lastName: 'B' };
     cache.get.mockResolvedValue(cached);
 
-    const result = await service.getClientById('c1');
+    const result = await service.getClientById('c1', 'u1');
 
     expect(result).toEqual(cached);
-    expect(prisma.client.findUnique).not.toHaveBeenCalled();
+    expect(prisma.client.findFirst).not.toHaveBeenCalled();
     expect(cache.set).not.toHaveBeenCalled();
   });
 
   it('fetches client by id and caches when not cached', async () => {
     cache.get.mockResolvedValue(null);
     const client = { id: 'c1', firstName: 'A' };
-    prisma.client.findUnique.mockResolvedValue(client as any);
+    prisma.client.findFirst.mockResolvedValue(client as any);
 
-    const result = await service.getClientById('c1');
+    const result = await service.getClientById('c1', 'u1');
 
     expect(result).toEqual(client);
     expect(cache.set).toHaveBeenCalledWith(expect.any(String), client, 600);
@@ -218,11 +200,14 @@ describe('ClientsService', () => {
 
   it('returns error when client by id is not found', async () => {
     cache.get.mockResolvedValue(null);
-    prisma.client.findUnique.mockResolvedValue(null);
+    prisma.client.findFirst.mockResolvedValue(null);
 
-    const result = await service.getClientById('missing');
+    const result = await service.getClientById('missing', 'u1');
 
-    expect(result).toEqual({ error: true, message: 'Client introuvable.' });
+    expect(result).toEqual({
+      error: true,
+      message: 'Client introuvable ou non autorisé.',
+    });
   });
 
   it('returns cached salon clients when present', async () => {
@@ -296,6 +281,7 @@ describe('ClientsService', () => {
   });
 
   it('updates client and medical history when existing', async () => {
+    prisma.client.findFirst.mockResolvedValue({ id: 'c1', userId: 'u1' });
     prisma.client.update.mockResolvedValue({ id: 'c1', userId: 'u1' });
     prisma.medicalHistory.findUnique.mockResolvedValue({ clientId: 'c1' });
     prisma.medicalHistory.update.mockResolvedValue({
@@ -305,6 +291,7 @@ describe('ClientsService', () => {
 
     const result = await service.updateClient(
       'c1',
+      'u1',
       buildClientDto({
         email: 'e',
         address: 'addr',
@@ -315,12 +302,35 @@ describe('ClientsService', () => {
 
     expect(result).toMatchObject({ error: false });
     expect(prisma.medicalHistory.update).toHaveBeenCalled();
-    expect(cache.del).toHaveBeenCalledWith('client:c1');
+    expect(cache.del).toHaveBeenCalledWith('client:c1:user:u1');
+    expect(cache.delPattern).toHaveBeenCalledWith('clients:salon:u1:*');
+    expect(cache.delPattern).toHaveBeenCalledWith('clients:search:u1:*');
+  });
+
+  it('updates client consent and invalidates per-user client cache key', async () => {
+    prisma.client.findFirst.mockResolvedValue({ id: 'c1', userId: 'u1' });
+    prisma.client.update.mockResolvedValue({
+      id: 'c1',
+      consentSigned: true,
+      consentSignedAt: new Date('2026-01-01T00:00:00.000Z'),
+      consentFileUrl: 'https://example.com/consent.pdf',
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    });
+
+    const result = await service.updateClientConsent('c1', 'u1', {
+      consentSigned: true,
+      consentSignedAt: '2026-01-01T00:00:00.000Z',
+      consentFileUrl: 'https://example.com/consent.pdf',
+    });
+
+    expect(result).toMatchObject({ error: false });
+    expect(cache.del).toHaveBeenCalledWith('client:c1:user:u1');
     expect(cache.delPattern).toHaveBeenCalledWith('clients:salon:u1:*');
     expect(cache.delPattern).toHaveBeenCalledWith('clients:search:u1:*');
   });
 
   it('creates medical history when none exists during update', async () => {
+    prisma.client.findFirst.mockResolvedValue({ id: 'c1', userId: 'u1' });
     prisma.client.update.mockResolvedValue({ id: 'c1', userId: 'u1' });
     prisma.medicalHistory.findUnique.mockResolvedValue(null);
     prisma.medicalHistory.create.mockResolvedValue({
@@ -330,6 +340,7 @@ describe('ClientsService', () => {
 
     const result = await service.updateClient(
       'c1',
+      'u1',
       buildClientDto({
         email: 'e',
         address: 'addr',
@@ -346,10 +357,12 @@ describe('ClientsService', () => {
   });
 
   it('skips medical history when no medical data provided', async () => {
+    prisma.client.findFirst.mockResolvedValue({ id: 'c1', userId: 'u1' });
     prisma.client.update.mockResolvedValue({ id: 'c1', userId: 'u1' });
 
     const result = await service.updateClient(
       'c1',
+      'u1',
       buildClientDto({
         email: 'e',
         address: 'addr',
@@ -363,7 +376,7 @@ describe('ClientsService', () => {
   });
 
   it('deletes client and invalidates caches', async () => {
-    prisma.client.findUnique.mockResolvedValue({ userId: 'u1' });
+    prisma.client.findFirst.mockResolvedValue({ userId: 'u1' });
     prisma.medicalHistory.deleteMany.mockResolvedValue({});
     prisma.tattooHistory.deleteMany.mockResolvedValue({});
     prisma.aftercare.deleteMany.mockResolvedValue({});
@@ -372,26 +385,42 @@ describe('ClientsService', () => {
     prisma.tattooDetail.deleteMany.mockResolvedValue({});
     prisma.client.delete.mockResolvedValue({});
 
-    const result = await service.deleteClient('c1');
+    const result = await service.deleteClient('c1', 'u1');
 
     expect(result).toEqual({
       error: false,
       message: 'Client supprimé avec succès.',
     });
-    expect(cache.del).toHaveBeenCalledWith('client:c1');
+    expect(cache.del).toHaveBeenCalledWith('client:c1:user:u1');
     expect(cache.delPattern).toHaveBeenCalledWith('clients:salon:u1:*');
     expect(cache.delPattern).toHaveBeenCalledWith('clients:search:u1:*');
   });
 
   it('returns error when deleting missing client', async () => {
-    prisma.client.findUnique.mockResolvedValue(null);
+    prisma.client.findFirst.mockResolvedValue(null);
 
-    const result = await service.deleteClient('missing');
+    const result = await service.deleteClient('missing', 'u1');
 
     expect(result).toEqual({
       error: true,
-      message: expect.stringContaining('Client introuvable.'),
+      message: 'Client introuvable ou non autorisé.',
     });
+  });
+
+  it('returns error when updating client not owned by salon', async () => {
+    prisma.client.findFirst.mockResolvedValue(null);
+
+    const result = await service.updateClient(
+      'c1',
+      'u1',
+      buildClientDto({ email: 'e', address: 'addr' }),
+    );
+
+    expect(result).toEqual({
+      error: true,
+      message: 'Client introuvable ou non autorisé.',
+    });
+    expect(prisma.client.update).not.toHaveBeenCalled();
   });
 
   it('searches clients combines existing and user clients, caches result', async () => {

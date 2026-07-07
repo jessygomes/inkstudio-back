@@ -230,17 +230,21 @@ export class MoodboardService {
   //! ─── ACCÈS SALON ──────────────────────────────────────────────────────────
 
   //! VOIR LE MOODBOARD CONNECTÉ À UN RDV (accès salon)
-  async getMoodboardByAppointment(appointmentId: string, salonUserId: string) {
+  async getMoodboardByAppointment(appointmentId: string, requesterUserId: string) {
     const appointment = await this.prisma.appointment.findUnique({
       where: { id: appointmentId },
-      select: { id: true, userId: true, moodboardId: true },
+      select: { id: true, userId: true, performerUserId: true, moodboardId: true },
     });
 
     if (!appointment) {
       throw new NotFoundException('Rendez-vous introuvable.');
     }
 
-    if (appointment.userId !== salonUserId) {
+    const hasAccess =
+      appointment.userId === requesterUserId ||
+      appointment.performerUserId === requesterUserId;
+
+    if (!hasAccess) {
       throw new ForbiddenException('Accès refusé à ce rendez-vous.');
     }
 

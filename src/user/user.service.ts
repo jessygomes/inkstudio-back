@@ -1,5 +1,5 @@
 import { AgendaMode, SaasPlan } from '@prisma/client';
-import {Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CacheService } from 'src/redis/cache.service';
 import { MailService } from 'src/email/mailer.service';
@@ -1230,7 +1230,19 @@ export class UserService {
   //! -------------------------------------------------
   //! UPDATE HOURS SALON
   //! -------------------------------------------------
-  async updateHoursSalon({userId, salonHours} : {userId: string; salonHours: string}): Promise<Record<string, any>> {
+  async updateHoursSalon({
+    userId,
+    requesterUserId,
+    salonHours,
+  } : {
+    userId: string;
+    requesterUserId: string;
+    salonHours: string;
+  }): Promise<Record<string, any>> {
+    if (userId !== requesterUserId) {
+      throw new ForbiddenException('Vous ne pouvez modifier que vos propres horaires.');
+    }
+
     const user = await this.prisma.user.update({
       where: {
         id: userId,
@@ -1252,7 +1264,19 @@ export class UserService {
   //! -------------------------------------------------
   //! ADD OR UPDATE PHOTO SALON
   //! -------------------------------------------------
-  async addOrUpdatePhotoSalon({userId, salonPhotos} : {userId: string; salonPhotos: string[] | {photoUrls: string[]}}): Promise<Record<string, any>> {
+  async addOrUpdatePhotoSalon({
+    userId,
+    requesterUserId,
+    salonPhotos,
+  } : {
+    userId: string;
+    requesterUserId: string;
+    salonPhotos: string[] | {photoUrls: string[]};
+  }): Promise<Record<string, any>> {
+    if (userId !== requesterUserId) {
+      throw new ForbiddenException('Vous ne pouvez modifier que vos propres photos.');
+    }
+
     // Gérer le cas où salonPhotos est un objet avec photoUrls ou directement un tableau
     let photosArray: string[];
     
@@ -1972,10 +1996,12 @@ export class UserService {
   //! -------------------------------------------------
   async toggleInspirationSalon({ userId, role }: { userId: string; role?: string }) {
     try {
-      if (role !== 'user_salon') {
+      const allowedRoles = ['user_salon', 'user_tatoueur'];
+
+      if (!role || !allowedRoles.includes(role)) {
         return {
           error: true,
-          message: 'Accès réservé aux salons.',
+          message: 'Accès réservé aux salons et tatoueurs.',
         };
       }
 
@@ -1996,10 +2022,10 @@ export class UserService {
         };
       }
 
-      if (existingUser.role !== 'user_salon') {
+      if (!allowedRoles.includes(existingUser.role)) {
         return {
           error: true,
-          message: 'Accès réservé aux salons.',
+          message: 'Accès réservé aux salons et tatoueurs.',
         };
       }
 

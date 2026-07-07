@@ -14,6 +14,8 @@ import { SalonAnalyticsService } from './salon-analytics.service';
 import { CreateSalonProfileViewDto } from './dto/create-salon-profile-view.dto';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { RequestWithUser } from 'src/auth/jwt.strategy';
+import { SaasLimitGuard } from 'src/saas/saas-limit.guard';
+import { SaasLimit } from 'src/saas/saas-limit.decorator';
 
 @Controller('salon-analytics')
 export class SalonAnalyticsController {
@@ -33,7 +35,8 @@ export class SalonAnalyticsController {
    * Récupère les statistiques d'un salon (protégé - auth requise)
    */
   @Get(':salonId/stats')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, SaasLimitGuard)
+  @SaasLimit('dashboard')
   async getSalonStats(
     @Param('salonId') salonId: string,
     @Query('days') days: string = '30',
@@ -59,7 +62,8 @@ export class SalonAnalyticsController {
    * Récupère les stats temps réel (dernières 24h)
    */
   @Get(':salonId/realtime')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, SaasLimitGuard)
+  @SaasLimit('dashboard')
   async getRealTimeStats(
     @Param('salonId') salonId: string,
     @Request() req: RequestWithUser,
@@ -78,7 +82,8 @@ export class SalonAnalyticsController {
    * Récupère les stats comparatives (30j vs 30j précédents)
    */
   @Get(':salonId/comparative')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, SaasLimitGuard)
+  @SaasLimit('dashboard')
   async getComparativeStats(
     @Param('salonId') salonId: string,
     @Request() req: RequestWithUser,

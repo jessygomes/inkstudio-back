@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { VerificationStatusDocument, SalonVerificationDocumentType } from '@prisma/client';
 
@@ -11,7 +11,20 @@ export class SalonVerificationService {
   //! DEPOSER UN DOCUMENT PAR UN SALON
 
   //! -----------------------------------------------------------------
-  async submitDocument(userId: string, type: SalonVerificationDocumentType, fileUrl: string) {
+  async submitDocument(
+    userId: string,
+    role: string | undefined,
+    type: SalonVerificationDocumentType,
+    fileUrl: string,
+  ) {
+    const allowedRoles = ['user_salon', 'user_tatoueur'];
+
+    if (!role || !allowedRoles.includes(role)) {
+      throw new ForbiddenException(
+        'Seuls les salons et tatoueurs peuvent soumettre des documents de vérification.',
+      );
+    }
+
     // Upsert to keep one doc per type per salon
     const document = await this.prisma.salonVerificationDocument.upsert({
       where: { userId_type: { userId, type } },

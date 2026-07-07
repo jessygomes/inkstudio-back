@@ -12,6 +12,7 @@ import { MessagingModule } from 'src/messaging/messaging.module';
 import { PostAppointmentEmailService } from './post-appointment-email.service';
 import { PostAppointmentEmailJob } from './jobs/post-appointment-email.job';
 import { PostAppointmentEmailScheduler } from './jobs/post-appointment-email.scheduler';
+import { AppointmentConsumablesModule } from 'src/appointment-consumables/appointment-consumables.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { PostAppointmentEmailScheduler } from './jobs/post-appointment-email.sch
     MailModule,
     VideoCallModule,
     MessagingModule,
+    AppointmentConsumablesModule,
     BullModule.registerQueue({ name: 'post-appointment-email' }),
   ],
   controllers: [AppointmentsController],

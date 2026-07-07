@@ -47,8 +47,34 @@ export class TattooHistoryService {
   }
 
   //! MODIFIER UN HISTORIQUE DE TATOUAGE
-  async updateHistory(id: string, data: CreateTattooHistoryDto) {
+  async updateHistory(id: string, data: CreateTattooHistoryDto, userId: string) {
     try {
+      const existingHistory = await this.prisma.tattooHistory.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          client: {
+            select: {
+              userId: true,
+            },
+          },
+        },
+      });
+
+      if (!existingHistory) {
+        return {
+          error: true,
+          message: 'Historique introuvable.',
+        };
+      }
+
+      if (existingHistory.client.userId !== userId) {
+        return {
+          error: true,
+          message: 'Non autorisé à modifier cet historique.',
+        };
+      }
+
       const history = await this.prisma.tattooHistory.update({
         where: { id },
         data: {
@@ -76,8 +102,34 @@ export class TattooHistoryService {
   }
 
   //! SUPPRIMER UN HISTORIQUE DE TATOUAGE
-  async deleteHistory(id: string) {
+  async deleteHistory(id: string, userId: string) {
     try {
+      const existingHistory = await this.prisma.tattooHistory.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          client: {
+            select: {
+              userId: true,
+            },
+          },
+        },
+      });
+
+      if (!existingHistory) {
+        return {
+          error: true,
+          message: 'Historique introuvable.',
+        };
+      }
+
+      if (existingHistory.client.userId !== userId) {
+        return {
+          error: true,
+          message: 'Non autorisé à supprimer cet historique.',
+        };
+      }
+
       const history = await this.prisma.tattooHistory.delete({
         where: { id },
       });

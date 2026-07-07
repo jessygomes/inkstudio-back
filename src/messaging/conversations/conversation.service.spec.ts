@@ -168,7 +168,7 @@ describe('ConversationsService', () => {
       expect(result.id).toBe('conv-1');
       expect(prisma.conversation.create).toHaveBeenCalled();
       const [[createCall]] = prisma.message.create.mock.calls as Array<
-        [{ data?: { content?: string } }]
+        [{ data?: { content?: string } }],
       >;
       expect(createCall.data?.content).toBe('Hello');
       expect(notifications.incrementUnreadCount).toHaveBeenCalledWith(
@@ -208,8 +208,8 @@ describe('ConversationsService', () => {
             where?: { OR?: Array<{ salonId?: string, clientUserId?: string }> },
             skip?: number,
             take?: number,
-          }
-        ]
+          },
+        ],
       >;
       expect(findManyCall.where?.OR).toEqual([
         { salonId: 'salon-1' },
@@ -254,8 +254,8 @@ describe('ConversationsService', () => {
             },
             take?: number,
             orderBy?: { lastMessageAt?: 'desc' },
-          }
-        ]
+          },
+        ],
       >;
       expect(findManyCall.where?.salonId).toBe('salon-1');
       expect(findManyCall.take).toBe(10);
@@ -321,6 +321,18 @@ describe('ConversationsService', () => {
 
       expect(prisma.conversation.update).toHaveBeenCalled();
       expect(result.subject).toBe('New');
+    });
+
+    it('prevents client from updating conversation status', async () => {
+      prisma.conversation.findUnique.mockResolvedValue(buildConversation());
+
+      await expect(
+        service.updateConversation('conv-1', 'client-1', {
+          status: ConversationStatus.ARCHIVED,
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(prisma.conversation.update).not.toHaveBeenCalled();
     });
   });
 
@@ -406,8 +418,8 @@ describe('ConversationsService', () => {
               isRead?: boolean,
             },
             data?: { isRead?: boolean, readAt?: Date },
-          }
-        ]
+          },
+        ],
       >;
       expect(updateCall?.where).toEqual({
         conversationId: 'conv-1',

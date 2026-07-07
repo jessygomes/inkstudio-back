@@ -287,7 +287,7 @@ export class TimeSlotService {
     try {
       const whereConditions: Record<string, any> = {
         userId,
-        status: { in: ['PENDING', 'CONFIRMED', 'RESCHEDULING'] },
+        status: { in: ['PENDING', 'CONFIRMED'] },
         start: { lt: endDate },
         end: { gt: startDate },
       };

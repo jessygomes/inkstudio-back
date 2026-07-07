@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { AgendaMode, SaasPlan } from '@prisma/client';
+import { AgendaMode } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma.service';
 import { CreateBlockedSlotDto } from './dto/create-blocked-slot.dto';
 import { UpdateBlockedSlotDto } from './dto/update-blocked-slot.dto';
@@ -9,15 +9,21 @@ export class BlockedTimeSlotsService {
   constructor(private readonly prisma: PrismaService) {}
 
   private resolveAgendaMode({
-    plan,
+    role,
     agendaMode,
   }: {
-    plan?: SaasPlan | null;
+    role?: string | null;
     agendaMode?: AgendaMode | null;
   }) {
-    return plan === SaasPlan.BUSINESS && agendaMode === AgendaMode.PAR_TATOUEUR
-      ? AgendaMode.PAR_TATOUEUR
-      : AgendaMode.GLOBAL;
+    if (role === 'user_salon') {
+      return AgendaMode.PAR_TATOUEUR;
+    }
+
+    if (role === 'user_tatoueur') {
+      return AgendaMode.GLOBAL;
+    }
+
+    return agendaMode ?? AgendaMode.GLOBAL;
   }
 
   //! CRÉER UN CRÉNEAU BLOQUÉ
@@ -124,10 +130,9 @@ export class BlockedTimeSlotsService {
           userId: true,
           user: {
             select: {
-              saasPlan: true,
+              role: true,
               saasPlanDetails: {
                 select: {
-                  currentPlan: true,
                   agendaMode: true,
                 },
               },
@@ -144,7 +149,7 @@ export class BlockedTimeSlotsService {
       }
 
       const agendaMode = this.resolveAgendaMode({
-        plan: tatoueurContext.user?.saasPlanDetails?.currentPlan ?? tatoueurContext.user?.saasPlan,
+        role: tatoueurContext.user?.role,
         agendaMode: tatoueurContext.user?.saasPlanDetails?.agendaMode,
       });
 
@@ -237,17 +242,20 @@ export class BlockedTimeSlotsService {
   }
 
   //! MODIFIER UN CRÉNEAU BLOQUÉ
-  async updateBlockedSlot(id: string, updateData: UpdateBlockedSlotDto) {
+  async updateBlockedSlot(id: string, updateData: UpdateBlockedSlotDto, userId: string) {
     try {
-      // Vérifier si le créneau bloqué existe
-      const existingSlot = await this.prisma.blockedTimeSlot.findUnique({
-        where: { id },
+      // Vérifier que le créneau bloqué appartient au salon connecté
+      const existingSlot = await this.prisma.blockedTimeSlot.findFirst({
+        where: {
+          id,
+          userId,
+        },
       });
 
       if (!existingSlot) {
         return {
           error: true,
-          message: 'Créneau bloqué introuvable.',
+          message: 'Créneau bloqué introuvable ou non autorisé.',
         };
       }
 
@@ -311,17 +319,20 @@ export class BlockedTimeSlotsService {
   }
 
   //! SUPPRIMER UN CRÉNEAU BLOQUÉ
-  async deleteBlockedSlot(id: string) {
+  async deleteBlockedSlot(id: string, userId: string) {
     try {
-      // Vérifier si le créneau bloqué existe
-      const existingSlot = await this.prisma.blockedTimeSlot.findUnique({
-        where: { id },
+      // Vérifier que le créneau bloqué appartient au salon connecté
+      const existingSlot = await this.prisma.blockedTimeSlot.findFirst({
+        where: {
+          id,
+          userId,
+        },
       });
 
       if (!existingSlot) {
         return {
           error: true,
-          message: 'Créneau bloqué introuvable.',
+          message: 'Créneau bloqué introuvable ou non autorisé.',
         };
       }
 

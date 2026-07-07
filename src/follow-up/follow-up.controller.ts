@@ -1,5 +1,5 @@
- 
-import { BadRequestException, Body, Controller, Get, Param, Post, Query, Request, UseGuards } from '@nestjs/common';
+
+import { BadRequestException, Body, Controller, ForbiddenException, Get, Param, Post, Query, Request, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { RequestWithUser } from 'src/auth/jwt.strategy';
 import { PrismaService } from 'src/database/prisma.service';
@@ -138,11 +138,17 @@ export class FollowupsController {
     return { followUps };
   }
 
-    //! RECUPERER LE NOMBRE DE SUIVIS PAS ENCORE REPONDU PAR LE SALON
+  //! RECUPERER LE NOMBRE DE SUIVIS PAS ENCORE REPONDU PAR LE SALON
+  @UseGuards(JwtAuthGuard)
   @Get('unanswered/:userId/number')
-  async getUnansweredNumberFollowUps(@Param('userId') userId: string) {
+  async getUnansweredNumberFollowUps(@Request() req: RequestWithUser, @Param('userId') userId: string) {
+    const authenticatedUserId = req.user.userId;
+    if (userId !== authenticatedUserId) {
+      throw new ForbiddenException('Non autorisé à accéder au compteur d’un autre salon.');
+    }
+
     const count = await this.prisma.followUpSubmission.count({
-      where: { isAnswered: false, userId },
+      where: { isAnswered: false, userId: authenticatedUserId },
     });
     return { count };
   }
@@ -225,6 +231,7 @@ export class FollowupsController {
   @UseGuards(JwtAuthGuard)
   @Post('reply/:id')
   async replyToFollowUp(
+    @Request() req: RequestWithUser,
     @Param('id') id: string,
     @Body() body: { reply?: string; response?: string }
   ) {
@@ -260,6 +267,11 @@ export class FollowupsController {
     }
     if (!followUp.appointment.client) {
       throw new BadRequestException('Client associé introuvable');
+    }
+
+    // Vérifier que le suivi appartient bien au salon authentifié.
+    if (followUp.userId !== req.user.userId) {
+      throw new ForbiddenException('Non autorisé à répondre à ce suivi.');
     }
     
     // Validation de la réponse
@@ -304,14 +316,20 @@ export class FollowupsController {
   }
 
   //! SUPPRIMER UN SUIVI
+  @UseGuards(JwtAuthGuard)
   @Post('delete/:id')
-  async deleteFollowUp(@Param('id') id: string) {
+  async deleteFollowUp(@Request() req: RequestWithUser, @Param('id') id: string) {
     // Vérifier si le suivi existe
     const followUp = await this.prisma.followUpSubmission.findUnique({
       where: { id },
     });
     if (!followUp) {
       throw new BadRequestException('Suivi non trouvé');
+    }
+
+    // Vérifier que le suivi appartient bien au salon authentifié.
+    if (followUp.userId !== req.user.userId) {
+      throw new ForbiddenException('Non autorisé à supprimer ce suivi.');
     }
 
     try {

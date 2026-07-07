@@ -1,4 +1,16 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Request, UseGuards, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  Request,
+  UseGuards,
+  Query,
+  ForbiddenException,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PiercingPriceService } from './piercing-price.service';
 import { PiercingZone, PiercingZoneOreille, PiercingZoneVisage, PiercingZoneBouche, PiercingZoneCorps, PiercingZoneMicrodermal } from '@prisma/client';
@@ -66,13 +78,21 @@ export class PiercingPriceController {
     return this.piercingPriceService.getSalonPricingOverview(req.user.userId);
   }
 
+  // Endpoint public pour le parcours de réservation client (vitrine salon)
+  @Get('public/:userId/overview')
+  getPublicSalonPricingOverview(@Param('userId') userId: string) {
+    return this.piercingPriceService.getSalonPricingOverview(userId);
+  }
+
   @Get('available-zones')
+  @UseGuards(JwtAuthGuard)
   getAvailableZonesForConfiguration(@Request() req: RequestWithUser) {
     return this.piercingPriceService.getAvailableZonesForConfiguration(req.user.userId);
   }
 
   // Services de piercing (zones spécifiques avec prix)
   @Get('services')
+  @UseGuards(JwtAuthGuard)
   getServicePrices(@Request() req: RequestWithUser, @Query('piercingPriceId') piercingPriceId?: string) {
     return this.piercingPriceService.getServicePrices(req.user.userId, piercingPriceId);
   }
@@ -94,7 +114,7 @@ export class PiercingPriceController {
   updateServicePrice(
     @Request() req: RequestWithUser,
     @Param('id') id: string,
-    @Body() updateServicePriceDto: any,
+    @Body() updateServicePriceDto: Partial<CreatePiercingServicePriceDto>,
   ) {
     return this.piercingPriceService.updateServicePrice(req.user.userId, id, updateServicePriceDto);
   }
@@ -105,8 +125,18 @@ export class PiercingPriceController {
     return this.piercingPriceService.deleteServicePrice(req.user.userId, id);
   }
 
-    @Get('configuration/:userId')
-  getSalonPiercingConfiguration(@Param('userId') userId: string) {
+  @Get('configuration/:userId')
+  @UseGuards(JwtAuthGuard)
+  getSalonPiercingConfiguration(
+    @Request() req: RequestWithUser,
+    @Param('userId') userId: string,
+  ) {
+    if (req.user.userId !== userId) {
+      throw new ForbiddenException(
+        'Vous ne pouvez consulter que votre propre configuration piercing.',
+      );
+    }
+
     return this.piercingPriceService.getSalonPiercingConfiguration(userId);
   }
 

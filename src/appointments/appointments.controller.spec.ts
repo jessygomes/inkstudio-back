@@ -3,6 +3,9 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ForbiddenException } from '@nestjs/common';
 import { AppointmentsController } from './appointments.controller';
 import { AppointmentsService } from './appointments.service';
+import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
+import { SaasLimitGuard } from 'src/saas/saas-limit.guard';
+import { SaasService } from 'src/saas/saas.service';
 
 describe('AppointmentsController', () => {
   let controller: AppointmentsController;
@@ -19,6 +22,20 @@ describe('AppointmentsController', () => {
         {
           provide: AppointmentsService,
           useValue: appointmentsService,
+        },
+        {
+          provide: JwtAuthGuard,
+          useValue: { canActivate: jest.fn().mockReturnValue(true) },
+        },
+        {
+          provide: SaasLimitGuard,
+          useValue: { canActivate: jest.fn().mockResolvedValue(true) },
+        },
+        {
+          provide: SaasService,
+          useValue: {
+            enforceSaasAccess: jest.fn().mockResolvedValue(undefined),
+          },
         },
       ],
     }).compile();

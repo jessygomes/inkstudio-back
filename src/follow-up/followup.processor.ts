@@ -17,6 +17,7 @@ export class FollowupProcessor {
     private readonly mail: MailService,
   ) {}
 
+  // Consumer Bull: envoie le mail de suivi de cicatrisation.
   @Process('sendFollowupEmail')
   async handle(job: Job<{ appointmentId: string }>) {
     try {
@@ -24,7 +25,7 @@ export class FollowupProcessor {
       
       this.logger.log(`🔄 Traitement du job de suivi pour le RDV: ${appointmentId}`);
 
-      // Récupérer le rendez-vous avec toutes les relations nécessaires
+      // 1) Charger le RDV + relations nécessaires pour construire l'email.
       const appt = await this.prisma.appointment.findUnique({
         where: { id: appointmentId },
         include: { 
@@ -43,18 +44,19 @@ export class FollowupProcessor {
         },
       });
 
+      // 2) Garde-fous: pas de RDV/client => rien à envoyer.
       if (!appt?.client) {
         this.logger.warn(`❌ Rendez-vous ou client introuvable pour l'ID: ${appointmentId}`);
         return;
       }
 
-      // Vérifier que le rendez-vous est confirmé
-      if (appt.status !== 'CONFIRMED') {
-        this.logger.log(`⏸️ Rendez-vous ${appointmentId} non confirmé (statut: ${appt.status}), email de suivi non envoyé`);
+      // 3) Éligibilité métier: suivi autorisé uniquement quand le RDV est terminé.
+      if (appt.status !== 'COMPLETED') {
+        this.logger.log(`⏸️ Rendez-vous ${appointmentId} non éligible (statut: ${appt.status}), email de suivi non envoyé`);
         return;
       }
 
-      // Vérifier si un suivi a déjà été soumis (idempotence)
+      // 4) Idempotence: si le client a déjà soumis un suivi, inutile de renvoyer.
       const existingReq = await this.prisma.followUpRequest.findUnique({
         where: { appointmentId },
         include: { 
@@ -67,7 +69,7 @@ export class FollowupProcessor {
         return;
       }
 
-      // Créer ou mettre à jour la demande de suivi
+      // 5) Upsert de la demande de suivi (token réutilisable si déjà créé).
       const request = await this.prisma.followUpRequest.upsert({
         where: { appointmentId },
         update: {
@@ -81,12 +83,12 @@ export class FollowupProcessor {
         },
       });
 
-      // Construire l'URL de suivi
+      // 6) Générer le lien frontend de soumission.
       const followUrl = `${process.env.WEB_URL}/suivi?f=${request.token}`;
       
       this.logger.log(`📧 Envoi de l'email de suivi à: ${appt.client.email}`);
 
-      // Envoyer l'email de suivi de cicatrisation
+      // 7) Envoi effectif de l'email de suivi.
       await this.mail.sendCicatrisationFollowUp(appt.client.email, {
         cicatrisationFollowUpDetails: {
           clientName: `${appt.client.firstName} ${appt.client.lastName}`,
@@ -96,7 +98,7 @@ export class FollowupProcessor {
         }
       }, appt.user?.salonName || undefined);
 
-      // Marquer l'email comme envoyé
+      // 8) Traçabilité: marquer la date d'envoi.
       await this.prisma.followUpRequest.update({
         where: { appointmentId },
         data: { sentAt: new Date() },
@@ -107,6 +109,72 @@ export class FollowupProcessor {
     } catch (error) {
       this.logger.error(`❌ Erreur lors du traitement du job de suivi:`, error);
       throw error; // Re-throw pour que Bull puisse retry
+    }
+  }
+
+  // Consumer Bull: envoie le rappel retouches.
+  @Process('sendRetouchesReminderEmail')
+  async handleRetouches(job: Job<{ appointmentId: string }>) {
+    try {
+      const { appointmentId } = job.data;
+
+      this.logger.log(`🔄 Traitement du job retouches pour le RDV: ${appointmentId}`);
+
+      // 1) Charger le RDV + relations nécessaires.
+      const appt = await this.prisma.appointment.findUnique({
+        where: { id: appointmentId },
+        include: {
+          client: true,
+          tatoueur: {
+            select: {
+              name: true,
+            },
+          },
+          user: {
+            select: {
+              salonName: true,
+            },
+          },
+        },
+      });
+
+      // 2) Garde-fous de base.
+      if (!appt?.client) {
+        this.logger.warn(`❌ Rendez-vous ou client introuvable pour le rappel retouches: ${appointmentId}`);
+        return;
+      }
+
+      // 3) Éligibilité métier retouches: uniquement tattoo terminé.
+      if (appt.prestation !== 'TATTOO' || appt.status !== 'COMPLETED') {
+        this.logger.log(`⏸️ RDV ${appointmentId} non éligible au rappel retouches (prestation=${appt.prestation}, statut=${appt.status})`);
+        return;
+      }
+
+      // 4) Envoi de l'email de rappel retouches.
+      await this.mail.sendRetouchesReminder(
+        appt.client.email,
+        {
+          recipientName: `${appt.client.firstName} ${appt.client.lastName}`,
+          retouchesReminderDetails: {
+            clientName: `${appt.client.firstName} ${appt.client.lastName}`,
+            appointmentDate: appt.start.toLocaleDateString('fr-FR', {
+              weekday: 'long',
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric',
+            }),
+            tatoueurName: appt.tatoueur?.name || 'Non assigné',
+            salonName: appt.user?.salonName || 'Notre salon',
+          },
+        },
+        appt.user?.salonName || undefined,
+      );
+
+      // 5) Log de succès.
+      this.logger.log(`✅ Email de rappel retouches envoyé pour le RDV ${appointmentId}`);
+    } catch (error) {
+      this.logger.error('❌ Erreur lors du traitement du job retouches:', error);
+      throw error;
     }
   }
 }

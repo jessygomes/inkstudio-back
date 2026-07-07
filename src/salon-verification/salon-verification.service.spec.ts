@@ -80,6 +80,7 @@ describe('SalonVerificationService', () => {
 
       const result = await service.submitDocument(
         'salon-1',
+        'user_salon',
         'HYGIENE_SALUBRITE',
         'https://example.com/doc1.pdf',
       );
@@ -102,6 +103,7 @@ describe('SalonVerificationService', () => {
 
       const result = await service.submitDocument(
         'salon-1',
+        'user_salon',
         'HYGIENE_SALUBRITE',
         'https://example.com/doc1-new.pdf',
       );
@@ -123,6 +125,7 @@ describe('SalonVerificationService', () => {
 
       const result = await service.submitDocument(
         'salon-1',
+        'user_salon',
         'HYGIENE_SALUBRITE',
         'https://example.com/doc1.pdf',
       );
@@ -150,11 +153,45 @@ describe('SalonVerificationService', () => {
 
       await service.submitDocument(
         'salon-1',
+        'user_salon',
         'HYGIENE_SALUBRITE',
         'https://example.com/doc1.pdf',
       );
 
       expect(prisma.user.update).toHaveBeenCalled();
+    });
+
+    it('should reject submission for non salon roles', async () => {
+      await expect(
+        service.submitDocument(
+          'user-1',
+          'client',
+          'HYGIENE_SALUBRITE',
+          'https://example.com/doc1.pdf',
+        ),
+      ).rejects.toThrow(
+        'Seuls les salons et tatoueurs peuvent soumettre des documents de vérification.',
+      );
+      expect(prisma.salonVerificationDocument.upsert).not.toHaveBeenCalled();
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('should allow submission for user_tatoueur role', async () => {
+      const mockDocument = buildVerificationDocument();
+      prisma.salonVerificationDocument.upsert.mockResolvedValue(mockDocument);
+      prisma.salonVerificationDocument.findMany.mockResolvedValue([]);
+      prisma.user.update.mockResolvedValue(buildSalonUser());
+
+      const result = await service.submitDocument(
+        'tatoueur-1',
+        'user_tatoueur',
+        'HYGIENE_SALUBRITE',
+        'https://example.com/doc1.pdf',
+      );
+
+      expect(result.error).toBe(false);
+      expect(result.document).toEqual(mockDocument);
+      expect(prisma.salonVerificationDocument.upsert).toHaveBeenCalled();
     });
   });
 
@@ -471,6 +508,7 @@ describe('SalonVerificationService', () => {
 
       await service.submitDocument(
         'salon-1',
+        'user_salon',
         'HYGIENE_SALUBRITE',
         'https://example.com/doc1.pdf',
       );
@@ -495,6 +533,7 @@ describe('SalonVerificationService', () => {
 
       await service.submitDocument(
         'salon-1',
+        'user_salon',
         'HYGIENE_SALUBRITE',
         'https://example.com/doc1.pdf',
       );
@@ -529,6 +568,7 @@ describe('SalonVerificationService', () => {
 
       await service.submitDocument(
         'salon-1',
+        'user_salon',
         'HYGIENE_SALUBRITE',
         'https://example.com/doc1.pdf',
       );
@@ -554,6 +594,7 @@ describe('SalonVerificationService', () => {
 
       await service.submitDocument(
         'salon-1',
+        'user_salon',
         'HYGIENE_SALUBRITE',
         'https://example.com/doc1.pdf',
       );
@@ -600,6 +641,7 @@ describe('SalonVerificationService', () => {
 
       const result = await service.submitDocument(
         'salon-1',
+        'user_salon',
         'HYGIENE_SALUBRITE',
         'https://example.com/doc-v2.pdf',
       );
@@ -619,6 +661,7 @@ describe('SalonVerificationService', () => {
 
       const result1 = await service.submitDocument(
         'salon-1',
+        'user_salon',
         'HYGIENE_SALUBRITE',
         'https://example.com/doc1.pdf',
       );

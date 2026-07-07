@@ -12,6 +12,8 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { RequestWithUser } from 'src/auth/jwt.strategy';
+import { SaasLimit } from 'src/saas/saas-limit.decorator';
+import { SaasLimitGuard } from 'src/saas/saas-limit.guard';
 import { StocksService } from './stocks.service';
 import { CreateStockDto } from './dto/create-item.dto';
 import { UpdateQuantityDto } from './dto/update-quantity.dto';
@@ -41,7 +43,8 @@ export class StocksController {
 
   // ---------------------------------- 2️⃣ ROUTES AVEC ACTIONS SPÉCIFIQUES
   //! CREER UN ITEM ✅
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, SaasLimitGuard)
+  @SaasLimit('stock')
   @Post()
   create(@Request() req: RequestWithUser, @Body() stockBody: CreateStockDto) {
     const userId = req.user.userId;
@@ -50,29 +53,36 @@ export class StocksController {
 
   // ------------------------------- 3️⃣ ROUTES AVEC PARAMÈTRES EN DERNIER
   //! VOIR UN SEUL ÉLÉMENT DE STOCK ✅
+  @UseGuards(JwtAuthGuard)
   @Get(':id')
-  getOneStockItem(@Param('id') id: string) {
-    return this.stocksService.getStockItemById(id);
+  getOneStockItem(@Request() req: RequestWithUser, @Param('id') id: string) {
+    const userId = req.user.userId;
+    return this.stocksService.getStockItemById(id, userId);
   }
 
   //! MODIFIER UN ITEM ✅
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, SaasLimitGuard)
+  @SaasLimit('stock')
   @Patch('update/:id')
-  updateItem(@Param('id') id: string, @Body() itemBody: CreateStockDto) {
-    return this.stocksService.updateStockItem(id, itemBody);
+  updateItem(@Request() req: RequestWithUser, @Param('id') id: string, @Body() itemBody: CreateStockDto) {
+    const userId = req.user.userId;
+    return this.stocksService.updateStockItem(id, itemBody, userId);
   }
 
     //! MODIFIER UNIQUEMENT LA QUANTITÉ D'UN ITEM ✅
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, SaasLimitGuard)
+  @SaasLimit('stock')
   @Patch('updateQuantity/:id')
-  updateQuantityItem(@Param('id') id: string, @Body() updateQuantityDto: UpdateQuantityDto) {
-    return this.stocksService.updateStockQuantityItem(id, updateQuantityDto.quantity);
+  updateQuantityItem(@Request() req: RequestWithUser, @Param('id') id: string, @Body() updateQuantityDto: UpdateQuantityDto) {
+    const userId = req.user.userId;
+    return this.stocksService.updateStockQuantityItem(id, updateQuantityDto.quantity, userId);
   }  
   
   //! SUPPRIMER UN ITEM ✅
   @UseGuards(JwtAuthGuard)
   @Delete('delete/:id')
-  deleteItem(@Param('id') id: string) {
-    return this.stocksService.deleteStockItem(id);
+  deleteItem(@Request() req: RequestWithUser, @Param('id') id: string) {
+    const userId = req.user.userId;
+    return this.stocksService.deleteStockItem(id, userId);
   }
 }

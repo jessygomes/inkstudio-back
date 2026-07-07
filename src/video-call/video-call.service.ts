@@ -3,6 +3,30 @@ import * as crypto from 'crypto';
 
 @Injectable()
 export class VideoCallService {
+  private readonly jitsiDomain = 'meet.jit.si';
+  private readonly roomNamePattern = /^[a-z0-9-]+-rdv-[a-z0-9]{1,8}-[a-f0-9]{8}$/;
+
+  getLobbyActivationInstruction(): string {
+    return 'Active le mode salle d\'attente avant de partager ce lien.';
+  }
+
+  private buildBaseRoomName(appointmentId: string, salonName?: string): string {
+    const roomId = crypto.randomBytes(16).toString('hex');
+    const sanitizedSalonName = salonName
+      ? salonName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()
+      : 'salon';
+
+    return `${sanitizedSalonName}-rdv-${appointmentId.slice(-8)}-${roomId.slice(0, 8)}`;
+  }
+
+  private applyDefaultJitsiSecurityParams(url: URL): void {
+    // Préjoin + lobby: l'utilisateur ne rejoint pas immédiatement la salle.
+    url.searchParams.set('config.prejoinPageEnabled', 'true');
+    url.searchParams.set('config.enableLobby', 'true');
+    // Active l'UI sécurité pour faciliter l'activation du lobby côté hôte.
+    url.searchParams.set('config.securityUi.enabled', 'true');
+  }
+
   /**
    * Génère un lien de visioconférence unique
    * Utilise Jitsi Meet pour créer une salle de réunion sécurisée
@@ -11,21 +35,12 @@ export class VideoCallService {
    * @returns URL de la salle de visioconférence
    */
   generateVideoCallLink(appointmentId: string, salonName?: string): string {
-    // Générer un ID unique pour la salle
-    const roomId = crypto.randomBytes(16).toString('hex');
+    const roomName = this.buildBaseRoomName(appointmentId, salonName);
+    const url = new URL(`https://${this.jitsiDomain}/${roomName}`);
 
-    // Créer un nom de salle unique et sécurisé
-    const sanitizedSalonName = salonName
-      ? salonName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()
-      : 'salon';
+    this.applyDefaultJitsiSecurityParams(url);
 
-    const roomName = `${sanitizedSalonName}-rdv-${appointmentId.slice(-8)}-${roomId.slice(0, 8)}`;
-
-    // Utiliser Jitsi Meet comme plateforme de visioconférence
-    const jitsiDomain = 'meet.jit.si';
-    const videoCallUrl = `https://${jitsiDomain}/${roomName}`;
-
-    return videoCallUrl;
+    return url.toString();
   }
 
   /**
@@ -42,12 +57,37 @@ export class VideoCallService {
   /**
    * Valide si un lien de visioconférence est valide
    * @param videoCallUrl - URL à valider
+   * @param expectedAppointmentId - optionnel, force la correspondance du suffixe d'ID RDV
    * @returns boolean
    */
-  isValidVideoCallUrl(videoCallUrl: string): boolean {
+  isValidVideoCallUrl(videoCallUrl: string, expectedAppointmentId?: string): boolean {
     try {
       const url = new URL(videoCallUrl);
-      return url.hostname === 'meet.jit.si' && url.pathname.length > 1;
+      const roomName = this.extractRoomNameFromUrl(videoCallUrl);
+      if (!roomName) {
+        return false;
+      }
+
+      if (url.protocol !== 'https:') {
+        return false;
+      }
+
+      if (url.hostname.toLowerCase() !== this.jitsiDomain) {
+        return false;
+      }
+
+      if (!this.roomNamePattern.test(roomName)) {
+        return false;
+      }
+
+      if (expectedAppointmentId) {
+        const appointmentSuffix = expectedAppointmentId.slice(-8).toLowerCase();
+        if (!roomName.includes(`-rdv-${appointmentSuffix}-`)) {
+          return false;
+        }
+      }
+
+      return true;
     } catch {
       return false;
     }
@@ -65,8 +105,10 @@ export class VideoCallService {
     participantName?: string,
     salonName?: string,
   ): string {
-    const baseUrl = this.generateVideoCallLink(appointmentId, salonName);
-    const url = new URL(baseUrl);
+    const roomName = this.buildBaseRoomName(appointmentId, salonName);
+    const url = new URL(`https://${this.jitsiDomain}/${roomName}`);
+
+    this.applyDefaultJitsiSecurityParams(url);
 
     // Ajouter des paramètres personnalisés si fournis
     if (participantName) {
@@ -76,7 +118,6 @@ export class VideoCallService {
     // Paramètres Jitsi pour améliorer l'expérience
     url.searchParams.set('config.startWithAudioMuted', 'true');
     url.searchParams.set('config.startWithVideoMuted', 'false');
-    url.searchParams.set('config.prejoinPageEnabled', 'true');
 
     return url.toString();
   }
@@ -89,8 +130,9 @@ export class VideoCallService {
   extractRoomNameFromUrl(videoCallUrl: string): string | null {
     try {
       const url = new URL(videoCallUrl);
-      if (url.hostname === 'meet.jit.si') {
-        return url.pathname.slice(1); // Retirer le "/" du début
+      if (url.hostname.toLowerCase() === this.jitsiDomain) {
+        const roomName = url.pathname.slice(1); // Retirer le "/" du début
+        return roomName || null;
       }
       return null;
     } catch {

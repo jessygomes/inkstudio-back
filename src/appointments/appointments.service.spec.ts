@@ -63,6 +63,11 @@ const createMailServiceMock = () => ({
 
 const createVideoCallServiceMock = () => ({
   generateVideoCallLink: jest.fn(),
+  getLobbyActivationInstruction: jest
+    .fn()
+    .mockReturnValue(
+      "Active le mode salle d'attente avant de partager ce lien.",
+    ),
 });
 
 const createConversationsServiceMock = () => ({
@@ -246,7 +251,7 @@ describe('AppointmentsService', () => {
       expect(prisma.appointment.findFirst).toHaveBeenCalledWith({
         where: {
           userId,
-          status: { in: ['PENDING', 'CONFIRMED', 'RESCHEDULING'] },
+          status: { in: ['PENDING', 'CONFIRMED'] },
           start: { lt: new Date(createAppointmentDto.end) },
           end: { gt: new Date(createAppointmentDto.start) },
         },
@@ -1009,7 +1014,7 @@ describe('AppointmentsService', () => {
       expect(prisma.appointment.findFirst).toHaveBeenCalledWith({
         where: {
           userId,
-          status: { in: ['PENDING', 'CONFIRMED', 'RESCHEDULING'] },
+          status: { in: ['PENDING', 'CONFIRMED'] },
           start: {
             lt: new Date(
               new Date(createByClientDto.start).getTime() + 60 * 60 * 1000,
@@ -1037,6 +1042,31 @@ describe('AppointmentsService', () => {
 
       expect(result.error).toBe(true);
       expect(result.message).toContain('Salon');
+    });
+
+    it('should block client booking when target profile is on FREE plan', async () => {
+      prisma.user.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({
+        id: userId,
+        role: 'user_salon',
+        saasPlan: SaasPlan.FREE,
+        addConfirmationEnabled: false,
+        salonName: 'Free Salon',
+        email: 'free@example.com',
+        saasPlanDetails: {
+          currentPlan: SaasPlan.FREE,
+          agendaMode: AgendaMode.GLOBAL,
+        },
+      });
+
+      const result = await service.createByClient({
+        userId,
+        rdvBody: createByClientDto,
+      });
+
+      expect(result.error).toBe(true);
+      expect(result.message).toContain('plan FREE');
+      expect(prisma.tatoueur.findUnique).not.toHaveBeenCalled();
+      expect(prisma.appointment.create).not.toHaveBeenCalled();
     });
 
     it('should create appointment with PENDING status when confirmation enabled', async () => {
@@ -1472,62 +1502,10 @@ describe('AppointmentsService', () => {
       expect(prisma.appointment.update).not.toHaveBeenCalled();
     });
 
-    it('should update and set status to PENDING when confirmation is enabled', async () => {
+    it('should keep status when confirmation is enabled', async () => {
       prisma.appointment.findUnique.mockResolvedValue(baseExistingAppointment);
       prisma.appointment.update.mockResolvedValue({
         ...baseExistingAppointment,
-        start: new Date(rdvBody.start),
-        end: new Date(rdvBody.end),
-        status: 'PENDING',
-      });
-      mailService.sendAppointmentModification.mockResolvedValue(true);
-      mailService.sendCustomEmail.mockResolvedValue(true);
-
-      const result = await service.updateAppointmentByClient(
-        appointmentId,
-        clientUserId,
-        rdvBody,
-      );
-
-      expect(result.error).toBe(false);
-      expect(result.status).toBe('PENDING');
-      expect(result.message).toContain('attente');
-      expect(prisma.appointment.update).toHaveBeenCalledWith({
-        where: { id: appointmentId },
-        data: expect.objectContaining({
-          status: 'PENDING',
-          tatoueurId: baseExistingAppointment.tatoueurId,
-        }),
-        include: expect.any(Object),
-      });
-      expect(mailService.sendAppointmentModification).toHaveBeenCalled();
-      expect(mailService.sendCustomEmail).toHaveBeenCalled();
-      expect(cache.del).toHaveBeenCalledWith(`appointment:${appointmentId}`);
-      expect(cache.delPattern).toHaveBeenCalledWith(
-        `appointments:salon:${salonId}:*`,
-      );
-      expect(cache.delPattern).toHaveBeenCalledWith(
-        `appointments:date-range:${salonId}:*`,
-      );
-      expect(cache.delPattern).toHaveBeenCalledWith(
-        `client:appointments:${clientUserId}:*`,
-      );
-    });
-
-    it('should keep status when confirmation is disabled', async () => {
-      prisma.appointment.findUnique.mockResolvedValue({
-        ...baseExistingAppointment,
-        user: {
-          ...baseExistingAppointment.user,
-          addConfirmationEnabled: false,
-        },
-      });
-      prisma.appointment.update.mockResolvedValue({
-        ...baseExistingAppointment,
-        user: {
-          ...baseExistingAppointment.user,
-          addConfirmationEnabled: false,
-        },
         start: new Date(rdvBody.start),
         end: new Date(rdvBody.end),
         status: 'CONFIRMED',
@@ -1546,7 +1524,59 @@ describe('AppointmentsService', () => {
       expect(result.message).toContain('succès');
       expect(prisma.appointment.update).toHaveBeenCalledWith({
         where: { id: appointmentId },
-        data: expect.objectContaining({ status: 'CONFIRMED' }),
+        data: expect.objectContaining({
+          status: 'CONFIRMED',
+          tatoueurId: baseExistingAppointment.tatoueurId,
+        }),
+        include: expect.any(Object),
+      });
+      expect(mailService.sendAppointmentModification).toHaveBeenCalled();
+      expect(mailService.sendCustomEmail).toHaveBeenCalled();
+      expect(cache.del).toHaveBeenCalledWith(`appointment:${appointmentId}`);
+      expect(cache.delPattern).toHaveBeenCalledWith(
+        `appointments:salon:${salonId}:*`,
+      );
+      expect(cache.delPattern).toHaveBeenCalledWith(
+        `appointments:date-range:${salonId}:*`,
+      );
+      expect(cache.delPattern).toHaveBeenCalledWith(
+        `client:appointments:${clientUserId}:*`,
+      );
+    });
+
+    it('should set status to PENDING when confirmation is disabled', async () => {
+      prisma.appointment.findUnique.mockResolvedValue({
+        ...baseExistingAppointment,
+        user: {
+          ...baseExistingAppointment.user,
+          addConfirmationEnabled: false,
+        },
+      });
+      prisma.appointment.update.mockResolvedValue({
+        ...baseExistingAppointment,
+        user: {
+          ...baseExistingAppointment.user,
+          addConfirmationEnabled: false,
+        },
+        start: new Date(rdvBody.start),
+        end: new Date(rdvBody.end),
+        status: 'PENDING',
+      });
+      mailService.sendAppointmentModification.mockResolvedValue(true);
+      mailService.sendCustomEmail.mockResolvedValue(true);
+
+      const result = await service.updateAppointmentByClient(
+        appointmentId,
+        clientUserId,
+        rdvBody,
+      );
+
+      expect(result.error).toBe(false);
+      expect(result.status).toBe('PENDING');
+      expect(result.message).toContain('attente de confirmation');
+      expect(prisma.appointment.update).toHaveBeenCalledWith({
+        where: { id: appointmentId },
+        data: expect.objectContaining({ status: 'PENDING' }),
         include: expect.any(Object),
       });
     });

@@ -130,15 +130,6 @@ export class StocksService {
 
       const totalPages = Math.ceil(totalStockItems / limit);
 
-      if (!stockItems || stockItems.length === 0) {
-        throw new Error('Aucun élément de stock trouvé.');
-      }
-
-      // Vérifier si le salon a des éléments de stock
-      if (stockItems.length === 0) {
-        throw new Error('Aucun élément de stock trouvé pour votre salon.');
-      }
-
       const result = {
         error: false,
         stockItems,
@@ -166,9 +157,9 @@ export class StocksService {
   }
 
   //! VOIR UN SEUL ÉLÉMENT DE STOCK
-  async getStockItemById(id: string) {
+  async getStockItemById(id: string, userId: string) {
     try {
-      const cacheKey = `stockitem:${id}`;
+      const cacheKey = `stockitem:${userId}:${id}`;
 
       // 1. Vérifier dans Redis
       const cachedStockItem = await this.cacheService.get<{
@@ -186,8 +177,8 @@ export class StocksService {
       }
 
       // 2. Sinon, aller chercher en DB
-      const stockItem = await this.prisma.stockItem.findUnique({
-        where: { id },
+      const stockItem = await this.prisma.stockItem.findFirst({
+        where: { id, userId },
       });
 
       if (!stockItem) {
@@ -208,8 +199,27 @@ export class StocksService {
   }
 
   //! METTRE À JOUR UN ÉLÉMENT DE STOCK
-  async updateStockItem(id: string, stockBody: Partial<CreateStockDto>) {
+  async updateStockItem(id: string, stockBody: Partial<CreateStockDto>, userId: string) {
     try {
+      const existingItem = await this.prisma.stockItem.findUnique({
+        where: { id },
+        select: { userId: true },
+      });
+
+      if (!existingItem) {
+        return {
+          error: true,
+          message: 'Élément de stock introuvable.',
+        };
+      }
+
+      if (existingItem.userId !== userId) {
+        return {
+          error: true,
+          message: 'Non autorisé à modifier cet élément de stock.',
+        };
+      }
+
       const normalizedBody = {
         ...stockBody,
         expirationDate:
@@ -225,7 +235,7 @@ export class StocksService {
       });
 
       // Invalider le cache de l'élément spécifique
-      await this.cacheService.del(`stockitem:${id}`);
+      await this.cacheService.del(`stockitem:${updatedStockItem.userId}:${id}`);
       // Invalider le cache des listes de stocks du salon
       await this.cacheService.delPattern(`stocks:salon:${updatedStockItem.userId}:*`);
 
@@ -262,7 +272,7 @@ export class StocksService {
   }
 
   //! METTRE À JOUR UNIQUEMENT LA QUANTITÉ D'UN ÉLÉMENT DE STOCK
-  async updateStockQuantityItem(id: string, quantity: number) {
+  async updateStockQuantityItem(id: string, quantity: number, userId: string) {
     try {
       // Validation de la quantité
       if (quantity < 0) {
@@ -286,13 +296,21 @@ export class StocksService {
         };
       }
 
+      if (existingItem.userId !== userId) {
+        return {
+          error: true,
+          message: 'Non autorisé à modifier cet élément de stock.',
+          stockItem: null,
+        };
+      }
+
       const updatedStockItem = await this.prisma.stockItem.update({
         where: { id },
         data: { quantity },
       });
 
       // Invalider le cache de l'élément spécifique
-      await this.cacheService.del(`stockitem:${id}`);
+      await this.cacheService.del(`stockitem:${updatedStockItem.userId}:${id}`);
       // Invalider le cache des listes de stocks du salon
       await this.cacheService.delPattern(`stocks:salon:${updatedStockItem.userId}:*`);
 
@@ -311,7 +329,7 @@ export class StocksService {
   }
 
   //! SUPPRIMER UN ÉLÉMENT DE STOCK
-  async deleteStockItem(id: string) {
+  async deleteStockItem(id: string, userId: string) {
     try {
       // Récupérer l'élément avant suppression pour l'invalidation du cache
       const stockToDelete = await this.prisma.stockItem.findUnique({
@@ -326,12 +344,19 @@ export class StocksService {
         };
       }
 
+      if (stockToDelete.userId !== userId) {
+        return {
+          error: true,
+          message: 'Non autorisé à supprimer cet élément de stock.',
+        };
+      }
+
       const deletedStockItem = await this.prisma.stockItem.delete({
         where: { id },
       });
 
       // Invalider le cache de l'élément spécifique
-      await this.cacheService.del(`stockitem:${id}`);
+      await this.cacheService.del(`stockitem:${stockToDelete.userId}:${id}`);
       // Invalider le cache des listes de stocks du salon
       await this.cacheService.delPattern(`stocks:salon:${stockToDelete.userId}:*`);
 

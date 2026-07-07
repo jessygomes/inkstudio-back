@@ -32,6 +32,7 @@ export interface CreateAppointmentByClientResponse {
   message: string;
   appointment?: Record<string, any>;
   status?: 'PENDING' | 'CONFIRMED';
+  visioSecurityInstruction?: string;
   /**
    * Code métier présent uniquement en cas d'erreur liée à un tatoueur linked:
    * LINKED_BOOKING_REDIRECT — rediriger le client vers le profil direct du tatoueur.

@@ -20,7 +20,9 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "test:send-emails": "ts-node -r tsconfig-paths/register scripts/test-send-email-notifications.ts",
     "check:email-queue": "ts-node -r tsconfig-paths/register scripts/check-email-queue.ts",
-    "reset:failed-emails": "ts-node -r tsconfig-paths/register scripts/reset-failed-emails.ts"
+    "reset:failed-emails": "ts-node -r tsconfig-paths/register scripts/reset-failed-emails.ts",
+    "audit:stripe-customers": "ts-node -r tsconfig-paths/register scripts/audit-stripe-customers.ts",
+    "audit:stripe-customers:apply": "ts-node -r tsconfig-paths/register scripts/audit-stripe-customers.ts --apply"
   },
   "dependencies": {
     "@neondatabase/serverless": "^0.10.4",

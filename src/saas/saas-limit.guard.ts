@@ -1,7 +1,7 @@
 import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { SaasService } from '../saas/saas.service';
-import { SAAS_LIMIT_KEY } from './saas-limit.decorator';
+import { SAAS_LIMIT_KEY, SaasGuardAction } from './saas-limit.decorator';
 
 @Injectable()
 export class SaasLimitGuard implements CanActivate {
@@ -12,7 +12,7 @@ export class SaasLimitGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     // Récupérer l'action depuis le décorateur
-    const action = this.reflector.get<'appointment' | 'client' | 'tatoueur' | 'portfolio'>(
+    const action = this.reflector.get<SaasGuardAction>(
       SAAS_LIMIT_KEY,
       context.getHandler(),
     );
@@ -30,13 +30,7 @@ export class SaasLimitGuard implements CanActivate {
       return false;
     }
 
-    try {
-      // Vérifier si l'action est autorisée (lancer une exception si limite atteinte)
-      await this.saasService.enforceLimit(userId, action);
-      return true;
-    } catch {
-      // Si une exception est lancée, l'action n'est pas autorisée
-      return false;
-    }
+    await this.saasService.enforceSaasAccess(userId, action);
+    return true;
   }
 }

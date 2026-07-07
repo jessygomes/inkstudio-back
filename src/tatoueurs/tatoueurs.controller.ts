@@ -227,14 +227,16 @@ export class TatoueursController {
   //! MODIFIER UN TATOUEUR ✅
   @UseGuards(JwtAuthGuard)
   @Patch('update/:id')
-  updateTatoueur(@Param('id') id: string, @Body() tatoueurBody: CreateTatoueurDto) {
-    return this.tatoueursService.updateTatoueur(id, tatoueurBody);
+  updateTatoueur(@Request() req: RequestWithUser, @Param('id') id: string, @Body() tatoueurBody: CreateTatoueurDto) {
+    const userId = req.user.userId;
+    return this.tatoueursService.updateTatoueur(id, tatoueurBody, userId);
   }
 
   //! SUPPRIMER UN TATOUEUR ✅
   @UseGuards(JwtAuthGuard)
   @Delete('delete/:id')
-  deleteTatoueur(@Param('id') id: string) {
-    return this.tatoueursService.deleteTatoueur(id);
+  deleteTatoueur(@Request() req: RequestWithUser, @Param('id') id: string) {
+    const userId = req.user.userId;
+    return this.tatoueursService.deleteTatoueur(id, userId);
   }
 }

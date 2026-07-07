@@ -674,7 +674,7 @@ export class StripeController {
        * sinon Stripe va réessayer indéfiniment
        * Enregistrer l'erreur pour enquête manuelle
        */
-      throw new BadRequestException('Erreur webhook');
+      return { received: true };
     }
   }
 

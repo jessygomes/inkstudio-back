@@ -10,6 +10,7 @@ const createPrismaMock = () => ({
   },
   tattooHistory: {
     create: jest.fn(),
+    findUnique: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),
     findMany: jest.fn(),
@@ -224,9 +225,17 @@ describe('TattooHistoryService', () => {
         description: 'Updated dragon tattoo',
       });
 
+      prismaMock.tattooHistory.findUnique.mockResolvedValue({
+        id: 'history-1',
+        client: { userId: 'salon-1' },
+      });
       prismaMock.tattooHistory.update.mockResolvedValue(updatedHistory);
 
-      const result = await service.updateHistory('history-1', updateDto);
+      const result = await service.updateHistory(
+        'history-1',
+        updateDto,
+        'salon-1',
+      );
 
       expect(result.error).toBe(false);
       expect(result.message).toContain('mis à jour');
@@ -245,21 +254,51 @@ describe('TattooHistoryService', () => {
       });
       const history = buildTattooHistory();
 
+      prismaMock.tattooHistory.findUnique.mockResolvedValue({
+        id: 'history-1',
+        client: { userId: 'salon-1' },
+      });
       prismaMock.tattooHistory.update.mockResolvedValue(history);
 
-      await service.updateHistory('history-1', updateDto);
+      await service.updateHistory('history-1', updateDto, 'salon-1');
 
       const callArgs = prismaMock.tattooHistory.update.mock.calls[0][0];
       expect(callArgs.data.date).toEqual(new Date('2026-03-10T09:00:00Z'));
     });
 
+    it('should reject update when history belongs to another salon', async () => {
+      const updateDto = buildCreateTattooHistoryDto();
+      prismaMock.tattooHistory.findUnique.mockResolvedValue({
+        id: 'history-1',
+        client: { userId: 'salon-other' },
+      });
+
+      const result = await service.updateHistory(
+        'history-1',
+        updateDto,
+        'salon-1',
+      );
+
+      expect(result.error).toBe(true);
+      expect(result.message).toContain('Non autorisé à modifier');
+      expect(prismaMock.tattooHistory.update).not.toHaveBeenCalled();
+    });
+
     it('should handle update errors gracefully', async () => {
       const updateDto = buildCreateTattooHistoryDto();
+      prismaMock.tattooHistory.findUnique.mockResolvedValue({
+        id: 'history-1',
+        client: { userId: 'salon-1' },
+      });
       prismaMock.tattooHistory.update.mockRejectedValue(
         new Error('Update failed'),
       );
 
-      const result = await service.updateHistory('history-1', updateDto);
+      const result = await service.updateHistory(
+        'history-1',
+        updateDto,
+        'salon-1',
+      );
 
       expect(result.error).toBe(true);
       expect(result.message).toContain('Update failed');
@@ -272,9 +311,17 @@ describe('TattooHistoryService', () => {
       });
       const history = buildTattooHistory();
 
+      prismaMock.tattooHistory.findUnique.mockResolvedValue({
+        id: 'history-1',
+        client: { userId: 'salon-1' },
+      });
       prismaMock.tattooHistory.update.mockResolvedValue(history);
 
-      const result = await service.updateHistory('history-1', updateDto);
+      const result = await service.updateHistory(
+        'history-1',
+        updateDto,
+        'salon-1',
+      );
 
       expect(result.error).toBe(false);
       const callArgs = prismaMock.tattooHistory.update.mock.calls[0][0];
@@ -286,9 +333,17 @@ describe('TattooHistoryService', () => {
       const updateDto = buildCreateTattooHistoryDto({ careProducts: null });
       const history = buildTattooHistory({ careProducts: null });
 
+      prismaMock.tattooHistory.findUnique.mockResolvedValue({
+        id: 'history-1',
+        client: { userId: 'salon-1' },
+      });
       prismaMock.tattooHistory.update.mockResolvedValue(history);
 
-      const result = await service.updateHistory('history-1', updateDto);
+      const result = await service.updateHistory(
+        'history-1',
+        updateDto,
+        'salon-1',
+      );
 
       expect(result.error).toBe(false);
       expect(result.history?.careProducts).toBeNull();
@@ -298,9 +353,13 @@ describe('TattooHistoryService', () => {
   describe('deleteHistory', () => {
     it('should delete a tattoo history successfully', async () => {
       const history = buildTattooHistory();
+      prismaMock.tattooHistory.findUnique.mockResolvedValue({
+        id: 'history-1',
+        client: { userId: 'salon-1' },
+      });
       prismaMock.tattooHistory.delete.mockResolvedValue(history);
 
-      const result = await service.deleteHistory('history-1');
+      const result = await service.deleteHistory('history-1', 'salon-1');
 
       expect(result.error).toBe(false);
       expect(result.message).toContain('supprimé');
@@ -310,23 +369,44 @@ describe('TattooHistoryService', () => {
       });
     });
 
+    it('should reject delete when history belongs to another salon', async () => {
+      prismaMock.tattooHistory.findUnique.mockResolvedValue({
+        id: 'history-1',
+        client: { userId: 'salon-other' },
+      });
+
+      const result = await service.deleteHistory('history-1', 'salon-1');
+
+      expect(result.error).toBe(true);
+      expect(result.message).toContain('Non autorisé à supprimer');
+      expect(prismaMock.tattooHistory.delete).not.toHaveBeenCalled();
+    });
+
     it('should handle delete errors gracefully', async () => {
+      prismaMock.tattooHistory.findUnique.mockResolvedValue({
+        id: 'history-1',
+        client: { userId: 'salon-1' },
+      });
       prismaMock.tattooHistory.delete.mockRejectedValue(
         new Error('Delete failed'),
       );
 
-      const result = await service.deleteHistory('history-1');
+      const result = await service.deleteHistory('history-1', 'salon-1');
 
       expect(result.error).toBe(true);
       expect(result.message).toContain('Delete failed');
     });
 
     it('should handle non-existent history deletion', async () => {
+      prismaMock.tattooHistory.findUnique.mockResolvedValue({
+        id: 'non-existent-id',
+        client: { userId: 'salon-1' },
+      });
       prismaMock.tattooHistory.delete.mockRejectedValue(
         new Error('Record not found'),
       );
 
-      const result = await service.deleteHistory('non-existent-id');
+      const result = await service.deleteHistory('non-existent-id', 'salon-1');
 
       expect(result.error).toBe(true);
       expect(result.message).toContain('Record not found');
@@ -464,12 +544,20 @@ describe('TattooHistoryService', () => {
 
       prismaMock.client.findUnique.mockResolvedValue(client);
       prismaMock.tattooHistory.create.mockResolvedValue(history);
+      prismaMock.tattooHistory.findUnique.mockResolvedValue({
+        id: history.id,
+        client: { userId: 'salon-1' },
+      });
       prismaMock.tattooHistory.update.mockResolvedValue(updatedHistory);
       prismaMock.tattooHistory.delete.mockResolvedValue(updatedHistory);
 
       const createResult = await service.createHistory(createDto);
-      const updateResult = await service.updateHistory(history.id, createDto);
-      const deleteResult = await service.deleteHistory(history.id);
+      const updateResult = await service.updateHistory(
+        history.id,
+        createDto,
+        'salon-1',
+      );
+      const deleteResult = await service.deleteHistory(history.id, 'salon-1');
 
       expect(createResult.error).toBe(false);
       expect(updateResult.error).toBe(false);

@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CreateTatoueurDto } from './dto/create-tatoueur.dto';
-import { SaasService } from 'src/saas/saas.service';
 import { CacheService } from 'src/redis/cache.service';
 import { Role, TeamRequestStatus } from '@prisma/client';
 import { CreateTeamRequestDto } from './dto/create-team-request.dto';
@@ -10,7 +9,6 @@ import { CreateTeamRequestDto } from './dto/create-team-request.dto';
 export class TatoueursService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly saasService: SaasService,
     private cacheService: CacheService
   ) {}
 
@@ -32,17 +30,6 @@ export class TatoueursService {
     try {
       const { name, img, description, phone, instagram, hours, style, skills } = tatoueurBody;
       const normalizedStyles = this.normalizeStyles(style);
-
-      // 🔒 VÉRIFIER LES LIMITES SAAS - TATOUEURS
-      const canCreateTatoueur = await this.saasService.canPerformAction(userId, 'tatoueur');
-      
-      if (!canCreateTatoueur) {
-        const limits = await this.saasService.checkLimits(userId);
-        return {
-          error: true,
-          message: `Limite de tatoueurs atteinte (${limits.limits.tattooeurs}). Passez au plan PRO ou BUSINESS pour continuer.`,
-        };
-      }
 
       // Créer le tatoueur
       const newTatoueur = await this.prisma.tatoueur.create({
@@ -1428,10 +1415,29 @@ export class TatoueursService {
   }
 
   //! MODIFIER UN TATOUEUR
-  async updateTatoueur(id: string, tatoueurBody: CreateTatoueurDto) {
+  async updateTatoueur(id: string, tatoueurBody: CreateTatoueurDto, userId: string) {
     try {
       const { name, img, description, phone, instagram, hours, style, skills, rdvBookingEnabled } = tatoueurBody;
       const normalizedStyles = this.normalizeStyles(style);
+
+      const existingTatoueur = await this.prisma.tatoueur.findUnique({
+        where: { id },
+        select: { userId: true },
+      });
+
+      if (!existingTatoueur) {
+        return {
+          error: true,
+          message: 'Tatoueur introuvable.',
+        };
+      }
+
+      if (existingTatoueur.userId !== userId) {
+        return {
+          error: true,
+          message: 'Non autorisé à modifier ce tatoueur.',
+        };
+      }
 
       const updatedTatoueur = await this.prisma.tatoueur.update({
         where: {
@@ -1471,8 +1477,27 @@ export class TatoueursService {
   }
 
   //! SUPPRIMER UN TATOUEUR
-  async deleteTatoueur(id: string) {
+  async deleteTatoueur(id: string, userId: string) {
     try {
+      const existingTatoueur = await this.prisma.tatoueur.findUnique({
+        where: { id },
+        select: { userId: true },
+      });
+
+      if (!existingTatoueur) {
+        return {
+          error: true,
+          message: 'Tatoueur introuvable.',
+        };
+      }
+
+      if (existingTatoueur.userId !== userId) {
+        return {
+          error: true,
+          message: 'Non autorisé à supprimer ce tatoueur.',
+        };
+      }
+
       const deletedTatoueur = await this.prisma.tatoueur.delete({
         where: {
           id,

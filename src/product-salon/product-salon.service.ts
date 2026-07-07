@@ -128,7 +128,7 @@ export class ProductSalonService {
   }
 
   //! MODIFIER UN PRODUIT
-  async updateProduct(id: string, updateData: Partial<CreateProductDto>) {
+  async updateProduct(id: string, updateData: Partial<CreateProductDto>, userId: string) {
     try {
       // Vérifier si le produit existe
       const existingProduct = await this.prisma.productSalon.findUnique({
@@ -139,6 +139,13 @@ export class ProductSalonService {
         return {
           error: true,
           message: 'Produit non trouvé',
+        };
+      }
+
+      if (existingProduct.userId !== userId) {
+        return {
+          error: true,
+          message: 'Non autorisé à modifier ce produit.',
         };
       }
 
@@ -166,7 +173,7 @@ export class ProductSalonService {
   }
 
   //! SUPPRIMER UN PRODUIT
-  async deleteProduct(id: string) {
+  async deleteProduct(id: string, userId: string) {
     try {
       // Vérifier si le produit existe
       const existingProduct = await this.prisma.productSalon.findUnique({
@@ -175,6 +182,13 @@ export class ProductSalonService {
 
       if (!existingProduct) {
         throw new Error('Produit non trouvé');
+      }
+
+      if (existingProduct.userId !== userId) {
+        return {
+          error: true,
+          message: 'Non autorisé à supprimer ce produit.',
+        };
       }
 
       // Supprimer le produit

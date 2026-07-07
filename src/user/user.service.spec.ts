@@ -767,6 +767,7 @@ describe('UserService', () => {
 
       const result = await service.updateHoursSalon({
         userId: 'user-1',
+        requesterUserId: 'user-1',
         salonHours: newHours,
       });
 
@@ -780,10 +781,20 @@ describe('UserService', () => {
 
       await service.updateHoursSalon({
         userId: 'user-1',
+        requesterUserId: 'user-1',
         salonHours: '{}',
       });
 
       expect(cache.delPattern).toHaveBeenCalledWith('user:slug:*');
+    });
+    it('should reject update when requester is not owner', async () => {
+      await expect(
+        service.updateHoursSalon({
+          userId: 'user-1',
+          requesterUserId: 'user-2',
+          salonHours: '{}',
+        }),
+      ).rejects.toThrow('Vous ne pouvez modifier que vos propres horaires.');
     });
   });
 
@@ -795,6 +806,7 @@ describe('UserService', () => {
 
       const result = await service.addOrUpdatePhotoSalon({
         userId: 'user-1',
+        requesterUserId: 'user-1',
         salonPhotos: photos,
       });
 
@@ -809,6 +821,7 @@ describe('UserService', () => {
 
       const result = await service.addOrUpdatePhotoSalon({
         userId: 'user-1',
+        requesterUserId: 'user-1',
         salonPhotos: photos,
       });
 
@@ -821,6 +834,7 @@ describe('UserService', () => {
       await expect(
         service.addOrUpdatePhotoSalon({
           userId: 'user-1',
+          requesterUserId: 'user-1',
           salonPhotos: photos,
         }),
       ).rejects.toThrow('Vous ne pouvez ajouter que 6 photos maximum');
@@ -830,9 +844,20 @@ describe('UserService', () => {
       await expect(
         service.addOrUpdatePhotoSalon({
           userId: 'user-1',
+          requesterUserId: 'user-1',
           salonPhotos: 'invalid' as unknown as any,
         }),
       ).rejects.toThrow('Format de données invalide');
+    });
+
+    it('should reject update when requester is not owner', async () => {
+      await expect(
+        service.addOrUpdatePhotoSalon({
+          userId: 'user-1',
+          requesterUserId: 'user-2',
+          salonPhotos: ['photo1.jpg'],
+        }),
+      ).rejects.toThrow('Vous ne pouvez modifier que vos propres photos.');
     });
   });
 
@@ -1189,7 +1214,7 @@ describe('UserService', () => {
 
       expect(result).toEqual({
         error: true,
-        message: 'Accès réservé aux salons.',
+        message: 'Accès réservé aux salons et tatoueurs.',
       });
       expect(prisma.user.findUnique).not.toHaveBeenCalled();
       expect(prisma.user.update).not.toHaveBeenCalled();
@@ -1216,7 +1241,7 @@ describe('UserService', () => {
 
       expect(result).toEqual({
         error: false,
-        message: 'Le salon est maintenant affiché dans les inspirations.',
+        message: 'Vos images sont maintenant affichées dans les inspirations.',
         user: {
           id: 'user-1',
           role: 'user_salon',
@@ -1258,7 +1283,42 @@ describe('UserService', () => {
       });
 
       expect(result.error).toBe(false);
-      expect(result.message).toBe('Le salon est retiré des inspirations.');
+      expect(result.message).toBe('Vos images sont retirées des inspirations.');
+    });
+
+    it('should enable inspiration flag for a linked tattooer user', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'user-2',
+        role: 'user_tatoueur',
+        isInspirationSalon: false,
+        salonName: null,
+      });
+      prisma.user.update.mockResolvedValue({
+        id: 'user-2',
+        role: 'user_tatoueur',
+        isInspirationSalon: true,
+        salonName: null,
+      });
+
+      const result = await service.toggleInspirationSalon({
+        userId: 'user-2',
+        role: 'user_tatoueur',
+      });
+
+      expect(result.error).toBe(false);
+      expect(result.message).toBe(
+        'Vos images sont maintenant affichées dans les inspirations.',
+      );
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'user-2' },
+        data: { isInspirationSalon: true },
+        select: {
+          id: true,
+          salonName: true,
+          isInspirationSalon: true,
+          role: true,
+        },
+      });
     });
   });
 

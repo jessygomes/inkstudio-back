@@ -2,7 +2,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { PortfolioService } from './portfolio.service';
 import { PrismaService } from 'src/database/prisma.service';
-import { SaasService } from 'src/saas/saas.service';
 import { CacheService } from 'src/redis/cache.service';
 import { AddPhotoDto } from './dto/add-photo.dto';
 
@@ -30,13 +29,6 @@ const createCacheMock = () => ({
   delPattern: jest.fn(),
 });
 
-const createSaasMock = () => ({
-  canPerformAction: jest.fn(() => Promise.resolve(true)),
-  checkLimits: jest.fn(() =>
-    Promise.resolve({ limits: { portfolioImages: 5 } }),
-  ),
-});
-
 const buildPhotoDto = (overrides: Partial<AddPhotoDto> = {}): AddPhotoDto => ({
   title: 'T1',
   imageUrl: 'http://img',
@@ -50,18 +42,15 @@ describe('PortfolioService', () => {
   let service: PortfolioService;
   let prisma: ReturnType<typeof createPrismaMock>;
   let cache: ReturnType<typeof createCacheMock>;
-  let saas: ReturnType<typeof createSaasMock>;
 
   beforeEach(async () => {
     prisma = createPrismaMock();
     cache = createCacheMock();
-    saas = createSaasMock();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PortfolioService,
         { provide: PrismaService, useValue: prisma },
-        { provide: SaasService, useValue: saas },
         { provide: CacheService, useValue: cache },
       ],
     }).compile();
@@ -71,23 +60,6 @@ describe('PortfolioService', () => {
   });
 
   describe('addPhotoToPortfolio', () => {
-    it('returns error when SaaS limit reached', async () => {
-      saas.canPerformAction.mockResolvedValue(false);
-      saas.checkLimits.mockResolvedValue({ limits: { portfolioImages: 3 } });
-
-      const result = await service.addPhotoToPortfolio({
-        userId: 'u1',
-        portfolioBody: buildPhotoDto(),
-      });
-
-      expect(result).toEqual({
-        error: true,
-        message:
-          "Limite d'images portfolio atteinte (3). Passez au plan PRO ou BUSINESS pour continuer.",
-      });
-      expect(prisma.portfolio.create).not.toHaveBeenCalled();
-    });
-
     it('returns error when user not found', async () => {
       prisma.user.findUnique.mockResolvedValue(null);
 
@@ -163,7 +135,7 @@ describe('PortfolioService', () => {
 
       expect(result.photos).toHaveLength(2);
       expect(cache.set).toHaveBeenCalledWith(
-        'portfolio:photos:u1:all:page:1',
+        'portfolio:photos:u1:all:page:1:limit:all',
         result,
         900,
       );

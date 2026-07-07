@@ -1,7 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { TatoueursService } from './tatoueurs.service';
 import { PrismaService } from 'src/database/prisma.service';
-import { SaasService } from 'src/saas/saas.service';
 import { CacheService } from 'src/redis/cache.service';
 import { CreateTatoueurDto } from './dto/create-tatoueur.dto';
 import { Role } from '@prisma/client';
@@ -29,11 +28,6 @@ const createPrismaMock = () => ({
   $transaction: jest.fn(async (callback) => callback(createPrismaMock())),
 });
 
-const createSaasMock = () => ({
-  canPerformAction: jest.fn(),
-  checkLimits: jest.fn(),
-});
-
 const createCacheMock = () => ({
   get: jest.fn(),
   set: jest.fn(),
@@ -59,19 +53,16 @@ const buildTatoueurDto = (
 describe('TatoueursService', () => {
   let service: TatoueursService;
   let prisma: ReturnType<typeof createPrismaMock>;
-  let saas: ReturnType<typeof createSaasMock>;
   let cache: ReturnType<typeof createCacheMock>;
 
   beforeEach(async () => {
     prisma = createPrismaMock();
-    saas = createSaasMock();
     cache = createCacheMock();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TatoueursService,
         { provide: PrismaService, useValue: prisma },
-        { provide: SaasService, useValue: saas },
         { provide: CacheService, useValue: cache },
       ],
     }).compile();
@@ -81,24 +72,7 @@ describe('TatoueursService', () => {
   });
 
   describe('create', () => {
-    it('returns error when SaaS limit reached', async () => {
-      saas.canPerformAction.mockResolvedValue(false);
-      saas.checkLimits.mockResolvedValue({
-        limits: { tattooeurs: 5 },
-      });
-
-      const result = await service.create({
-        tatoueurBody: buildTatoueurDto(),
-        userId: 'u1',
-      });
-
-      expect(result.error).toBe(true);
-      expect(result.message).toContain('Limite de tatoueurs atteinte');
-      expect(prisma.tatoueur.create).not.toHaveBeenCalled();
-    });
-
     it('creates tatoueur successfully and invalidates cache', async () => {
-      saas.canPerformAction.mockResolvedValue(true);
       prisma.tatoueur.create.mockResolvedValue({
         id: 't1',
         name: 'John',
@@ -129,7 +103,6 @@ describe('TatoueursService', () => {
     });
 
     it('returns error on create failure', async () => {
-      saas.canPerformAction.mockResolvedValue(true);
       prisma.tatoueur.create.mockRejectedValue(new Error('boom'));
 
       const result = await service.create({
@@ -200,7 +173,11 @@ describe('TatoueursService', () => {
       const result = await service.getTatoueurByUserId('u1');
 
       expect(result).toHaveLength(1);
-      expect(cache.set).toHaveBeenCalledWith('tatoueurs:user:u1', result, 1200);
+      expect(cache.set).toHaveBeenCalledWith(
+        'tatoueurs:user:u1:v2-salon-name',
+        result,
+        1200,
+      );
     });
 
     it('uses salonName as name for linked tatoueur users', async () => {
@@ -262,7 +239,7 @@ describe('TatoueursService', () => {
 
       expect(result).toHaveLength(1);
       expect(cache.set).toHaveBeenCalledWith(
-        'tatoueurs:user:u1:appointment-enabled',
+        'tatoueurs:user:u1:appointment-enabled:v2-salon-name',
         result,
         900,
       );
@@ -307,11 +284,13 @@ describe('TatoueursService', () => {
         role: Role.user_tatoueur,
         salonId: 'salon-1',
         appointmentBookingEnabled: false,
+        salonCanCreateAppointments: true,
       });
       prisma.user.update.mockResolvedValue({
         id: 'linked-user-1',
         appointmentBookingEnabled: true,
         salonId: 'salon-1',
+        salonCanCreateAppointments: true,
       });
 
       const result = await service.updateLinkedTatoueurAppointmentBooking({
@@ -384,6 +363,7 @@ describe('TatoueursService', () => {
 
   describe('updateTatoueur', () => {
     it('updates tatoueur and invalidates cache', async () => {
+      prisma.tatoueur.findUnique.mockResolvedValue({ id: 't1', userId: 'u1' });
       prisma.tatoueur.update.mockResolvedValue({
         id: 't1',
         name: 'Updated Name',
@@ -393,6 +373,7 @@ describe('TatoueursService', () => {
       const result = await service.updateTatoueur(
         't1',
         buildTatoueurDto({ name: 'Updated' }),
+        'u1',
       );
 
       expect(result.error).toBe(false);
@@ -414,10 +395,32 @@ describe('TatoueursService', () => {
       );
     });
 
+    it('returns unauthorized when user does not own tatoueur', async () => {
+      prisma.tatoueur.findUnique.mockResolvedValue({
+        id: 't1',
+        userId: 'u-other',
+      });
+
+      const result = await service.updateTatoueur(
+        't1',
+        buildTatoueurDto(),
+        'u1',
+      );
+
+      expect(result.error).toBe(true);
+      expect(result.message).toBe('Non autorisé à modifier ce tatoueur.');
+      expect(prisma.tatoueur.update).not.toHaveBeenCalled();
+    });
+
     it('returns error on update failure', async () => {
+      prisma.tatoueur.findUnique.mockResolvedValue({ id: 't1', userId: 'u1' });
       prisma.tatoueur.update.mockRejectedValue(new Error('boom'));
 
-      const result = await service.updateTatoueur('t1', buildTatoueurDto());
+      const result = await service.updateTatoueur(
+        't1',
+        buildTatoueurDto(),
+        'u1',
+      );
 
       expect(result.error).toBe(true);
       expect(result.message).toBe('boom');
@@ -426,12 +429,13 @@ describe('TatoueursService', () => {
 
   describe('deleteTatoueur', () => {
     it('deletes tatoueur and invalidates cache', async () => {
+      prisma.tatoueur.findUnique.mockResolvedValue({ id: 't1', userId: 'u1' });
       prisma.tatoueur.delete.mockResolvedValue({
         id: 't1',
         userId: 'u1',
       });
 
-      const result = await service.deleteTatoueur('t1');
+      const result = await service.deleteTatoueur('t1', 'u1');
 
       expect(result.error).toBe(false);
       expect(result.message).toBe('Tatoueur supprimé avec succès.');
@@ -444,12 +448,26 @@ describe('TatoueursService', () => {
     });
 
     it('returns error on delete failure', async () => {
+      prisma.tatoueur.findUnique.mockResolvedValue({ id: 't1', userId: 'u1' });
       prisma.tatoueur.delete.mockRejectedValue(new Error('boom'));
 
-      const result = await service.deleteTatoueur('t1');
+      const result = await service.deleteTatoueur('t1', 'u1');
 
       expect(result.error).toBe(true);
       expect(result.message).toBe('boom');
+    });
+
+    it('returns unauthorized when user does not own tatoueur', async () => {
+      prisma.tatoueur.findUnique.mockResolvedValue({
+        id: 't1',
+        userId: 'u-other',
+      });
+
+      const result = await service.deleteTatoueur('t1', 'u1');
+
+      expect(result.error).toBe(true);
+      expect(result.message).toBe('Non autorisé à supprimer ce tatoueur.');
+      expect(prisma.tatoueur.delete).not.toHaveBeenCalled();
     });
   });
 });

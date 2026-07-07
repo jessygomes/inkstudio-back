@@ -1,14 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { AddPhotoDto } from './dto/add-photo.dto';
-import { SaasService } from 'src/saas/saas.service';
 import { CacheService } from 'src/redis/cache.service';
 
 @Injectable()
 export class PortfolioService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly saasService: SaasService,
     private cacheService: CacheService
   ) {}
 
@@ -49,17 +47,6 @@ export class PortfolioService {
     try {
       const { title, imageUrl, description, tatoueurId } = portfolioBody;
       const normalizedStyles = this.normalizeStyles((portfolioBody as { style?: unknown }).style);
-
-      // 🔒 VÉRIFIER LES LIMITES SAAS - IMAGES PORTFOLIO
-      const canAddPortfolioImage = await this.saasService.canPerformAction(userId, 'portfolio');
-      
-      if (!canAddPortfolioImage) {
-        const limits = await this.saasService.checkLimits(userId);
-        return {
-          error: true,
-          message: `Limite d'images portfolio atteinte (${limits.limits.portfolioImages}). Passez au plan PRO ou BUSINESS pour continuer.`,
-        };
-      }
 
       // Vérifier si l'utilisateur existe
       const user = await this.prisma.user.findUnique({
@@ -110,12 +97,19 @@ export class PortfolioService {
   }
 
   //! VOIR TOUTES LES PHOTOS D'UN PORTFOLIO
-  async getPortfolioPhotos(userId: string, tatoueurId?: string, page: number = 1) {
+  async getPortfolioPhotos(userId: string, tatoueurId?: string, page: number = 1, limit?: number) {
     try {
-      const pageSize = 10;
-      const currentPage = Number.isNaN(page) || page < 1 ? 1 : page;
-      const skip = (currentPage - 1) * pageSize;
-      const cacheKey = `portfolio:photos:${userId}:${tatoueurId ?? 'all'}:page:${currentPage}`;
+      const normalizedLimit =
+        typeof limit === 'number' && !Number.isNaN(limit) && limit > 0
+          ? Math.floor(limit)
+          : undefined;
+      const currentPage = normalizedLimit
+        ? Number.isNaN(page) || page < 1
+          ? 1
+          : page
+        : 1;
+      const skip = normalizedLimit ? (currentPage - 1) * normalizedLimit : 0;
+      const cacheKey = `portfolio:photos:${userId}:${tatoueurId ?? 'all'}:page:${currentPage}:limit:${normalizedLimit ?? 'all'}`;
 
       // 1. Vérifier dans Redis
       const cachedPhotos = await this.cacheService.get<{
@@ -197,8 +191,12 @@ export class PortfolioService {
       const photosFromDb = await this.prisma.portfolio.findMany({
         where: whereClause,
         orderBy: { createdAt: 'desc' }, // Optionnel : trier par date de création
-        skip,
-        take: pageSize,
+        ...(normalizedLimit
+          ? {
+              skip,
+              take: normalizedLimit,
+            }
+          : {}),
       });
 
       const photos = photosFromDb.map((photo) => {
@@ -222,7 +220,8 @@ export class PortfolioService {
         };
       });
 
-      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+      const pageSize = normalizedLimit ?? total;
+      const totalPages = normalizedLimit ? Math.max(1, Math.ceil(total / normalizedLimit)) : 1;
       const response = {
         photos,
         pagination: {
@@ -230,8 +229,8 @@ export class PortfolioService {
           pageSize,
           total,
           totalPages,
-          hasNextPage: currentPage < totalPages,
-          hasPreviousPage: currentPage > 1,
+          hasNextPage: normalizedLimit ? currentPage < totalPages : false,
+          hasPreviousPage: normalizedLimit ? currentPage > 1 : false,
         },
       };
 
