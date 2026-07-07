@@ -7,6 +7,23 @@ import { CreatePiercingServicePriceDto } from './dto/create-piercing-service-pri
 export class PiercingPriceService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private getSpecificZoneName(service: {
+    piercingZoneOreille: string | null;
+    piercingZoneVisage: string | null;
+    piercingZoneBouche: string | null;
+    piercingZoneCorps: string | null;
+    piercingZoneMicrodermal: string | null;
+  }): string | null {
+    return (
+      service.piercingZoneOreille ||
+      service.piercingZoneVisage ||
+      service.piercingZoneBouche ||
+      service.piercingZoneCorps ||
+      service.piercingZoneMicrodermal ||
+      null
+    );
+  }
+
   //! Créer une zone de piercing proposée par le salon
   async createPiercingZone(userId: string, createPiercingPriceDto: CreatePiercingPriceDto) {
     const existingZone = await this.prisma.piercingPrice.findUnique({
@@ -220,6 +237,7 @@ export class PiercingPriceService {
         service.piercingZoneCorps ||
         service.piercingZoneMicrodermal
         ),
+        specificZoneName: this.getSpecificZoneName(service),
         price: service.price,
         description: service.description
       }))
