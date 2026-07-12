@@ -87,4 +87,47 @@ describe('SaasService billing lifecycle', () => {
     expect(result.downgraded).toBe(2);
     expect(result.gracePeriodDays).toBe(5);
   });
+
+  it('downgrades expired trial users without active Stripe subscription', async () => {
+    prisma.saasPlanDetails.findMany.mockResolvedValue([
+      {
+        userId: 'user-trial-1',
+        user: { stripeSubscriptionId: null },
+      },
+      {
+        userId: 'user-trial-2',
+        user: { stripeSubscriptionId: 'sub_live_123' },
+      },
+    ]);
+
+    const updateSpy = jest
+      .spyOn(service, 'updateUserPlan')
+      .mockResolvedValue({} as never);
+
+    const result = await service.downgradeExpiredTrialUsers();
+
+    expect(prisma.saasPlanDetails.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          planStatus: SaasPlanStatus.TRIAL,
+          currentPlan: { in: [SaasPlan.PRO, SaasPlan.BUSINESS] },
+          trialEndDate: expect.objectContaining({ lte: expect.any(Date) }),
+        }),
+      }),
+    );
+
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+    expect(updateSpy).toHaveBeenCalledWith(
+      'user-trial-1',
+      SaasPlan.FREE,
+      null,
+      expect.objectContaining({
+        planStatus: SaasPlanStatus.EXPIRED,
+        trialEndDate: null,
+      }),
+    );
+
+    expect(result.scanned).toBe(2);
+    expect(result.downgraded).toBe(1);
+  });
 });

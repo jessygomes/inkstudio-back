@@ -12,10 +12,16 @@ export class SaasBillingJob {
   // depuis plus de 5 jours vers le plan FREE.
   @Process('downgrade-past-due')
   async handle() {
-    const result = await this.saasService.downgradeExpiredPastDueUsers(5);
+    const pastDueResult = await this.saasService.downgradeExpiredPastDueUsers(5);
+    const trialResult = await this.saasService.downgradeExpiredTrialUsers();
+
     this.logger.log(
-      `Scan past_due terminé: scannés=${result.scanned}, downgradés=${result.downgraded}`,
+      `Scan billing terminé: past_due(scannés=${pastDueResult.scanned}, downgradés=${pastDueResult.downgraded}) | trial(scannés=${trialResult.scanned}, downgradés=${trialResult.downgraded})`,
     );
-    return result;
+
+    return {
+      pastDue: pastDueResult,
+      trial: trialResult,
+    };
   }
 }

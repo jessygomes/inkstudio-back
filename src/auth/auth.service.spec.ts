@@ -251,6 +251,7 @@ describe('AuthService', () => {
       const result = await service.register({
         registerBody: {
           email: 'existing@example.com',
+          role: 'user_salon',
           salonName: 'Salon Test',
           saasPlan: 'FREE',
           password: 'password123',
@@ -283,6 +284,7 @@ describe('AuthService', () => {
       const result = await service.register({
         registerBody: {
           email: 'newsalon@example.com',
+          role: 'user_salon',
           salonName: 'New Tattoo Studio',
           saasPlan: 'PRO',
           password: 'password123',
@@ -334,6 +336,7 @@ describe('AuthService', () => {
       const result = await service.register({
         registerBody: {
           email: 'checkout@example.com',
+          role: 'user_salon',
           salonName: 'Checkout Studio',
           saasPlan: 'FREE',
           checkoutPlan: 'PRO',
@@ -376,6 +379,7 @@ describe('AuthService', () => {
       await service.register({
         registerBody: {
           email: 'test@example.com',
+          role: 'user_salon',
           salonName: 'Test Salon',
           saasPlan: 'FREE',
           password: 'pwd123',

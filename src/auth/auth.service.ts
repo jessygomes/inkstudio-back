@@ -11,7 +11,7 @@ import { SaasService } from 'src/saas/saas.service';
 import { CreateUserClientDto } from './dto/create-userClient.dto';
 import { CreateTatoueurUserDto } from './dto/create-tatoueur-user.dto';
 import { StripeService } from 'src/stripe/stripe.service';
-import { AgendaMode } from '@prisma/client';
+import { AgendaMode, SaasPlan, SaasPlanStatus } from '@prisma/client';
 
 interface AuthenticatedUser {
   id: string;
@@ -68,6 +68,9 @@ export type AuthTokenResponse = {
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
+  // Offre de bienvenue par défaut pour les nouveaux comptes tatoueur indépendants.
+  private readonly defaultTatoueurTrialMonths = 3;
+
   constructor(
     private readonly prisma: PrismaService, 
     private readonly jwtService : JwtService, 
@@ -75,6 +78,28 @@ export class AuthService {
     private readonly saasService: SaasService,
     private readonly stripeService: StripeService,
   ) {}
+
+  private getTatoueurTrialMonths(): number {
+    const rawMonths = process.env.TATOUEUR_PRO_TRIAL_MONTHS;
+
+    if (!rawMonths) {
+      return this.defaultTatoueurTrialMonths;
+    }
+
+    const parsedMonths = Number.parseInt(rawMonths, 10);
+
+    if (!Number.isFinite(parsedMonths) || parsedMonths <= 0) {
+      return this.defaultTatoueurTrialMonths;
+    }
+
+    return parsedMonths;
+  }
+
+  private computeTatoueurTrialEndDate(fromDate = new Date()): Date {
+    const trialEndDate = new Date(fromDate);
+    trialEndDate.setMonth(trialEndDate.getMonth() + this.getTatoueurTrialMonths());
+    return trialEndDate;
+  }
 
   //! CONNEXION
   async login({ authBody }: { authBody: LoginUserDto }) {
@@ -230,6 +255,10 @@ export class AuthService {
   
       // Hashage du mot de passe
       const hashedPassword = await this.hashPassword({password});
+      const isTatoueurRole = role === 'user_tatoueur';
+      const tatoueurTrialEndDate = isTatoueurRole
+        ? this.computeTatoueurTrialEndDate()
+        : null;
   
       // Création de l'utilisateur dans la DB
       const createdUser = await this.prisma.user.create({
@@ -241,12 +270,28 @@ export class AuthService {
           password: hashedPassword,
           role: role as import('@prisma/client').Role,
           ...(role === 'user_salon' ? { salonName } : {}),
-          ...(saasPlan ? { saasPlan } : {}),
+          ...(role === 'user_salon' && saasPlan ? { saasPlan } : {}),
+          ...(isTatoueurRole
+            ? {
+                saasPlan: SaasPlan.PRO,
+                saasPlanUntil: tatoueurTrialEndDate,
+              }
+            : {}),
           ...((role === 'user_salon' || role === 'user_tatoueur')
             ? {
                 saasPlanDetails: {
                   create: {
-                    ...(saasPlan ? { currentPlan: saasPlan } : {}),
+                    ...(role === 'user_salon' && saasPlan
+                      ? { currentPlan: saasPlan }
+                      : {}),
+                    ...(isTatoueurRole
+                      ? {
+                          currentPlan: SaasPlan.PRO,
+                          planStatus: SaasPlanStatus.TRIAL,
+                          trialEndDate: tatoueurTrialEndDate,
+                          nextPaymentDate: tatoueurTrialEndDate,
+                        }
+                      : {}),
                     agendaMode: role === 'user_salon'
                       ? AgendaMode.PAR_TATOUEUR
                       : AgendaMode.GLOBAL,
@@ -498,6 +543,8 @@ export class AuthService {
       }
 
       const hashedPassword = await this.hashPassword({ password });
+      const shouldOfferTatoueurTrial = true;
+      const tatoueurTrialEndDate = this.computeTatoueurTrialEndDate();
 
       const createdUser = await this.prisma.user.create({
         data: {
@@ -507,6 +554,21 @@ export class AuthService {
           phone,
           password: hashedPassword,
           role: 'user_tatoueur',
+          ...(shouldOfferTatoueurTrial
+            ? {
+                saasPlan: SaasPlan.PRO,
+                saasPlanUntil: tatoueurTrialEndDate,
+                saasPlanDetails: {
+                  create: {
+                    currentPlan: SaasPlan.PRO,
+                    planStatus: SaasPlanStatus.TRIAL,
+                    trialEndDate: tatoueurTrialEndDate,
+                    nextPaymentDate: tatoueurTrialEndDate,
+                    agendaMode: AgendaMode.GLOBAL,
+                  },
+                },
+              }
+            : {}),
           ...(salonId ? { salonId } : {}),
         },
       });

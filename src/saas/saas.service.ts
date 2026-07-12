@@ -344,6 +344,57 @@ export class SaasService {
   }
 
   /**
+   * Rétrograde automatiquement en FREE les comptes en TRIAL arrivés à échéance
+   * lorsqu'aucune souscription Stripe active n'est rattachée.
+   */
+  async downgradeExpiredTrialUsers() {
+    const now = new Date();
+
+    const expiredTrialUsers = await this.prisma.saasPlanDetails.findMany({
+      where: {
+        planStatus: SaasPlanStatus.TRIAL,
+        currentPlan: {
+          in: [SaasPlan.PRO, SaasPlan.BUSINESS],
+        },
+        trialEndDate: {
+          lte: now,
+        },
+      },
+      select: {
+        userId: true,
+        user: {
+          select: {
+            stripeSubscriptionId: true,
+          },
+        },
+      },
+    });
+
+    let downgradedCount = 0;
+
+    for (const entry of expiredTrialUsers) {
+      // Si Stripe pilote déjà la souscription, on laisse les webhooks faire foi.
+      if (entry.user?.stripeSubscriptionId) {
+        continue;
+      }
+
+      await this.updateUserPlan(entry.userId, SaasPlan.FREE, null, {
+        planStatus: SaasPlanStatus.EXPIRED,
+        trialEndDate: null,
+        nextPaymentDate: null,
+        pastDueSince: null,
+      });
+      downgradedCount += 1;
+    }
+
+    return {
+      scanned: expiredTrialUsers.length,
+      downgraded: downgradedCount,
+      checkedAt: now,
+    };
+  }
+
+  /**
    * ⚙️ CONFIGURATION DES PLANS
    */
   private getPlanConfiguration(plan: SaasPlan) {
