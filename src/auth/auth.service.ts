@@ -606,15 +606,27 @@ export class AuthService {
   //! MOT DE PASSE OUBLIÉ
   // ENVOIE UN EMAIL DE RÉINITIALISATION DE MOT DE PASSE
   async sendResetPasswordEmail(email: string) {
+    console.log("sendResetPasswordEmail called with email:", email);
+
+    // Vérifier si l'utilisateur existe
     const user = await this.prisma.user.findUnique({ where: { email } });
   
     if (!user) {
       return { message: "Si un compte existe avec cette adresse, un email a été envoyé." };
     }
   
+    // Supprimer tout token de réinitialisation existant pour cet email
+    await this.prisma.passwordResetToken.deleteMany({
+      where: {
+        email,
+      },
+    });
+
+    // Générer un nouveau token de réinitialisation
     const token = randomBytes(32).toString('hex');
     const expires = new Date(Date.now() + 1000 * 60 * 15); // 15 minutes
   
+    // Enregistrer le token dans la base de données
     await this.prisma.passwordResetToken.create({
       data: {
         email,
@@ -623,18 +635,21 @@ export class AuthService {
       },
     });
   
+    // Construire l'URL de réinitialisation du mot de passe
     const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${token}&email=${email}`;
 
+    // Envoyer l'email de réinitialisation du mot de passe
     await this.mailService.sendPasswordReset(
       email,
       {
         recipientName: user.salonName || 'Salon',
-        salonName: user.salonName || 'InkStudio',
+        salonName: user.salonName || 'Inkera Studio',
         resetUrl: resetUrl,
       },
       user.salonName || undefined
     );
   
+    // Retourner un message générique pour ne pas révéler si l'email existe ou non
     return { message: "Si un compte existe avec cette adresse, un email a été envoyé." };
   }
 

@@ -174,6 +174,8 @@ export class MailService {
     const subject = `Réinitialisation de votre mot de passe${salonName ? ` - ${salonName}` : ''}`;
     const dataWithSalon = { ...data, salonName: salonName || data.salonName };
     const html = this.emailTemplateService.generatePasswordResetEmail(dataWithSalon);
+
+    console.log(`Sending password reset email to: ${to}, subject: ${subject}, salonName: ${salonName || data.salonName}`);
     
     return await this.sendMail(to, subject, html, salonName);
   }
