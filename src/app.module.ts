@@ -41,6 +41,7 @@ import { FlashModule } from './flash/flash.module';
 import { ArticlesModule } from './articles/articles.module';
 import { MoodboardModule } from './moodboard/moodboard.module';
 import { SalonAnalyticsModule } from './salon-analytics/salon-analytics.module';
+import { SuiviModule } from './suivi/suivi.module';
 
 @Module({
   imports: [
@@ -81,6 +82,7 @@ import { SalonAnalyticsModule } from './salon-analytics/salon-analytics.module';
     AdminModule,
     MessagingModule,
     SalonAnalyticsModule,
+    SuiviModule,
   ],
   controllers: [
     AppointmentsController,

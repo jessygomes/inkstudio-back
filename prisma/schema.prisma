@@ -87,6 +87,12 @@ model User {
 
   appointments              Appointment[]
   appointmentsAsPerformer    Appointment[]        @relation("AppointmentPerformer")
+  // Chaque champ correspond à un rôle différent :
+  drawingCardsAsSalon         DrawingCard[]         @relation("DrawingCardSalon") // toutes les cards appartenant au salon ;
+  drawingCardsAsPerformer     DrawingCard[]         @relation("DrawingCardPerformer") // toutes les cards attribuées à un compte user_tatoueur ;
+  drawingCardsAsClient        DrawingCard[]         @relation("DrawingCardClient") // toutes les cards liées au compte d’un client connecté.
+  drawingCardNotes            DrawingCardNote[]     @relation("DrawingCardNoteAuthor") // Notes écrites par cet utilisateur
+  drawingCardImages           DrawingCardImage[]    @relation("DrawingCardImageUploader") // Images ajoutées par cet utilisateur
   appointmentConsumables    AppointmentConsumable[]
   blockedTimeSlots          BlockedTimeSlot[]
 
@@ -256,6 +262,7 @@ model Tatoueur {
   style              String[]
   rdvBookingEnabled  Boolean             @default(true)
   appointments       Appointment[]
+  drawingCards       DrawingCard[] // Cards attribuées à ce tatoueur interne
   blockedTimeSlots   BlockedTimeSlot[]
   Portfolio          Portfolio[]
   Flash              Flash[]
@@ -295,6 +302,8 @@ model Appointment {
   tatoueur           Tatoueur?           @relation(fields: [tatoueurId], references: [id])
   user               User                @relation(fields: [userId], references: [id]) // Salon
   performerUser      User?               @relation("AppointmentPerformer", fields: [performerUserId], references: [id])
+  drawingCardSource  DrawingCard?        @relation("DrawingCardSource") // Card créée depuis ce RDV
+  drawingCardTattoo  DrawingCard?        @relation("DrawingCardTattoo") // Card utilisée pour ce RDV Tattoo
   
   // NOUVELLE relation pour client connecté
   clientUser         User?               @relation("ClientUserAppointments", fields: [clientUserId], references: [id])
@@ -316,6 +325,72 @@ model Appointment {
   @@index([start])
   @@index([followUp7SentAt])
   @@index([followUp30SentAt])
+}
+
+//! CARDS DE SUIVI DES DESSINS
+model DrawingCard {
+  id                  String             @id @default(cuid()) // Identifiant unique de la card
+  salonId             String // Salon propriétaire de la card
+  sourceAppointmentId  String             @unique // RDV à l'origine de la card
+  tattooAppointmentId  String?            @unique // RDV Tattoo final associé
+  clientId             String? // Fiche Client du salon
+  clientUserId         String? // Compte client connecté
+  tatoueurId           String? // Tatoueur interne du salon
+  performerUserId      String? // Compte user_tatoueur
+  title                String // Titre visible du projet
+  description          String? // Description initiale du projet
+  additionalInfo       String? // Informations complémentaires et échanges
+  status               DrawingCardStatus  @default(A_DESSINER) // Statut Kanban actuel
+  approvedAt           DateTime? // Date d'approbation du dessin
+  completedAt          DateTime? // Date de clôture de la card
+  createdAt            DateTime           @default(now()) // Date de création
+  updatedAt            DateTime           @updatedAt // Date de dernière modification
+
+  salon               User                @relation("DrawingCardSalon", fields: [salonId], references: [id], onDelete: Cascade) // Relation vers le salon
+  sourceAppointment   Appointment         @relation("DrawingCardSource", fields: [sourceAppointmentId], references: [id], onDelete: Cascade) // Relation vers le RDV source
+  tattooAppointment   Appointment?        @relation("DrawingCardTattoo", fields: [tattooAppointmentId], references: [id], onDelete: SetNull) // Relation vers le RDV Tattoo
+  client              Client?             @relation(fields: [clientId], references: [id], onDelete: SetNull) // Relation vers la fiche client
+  clientUser          User?               @relation("DrawingCardClient", fields: [clientUserId], references: [id], onDelete: SetNull) // Relation vers le compte client
+  tatoueur            Tatoueur?           @relation(fields: [tatoueurId], references: [id], onDelete: SetNull) // Relation vers le tatoueur interne
+  performerUser       User?               @relation("DrawingCardPerformer", fields: [performerUserId], references: [id], onDelete: SetNull) // Relation vers le tatoueur connecté
+  notes               DrawingCardNote[] // Historique des notes et échanges
+  images              DrawingCardImage[] // Versions et fichiers du dessin
+
+  @@index([salonId, status]) // Affichage Kanban par salon et statut
+  @@index([clientId]) // Recherche par fiche client
+  @@index([clientUserId]) // Recherche par compte client
+  @@index([performerUserId]) // Recherche par tatoueur connecté
+}
+
+model DrawingCardNote {
+  id        String              @id @default(cuid()) // Identifiant unique de la note
+  cardId    String // Card concernée
+  authorId  String // Utilisateur auteur de la note
+  content   String // Contenu de la note ou de l'échange
+  type      DrawingCardNoteType @default(INTERNAL) // Catégorie de la note
+  createdAt DateTime            @default(now()) // Date de création
+  updatedAt DateTime            @updatedAt // Date de modification
+
+  card      DrawingCard @relation(fields: [cardId], references: [id], onDelete: Cascade) // Card parente
+  author    User        @relation("DrawingCardNoteAuthor", fields: [authorId], references: [id], onDelete: Cascade) // Auteur
+
+  @@index([cardId, createdAt]) // Timeline de la card
+}
+
+model DrawingCardImage {
+  id           String   @id @default(cuid()) // Identifiant unique du fichier
+  cardId       String // Card concernée
+  uploadedById String // Utilisateur ayant ajouté le fichier
+  url          String // URL du fichier stocké
+  caption      String? // Légende de la version
+  version      Int      @default(1) // Numéro de version du dessin
+  isApproved   Boolean  @default(false) // Version validée par le client
+  createdAt    DateTime @default(now()) // Date d'ajout
+
+  card         DrawingCard @relation(fields: [cardId], references: [id], onDelete: Cascade) // Card parente
+  uploadedBy   User        @relation("DrawingCardImageUploader", fields: [uploadedById], references: [id], onDelete: Cascade) // Auteur de l'ajout
+
+  @@index([cardId, createdAt]) // Versions d'une card dans l'ordre chronologique
 }
 
 //! MODEL POUR LES DÉTAILS D'UN TATOUAGE DANS UN RDV
@@ -406,6 +481,7 @@ model Client {
   aftercareRecords   Aftercare[]
   appointments       Appointment[]
   user               User                 @relation(fields: [userId], references: [id])
+  drawingCards       DrawingCard[]
   FollowUpSubmission FollowUpSubmission[]
   medicalHistory     MedicalHistory?
   tattooDetails      TattooDetail[]
@@ -1064,6 +1140,20 @@ enum AppointmentStatus {
   RESCHEDULING
   NO_SHOW
   COMPLETED
+}
+
+enum DrawingCardStatus {
+  A_DESSINER
+  EN_COURS
+  A_MODIFIER
+  TERMINE
+  APPROUVE
+}
+
+enum DrawingCardNoteType {
+  INTERNAL
+  CLIENT_EXCHANGE
+  DESIGN_UPDATE
 }
 
 enum FollowUpStatus {

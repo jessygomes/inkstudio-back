@@ -74,6 +74,10 @@ export class UpdateAppointmentDto {
   @IsOptional()
   performerUserId: string;
 
+  @IsString()
+  @IsOptional()
+  drawingCardId?: string; // Card Dessin approuvée à associer au RDV Tattoo
+
   // @IsString()
   // @IsOptional()
   // status: AppointmentStatus;

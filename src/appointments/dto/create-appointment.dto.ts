@@ -99,6 +99,11 @@ export class CreateAppointmentDto {
   @IsString()
   moodboardId?: string;
 
+  @ApiPropertyOptional({ description: 'ID de la card Dessin approuvée à associer à un RDV Tattoo' })
+  @IsOptional()
+  @IsString()
+  drawingCardId?: string;
+
   @ApiPropertyOptional({ description: 'ID du flash sélectionné (optionnel)' })
   @IsOptional()
   @IsString()

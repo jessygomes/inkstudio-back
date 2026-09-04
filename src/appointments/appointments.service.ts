@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { AgendaMode, AppointmentStatus, Prisma, PrestationType as PrismaPrestationType, SaasPlan } from '@prisma/client';
+import { AgendaMode, AppointmentStatus, DrawingCardStatus, Prisma, PrestationType as PrismaPrestationType, SaasPlan } from '@prisma/client';
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CreateAppointmentDto, PrestationType } from './dto/create-appointment.dto';
@@ -466,7 +466,7 @@ export class AppointmentsService {
   //! ------------------------------------------------------------------------------
   async create({ userId, rdvBody }: {userId: string, rdvBody: CreateAppointmentDto}) {
     try {
-      const {  title, prestation, start, end, clientFirstname, clientLastname, clientEmail, clientPhone, clientBirthdate, tatoueurId, visio, visioRoom, skin, moodboardId } = rdvBody;
+      const {  title, prestation, start, end, clientFirstname, clientLastname, clientEmail, clientPhone, clientBirthdate, tatoueurId, visio, visioRoom, skin, moodboardId, drawingCardId } = rdvBody;
 
       const skinValidationError = this.validateSkinToneForPrestation(prestation, skin);
       if (skinValidationError) {
@@ -675,6 +675,35 @@ export class AppointmentsService {
         };
       }
 
+      // Une card ne peut être utilisée que pour un RDV Tattoo du même salon et du même client.
+      // Cette vérification est faite avant la création du RDV pour éviter un lien incohérent.
+      let drawingCardConnection: { connect: { id: string } } | undefined;
+      if (drawingCardId) {
+        if (prestation !== PrestationType.TATTOO) {
+          return { error: true, message: 'Une card Dessin peut uniquement être liée à un RDV Tattoo.' };
+        }
+
+        const drawingCard = await this.prisma.drawingCard.findUnique({
+          where: { id: drawingCardId },
+          select: { id: true, salonId: true, status: true, clientId: true, clientUserId: true },
+        });
+
+        if (!drawingCard) {
+          return { error: true, message: 'Card Dessin introuvable.' };
+        }
+        if (drawingCard.salonId !== userId || drawingCard.status !== DrawingCardStatus.APPROUVE) {
+          return { error: true, message: 'La card doit être approuvée et appartenir à ce salon.' };
+        }
+        if (drawingCard.clientId && drawingCard.clientId !== client.id) {
+          return { error: true, message: 'La card Dessin ne concerne pas ce client.' };
+        }
+        if (drawingCard.clientUserId && drawingCard.clientUserId !== clientUser?.id) {
+          return { error: true, message: 'La card Dessin ne concerne pas ce client connecté.' };
+        }
+
+        drawingCardConnection = { connect: { id: drawingCard.id } };
+      }
+
       if (prestation === PrestationType.PROJET || prestation === PrestationType.TATTOO || prestation === PrestationType.PIERCING || prestation === PrestationType.RETOUCHE) {
         // Créer le rendez-vous
         const newAppointment = await this.prisma.appointment.create({
@@ -692,7 +721,8 @@ export class AppointmentsService {
             skin,
             status: 'CONFIRMED',
             visio: visio || false,
-            visioRoom: generatedVisioRoom
+            visioRoom: generatedVisioRoom,
+            drawingCardTattoo: drawingCardConnection,
           } as any,
           include: {
             tatoueur: {
@@ -2688,7 +2718,7 @@ export class AppointmentsService {
   //! ------------------------------------------------------------------------------
   async updateAppointment(id: string, rdvBody: UpdateAppointmentDto) {
     try {
-      const { title, prestation, start, end, tatoueurId, skin } = rdvBody;
+      const { title, prestation, start, end, tatoueurId, skin, drawingCardId } = rdvBody;
       const tattooDetail: Partial<UpdateAppointmentDto['tattooDetail']> = rdvBody.tattooDetail || {};
       const { description = '', zone = '', size = '', colorStyle = '', reference = '', sketch = '', estimatedPrice = 0, price = 0 } = tattooDetail;
 
@@ -2767,6 +2797,32 @@ export class AppointmentsService {
         };
       }
 
+      // Si une card est fournie lors de la modification, elle doit respecter
+      // les mêmes règles que lors de la création d'un RDV Tattoo.
+      let drawingCardConnection: { connect: { id: string } } | undefined;
+      if (drawingCardId) {
+        if (resolvedPrestation !== PrestationType.TATTOO) {
+          return { error: true, message: 'Une card Dessin peut uniquement être liée à un RDV Tattoo.' };
+        }
+
+        const drawingCard = await this.prisma.drawingCard.findUnique({
+          where: { id: drawingCardId },
+          select: { id: true, salonId: true, status: true, clientId: true, clientUserId: true },
+        });
+
+        if (!drawingCard || drawingCard.salonId !== existingAppointment.userId || drawingCard.status !== DrawingCardStatus.APPROUVE) {
+          return { error: true, message: 'La card doit être approuvée et appartenir à ce salon.' };
+        }
+        if (drawingCard.clientId && drawingCard.clientId !== existingAppointment.clientId) {
+          return { error: true, message: 'La card Dessin ne concerne pas ce client.' };
+        }
+        if (drawingCard.clientUserId && drawingCard.clientUserId !== existingAppointment.clientUserId) {
+          return { error: true, message: 'La card Dessin ne concerne pas ce client connecté.' };
+        }
+
+        drawingCardConnection = { connect: { id: drawingCard.id } };
+      }
+
       // Mettre à jour le rendez-vous
       const updatedAppointment = await this.prisma.appointment.update({
         where: {
@@ -2780,6 +2836,7 @@ export class AppointmentsService {
           tatoueurId: selectedTatoueur.tatoueurId,
           performerUserId: selectedTatoueur.performerUserId,
           skin,
+          drawingCardTattoo: drawingCardConnection,
         } as any,
         include: {
           client: true,
