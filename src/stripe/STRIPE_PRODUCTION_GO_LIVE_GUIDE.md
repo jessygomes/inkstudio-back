@@ -27,7 +27,7 @@ Date de mise a jour: 2026-05-22
 - GET /stripe/portal
 
 ### 2.3 Regles metier validees
-- Une souscription payante est creee via Stripe Checkout avec 30 jours d'essai.
+- Une souscription payante est creee via Stripe Checkout avec 60 jours d'essai.
 - Stripe envoie trial_will_end (J-3 en general) et le backend envoie un email de rappel au salon.
 - En cas d'echec de paiement, le compte passe en PAST_DUE sans restriction immediate.
 - Si paiement reussi ensuite, retour automatique en ACTIVE.
@@ -37,14 +37,14 @@ Date de mise a jour: 2026-05-22
 
 ## 3. Implementation technique (etat actuel)
 
-### 3.1 Checkout avec trial 30 jours
+### 3.1 Checkout avec trial 60 jours
 Dans Stripe checkout session:
 - payment_method_collection: always
-- subscription_data.trial_period_days: 30
+- subscription_data.trial_period_days: 60
 
 Objectif:
 - collecter un moyen de paiement
-- laisser 30 jours gratuits avant la premiere tentative de facturation
+- laisser 60 jours gratuits avant la premiere tentative de facturation
 
 ### 3.2 Webhooks traites
 Le backend traite:

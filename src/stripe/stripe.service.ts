@@ -396,7 +396,7 @@ export class StripeService {
       ],
 
       subscription_data: { // Paramètres spécifiques à la souscription créée par ce checkout
-        trial_period_days: 30,
+        trial_period_days: 60,
       },
 
       /*
