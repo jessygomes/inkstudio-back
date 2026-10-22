@@ -6,6 +6,9 @@ export class ConversationParticipantDto {
   lastName?: string;
   salonName?: string;
   image?: string;
+  city?: string;
+  postalCode?: string;
+  address?: string;
   email: string;
   role: string;
 }

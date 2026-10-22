@@ -133,12 +133,28 @@ model User {
   messageNotifications      MessageNotification[]
   notificationPreference    NotificationPreference?
 
+  // Messagerie multicanale : propriété et délégation, indépendantes des RDV
+  inboxThreadsOwned         InboxThread[]         @relation("InboxOwner")
+  inboxThreadsAssigned      InboxThread[]         @relation("InboxAssignedUser")
+  inboxThreadsAssignedBy    InboxThread[]         @relation("InboxAssignedBy")
+  inboxPermissionsAsSalon   InboxMemberPermission[] @relation("InboxPermissionSalon")
+  inboxPermissionsAsMember  InboxMemberPermission[] @relation("InboxPermissionMember")
+  inboxNotesWritten         InboxInternalNote[]   @relation("InboxNoteAuthor")
+  inboxReadStates           InboxReadState[]
+  savedRepliesOwned         SavedReply[]          @relation("SavedReplyOwner")
+  savedRepliesCreated       SavedReply[]          @relation("SavedReplyCreator")
+  channelConnections        ChannelConnection[]
+  externalMessagesSent      ExternalMessage[]     @relation("ExternalMessageOperator")
+
   // Statistiques visites profil public
   salonProfileViews         SalonProfileView[]    @relation("SalonProfileViews")
 
   // Demandes d'invitation d'équipe (salon -> tatoueur user)
   sentTeamRequests          SalonTatoueurTeamRequest[] @relation("TeamRequestsSentBySalon")
   receivedTeamRequests      SalonTatoueurTeamRequest[] @relation("TeamRequestsReceivedByTatoueur")
+
+  // Index historiques créés en SQL, désormais suivis par Prisma.
+  @@index([saasPlan, saasPlanUntil], map: "idx_user_saasPlan_saasPlanUntil")
 }
 
 //! MODEL POUR STOCKER LES INFOS D'UN CLIENT CONNECTÉ
@@ -264,10 +280,13 @@ model Tatoueur {
   appointments       Appointment[]
   drawingCards       DrawingCard[] // Cards attribuées à ce tatoueur interne
   blockedTimeSlots   BlockedTimeSlot[]
+  assignedInboxThreads InboxThread[]
   Portfolio          Portfolio[]
   Flash              Flash[]
   user               User                @relation(fields: [userId], references: [id])
   TattooHistory      TattooHistory[]
+
+  @@index([userId, rdvBookingEnabled], map: "idx_tatoueur_userId_rdvBookingEnabled")
 }
 
 //! MODEL POUR LES RDV
@@ -296,6 +315,7 @@ model Appointment {
   moodboardId        String?             // Moodboard connecté au rdv par le client
 
   conversation              Conversation?
+  inboxThreadLinks          InboxThreadAppointment[]
   
   // Relations existantes
   client             Client?             @relation(fields: [clientId], references: [id])
@@ -325,6 +345,11 @@ model Appointment {
   @@index([start])
   @@index([followUp7SentAt])
   @@index([followUp30SentAt])
+  @@index([userId, start, status], map: "idx_appointment_userId_start_status")
+  @@index([start, end], map: "idx_appointment_start_end")
+  @@index([userId, isPayed, start], map: "idx_appointment_userId_isPayed_start")
+  @@index([status, userId], map: "idx_appointment_status_userId")
+  @@index([tatoueurId, start], map: "idx_appointment_tatoueurId_start")
 }
 
 //! CARDS DE SUIVI DES DESSINS
@@ -489,9 +514,11 @@ model Client {
 
   linkedUserId       String?
   linkedUser         User?                @relation("LinkedClientProfile", fields: [linkedUserId], references: [id], onDelete: SetNull)
+  inboxThreads       InboxThread[]
 
   @@unique([userId, email])
   @@index([linkedUserId])
+  @@index([userId, lastName, firstName], map: "idx_client_userId_lastName_firstName")
 }
 
 model MedicalHistory {
@@ -565,6 +592,8 @@ model TimeSlot {
   updatedAt     DateTime     @updatedAt
   appointment   Appointment? @relation(fields: [appointmentId], references: [id])
   user          User         @relation(fields: [userId], references: [id])
+
+  @@index([userId, date], map: "idx_timeslot_userId_date")
 }
 
 //! MODEL POUR LES IMAGES DE PORTFOLIO
@@ -581,6 +610,8 @@ model Portfolio {
   tatoueur    Tatoueur? @relation(fields: [tatoueurId], references: [id])
   user        User      @relation(fields: [userId], references: [id])
   favorites   FavoritePortfolio[] @relation("FavoritedPortfolio")
+
+  @@index([userId, createdAt(sort: Desc)], map: "idx_portfolio_userId_createdAt")
 }
 
 //! MODEL POUR LES FAVORIS D'IMAGES DE PORTFOLIO
@@ -609,6 +640,8 @@ model ProductSalon {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   user        User     @relation(fields: [userId], references: [id])
+
+  @@index([userId, name], map: "idx_productsalon_userId_name")
 }
 
 //! MODEL POUR LES FLASHS DISPONIBLES DU SALON
@@ -856,6 +889,7 @@ model Conversation {
   appointment       Appointment?        @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
   
   messages          Message[]
+  inboxThread       InboxThread?
   notifications     MessageNotification[]
   emailNotifications EmailNotificationQueue[]
   
@@ -1160,4 +1194,271 @@ enum FollowUpStatus {
   PENDING
   SUBMITTED
   EXPIRED
+}
+
+// -----------------------------------------------------------------------------
+// INBOX OMNICANALE - Phase de fondation additive.
+// Les anciens modèles Conversation/Message restent en place pour ne pas casser
+// la messagerie Inkera existante pendant la migration.
+// -----------------------------------------------------------------------------
+
+enum InboxChannel {
+  INKERA
+  INSTAGRAM
+  FACEBOOK
+  EMAIL
+}
+
+enum InboxThreadStatus {
+  NEW
+  IN_PROGRESS
+  WAITING_CLIENT
+  DONE
+}
+
+enum ChannelProvider {
+  INSTAGRAM
+  FACEBOOK
+  GMAIL
+  OUTLOOK
+  IMAP_SMTP
+}
+
+enum ChannelConnectionStatus {
+  ACTIVE
+  REAUTH_REQUIRED
+  DISCONNECTED
+  ERROR
+}
+
+enum ExternalMessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum ExternalMessageStatus {
+  RECEIVED
+  PENDING
+  SENT
+  FAILED
+}
+
+model ChannelConnection {
+  id                    String                  @id @default(cuid())
+  ownerUserId           String                  // Salon ou indépendant propriétaire du compte externe
+  provider              ChannelProvider         // Service connecté : Meta, Gmail, Outlook...
+  providerAccountId     String                  // ID stable côté fournisseur
+  providerUserId        String?                 // Autre identifiant Instagram renvoyé par l'API (webhooks)
+  displayName           String?
+  emailAddress          String?
+  accessTokenEncrypted  String?                 @db.Text // Jamais de jeton en clair
+  refreshTokenEncrypted String?                 @db.Text
+  tokenExpiresAt        DateTime?
+  scopes                String[]                @default([])
+  status                ChannelConnectionStatus @default(ACTIVE)
+  syncCursor            String?                 @db.Text // Reprise des synchronisations
+  lastSyncedAt          DateTime?
+  lastError             String?                 @db.Text
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+
+  owner                 User                    @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  contacts              ExternalContact[]
+  conversations         ExternalConversation[]
+
+  // Un compte externe ne peut pas être connecté à deux professionnels Inkera.
+  @@unique([provider, providerAccountId])
+  @@index([ownerUserId, provider, status])
+}
+
+model ExternalContact {
+  id                String                @id @default(cuid())
+  connectionId      String
+  providerContactId String                // ID de l'interlocuteur chez le fournisseur
+  displayName       String?
+  username          String?
+  email             String?
+  profileImageUrl   String?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  connection        ChannelConnection     @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  conversations     ExternalConversation[]
+
+  @@unique([connectionId, providerContactId])
+}
+
+model ExternalConversation {
+  id               String             @id @default(cuid())
+  connectionId     String
+  providerThreadId String             // Un email peut avoir plusieurs fils pour le même client
+  contactId        String?
+  subject          String?
+  lastMessageAt    DateTime?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  connection       ChannelConnection  @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  contact          ExternalContact?   @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  messages         ExternalMessage[]
+  inboxThread      InboxThread?
+
+  @@unique([connectionId, providerThreadId])
+  @@index([connectionId, lastMessageAt])
+}
+
+model ExternalMessage {
+  id                     String                   @id @default(cuid())
+  externalConversationId String
+  providerMessageId      String?
+  direction              ExternalMessageDirection
+  status                 ExternalMessageStatus    @default(RECEIVED)
+  contentText            String?                  @db.Text
+  contentHtml            String?                  @db.Text
+  senderExternalId       String?
+  toAddresses            String[]                 @default([])
+  ccAddresses            String[]                 @default([])
+  sentByUserId           String?                  // Opérateur Inkera, si identifiable
+  providerCreatedAt      DateTime?
+  sendError              String?                  @db.Text
+  createdAt              DateTime                 @default(now())
+
+  conversation           ExternalConversation     @relation(fields: [externalConversationId], references: [id], onDelete: Cascade)
+  sentByUser             User?                    @relation("ExternalMessageOperator", fields: [sentByUserId], references: [id], onDelete: SetNull)
+  attachments            ExternalAttachment[]
+
+  // Déduplication des notifications et événements provenant des fournisseurs.
+  @@unique([externalConversationId, providerMessageId])
+  @@index([externalConversationId, providerCreatedAt])
+}
+
+model ExternalAttachment {
+  id                String           @id @default(cuid())
+  messageId         String
+  providerFileId    String?
+  fileName          String?
+  mimeType          String?
+  fileSize          Int?
+  fileUrl           String?          @db.Text // Peut expirer chez le fournisseur
+  storageKey        String?          // Copie sécurisée éventuelle
+  createdAt         DateTime         @default(now())
+
+  message           ExternalMessage  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+}
+
+model InboxThread {
+  id                     String             @id @default(cuid())
+  ownerUserId            String             // Salon ou indépendant qui possède la conversation
+  channel                InboxChannel
+  conversationId         String?            @unique // Uniquement pour Inkera
+  externalConversationId String?            @unique // Uniquement pour les canaux externes
+  linkedClientId         String?            // CRM : plusieurs conversations pour le même Client
+  assignedUserId         String?            // Indépendant Inkera rattaché au salon
+  assignedTatoueurId     String?            // Profil Tatoueur interne au salon
+  assignedByUserId       String?
+  assignedAt             DateTime?
+  status                 InboxThreadStatus  @default(NEW)
+  archivedAt             DateTime?
+  lastMessageAt          DateTime?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  owner                  User               @relation("InboxOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  conversation           Conversation?      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  externalConversation   ExternalConversation? @relation(fields: [externalConversationId], references: [id], onDelete: Cascade)
+  linkedClient           Client?            @relation(fields: [linkedClientId], references: [id], onDelete: SetNull)
+  assignedUser           User?              @relation("InboxAssignedUser", fields: [assignedUserId], references: [id], onDelete: SetNull)
+  assignedTatoueur       Tatoueur?          @relation(fields: [assignedTatoueurId], references: [id], onDelete: SetNull)
+  assignedBy             User?              @relation("InboxAssignedBy", fields: [assignedByUserId], references: [id], onDelete: SetNull)
+  appointments           InboxThreadAppointment[]
+  internalNotes          InboxInternalNote[]
+  readStates             InboxReadState[]
+
+  // Contrôles à réaliser aussi côté SQL/service :
+  // - EXACTEMENT UN entre conversationId et externalConversationId
+  // - AU PLUS UN entre assignedUserId et assignedTatoueurId
+  // - tous les liens doivent appartenir au même propriétaire professionnel
+  @@index([ownerUserId, channel, status])
+  @@index([ownerUserId, linkedClientId])
+  @@index([assignedUserId])
+  @@index([assignedTatoueurId])
+}
+
+model InboxThreadAppointment {
+  id            String      @id @default(cuid())
+  inboxThreadId String
+  appointmentId String
+  createdAt     DateTime    @default(now())
+
+  thread        InboxThread @relation(fields: [inboxThreadId], references: [id], onDelete: Cascade)
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  // Une conversation peut lier plusieurs RDV, et inversement.
+  @@unique([inboxThreadId, appointmentId])
+  @@index([appointmentId])
+}
+
+model InboxMemberPermission {
+  id            String    @id @default(cuid())
+  salonId       String
+  memberUserId  String
+  canView       Boolean   @default(false)
+  canReply      Boolean   @default(false)
+  canAssign     Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  salon         User      @relation("InboxPermissionSalon", fields: [salonId], references: [id], onDelete: Cascade)
+  member        User      @relation("InboxPermissionMember", fields: [memberUserId], references: [id], onDelete: Cascade)
+
+  // Une permission ne donne JAMAIS accès à toutes les conversations du salon :
+  // pour un indépendant lié, la conversation doit aussi lui être assignée.
+  @@unique([salonId, memberUserId])
+}
+
+model InboxInternalNote {
+  id            String      @id @default(cuid())
+  inboxThreadId String
+  authorUserId  String
+  content       String      @db.Text
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  thread        InboxThread @relation(fields: [inboxThreadId], references: [id], onDelete: Cascade)
+  author        User        @relation("InboxNoteAuthor", fields: [authorUserId], references: [id], onDelete: Cascade)
+
+  @@index([inboxThreadId, createdAt])
+}
+
+model InboxReadState {
+  id            String      @id @default(cuid())
+  inboxThreadId String
+  userId        String
+  lastReadAt    DateTime?
+  forceUnread   Boolean     @default(false)
+
+  thread        InboxThread @relation(fields: [inboxThreadId], references: [id], onDelete: Cascade)
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([inboxThreadId, userId])
+  @@index([userId, forceUnread])
+}
+
+model SavedReply {
+  id              String       @id @default(cuid())
+  ownerUserId     String
+  createdByUserId String
+  title           String
+  content         String       @db.Text
+  channel         InboxChannel? // null = utilisable sur tous les canaux
+  isActive        Boolean      @default(true)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  owner           User         @relation("SavedReplyOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  createdBy       User         @relation("SavedReplyCreator", fields: [createdByUserId], references: [id], onDelete: Cascade)
+
+  @@index([ownerUserId, isActive])
 }

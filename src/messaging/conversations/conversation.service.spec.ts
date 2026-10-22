@@ -13,11 +13,20 @@ const createPrismaMock = () => ({
   user: {
     findUnique: jest.fn(),
   },
+  saasPlanDetails: {
+    findUnique: jest.fn(),
+  },
   appointment: {
+    findUnique: jest.fn(),
+    findMany: jest.fn(),
+    count: jest.fn(),
+  },
+  client: {
     findUnique: jest.fn(),
   },
   conversation: {
     create: jest.fn(),
+    findFirst: jest.fn(),
     findUnique: jest.fn(),
     findMany: jest.fn(),
     count: jest.fn(),
@@ -27,6 +36,12 @@ const createPrismaMock = () => ({
   message: {
     create: jest.fn(),
     updateMany: jest.fn(),
+  },
+  inboxThread: {
+    upsert: jest.fn(),
+  },
+  inboxThreadAppointment: {
+    create: jest.fn(),
   },
   messageNotification: {
     upsert: jest.fn(),
@@ -85,6 +100,9 @@ describe('ConversationsService', () => {
   beforeEach(async () => {
     prisma = createPrismaMock();
     notifications = createNotificationMock();
+    prisma.conversation.findFirst.mockResolvedValue(null);
+    prisma.inboxThread.upsert.mockResolvedValue({ id: 'thread-1' });
+    prisma.inboxThreadAppointment.create.mockResolvedValue({ id: 'link-1' });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -99,6 +117,35 @@ describe('ConversationsService', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  describe('getClientAppointments', () => {
+    it('limits results to the logged-in client and the conversation professional, 5 per page newest first', async () => {
+      prisma.conversation.findUnique.mockResolvedValueOnce(buildConversation());
+      prisma.appointment.findMany.mockResolvedValueOnce([{ id: 'rdv-2', title: 'Tatouage' }]);
+      prisma.appointment.count.mockResolvedValueOnce(7);
+
+      const result = await service.getClientAppointments('conv-1', 'client-1', 2);
+
+      expect(prisma.appointment.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { clientUserId: 'client-1', OR: [{ userId: 'salon-1' }, { performerUserId: 'salon-1' }] },
+        take: 5,
+        skip: 5,
+        orderBy: [{ start: 'desc' }, { id: 'desc' }],
+      }));
+      expect(result).toEqual({ data: [{ id: 'rdv-2', title: 'Tatouage' }], total: 7, page: 2, totalPages: 2 });
+    });
+
+    it('rejects another client despite knowing the conversation ID', async () => {
+      prisma.conversation.findUnique.mockResolvedValueOnce(buildConversation());
+      await expect(service.getClientAppointments('conv-1', 'intruder', 1)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prisma.appointment.findMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects a missing conversation', async () => {
+      prisma.conversation.findUnique.mockResolvedValueOnce(null);
+      await expect(service.getClientAppointments('missing', 'client-1', 1)).rejects.toBeInstanceOf(NotFoundException);
+    });
   });
 
   describe('createConversation', () => {
@@ -136,12 +183,12 @@ describe('ConversationsService', () => {
     it('returns existing conversation when appointment already linked', async () => {
       prisma.user.findUnique
         .mockResolvedValueOnce(buildUser())
-        .mockResolvedValueOnce(buildUser({ id: 'salon-1', role: 'salon' }));
+        .mockResolvedValueOnce(buildUser({ id: 'salon-1', role: 'user_salon' }));
       prisma.appointment.findUnique = jest
         .fn()
-        .mockResolvedValue({ id: 'app-1' });
+        .mockResolvedValue({ id: 'app-1', userId: 'salon-1', clientUserId: 'client-1' });
       const existing = buildConversation({ appointmentId: 'app-1' });
-      prisma.conversation.findUnique.mockResolvedValue(existing);
+      prisma.conversation.findFirst.mockResolvedValue(existing);
 
       const result = await service.createConversation('salon-1', {
         clientUserId: 'client-1',
@@ -150,13 +197,16 @@ describe('ConversationsService', () => {
 
       expect(result.id).toBe(existing.id);
       expect(prisma.conversation.create).not.toHaveBeenCalled();
+      expect(prisma.inboxThread.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { conversationId: existing.id } }),
+      );
       expect(prisma.message.create).not.toHaveBeenCalled();
     });
 
     it('creates conversation and first message with unread increment', async () => {
       prisma.user.findUnique
         .mockResolvedValueOnce(buildUser())
-        .mockResolvedValueOnce(buildUser({ id: 'salon-1', role: 'salon' }));
+        .mockResolvedValueOnce(buildUser({ id: 'salon-1', role: 'user_salon' }));
       prisma.conversation.create.mockResolvedValue(buildConversation());
 
       const result = await service.createConversation('salon-1', {
@@ -168,7 +218,7 @@ describe('ConversationsService', () => {
       expect(result.id).toBe('conv-1');
       expect(prisma.conversation.create).toHaveBeenCalled();
       const [[createCall]] = prisma.message.create.mock.calls as Array<
-        [{ data?: { content?: string } }],
+        [{ data?: { content?: string } }]
       >;
       expect(createCall.data?.content).toBe('Hello');
       expect(notifications.incrementUnreadCount).toHaveBeenCalledWith(
@@ -180,7 +230,7 @@ describe('ConversationsService', () => {
     it('creates conversation without first message when none provided', async () => {
       prisma.user.findUnique
         .mockResolvedValueOnce(buildUser())
-        .mockResolvedValueOnce(buildUser({ id: 'salon-1', role: 'salon' }));
+        .mockResolvedValueOnce(buildUser({ id: 'salon-1', role: 'user_salon' }));
       prisma.conversation.create.mockResolvedValue(buildConversation());
 
       await service.createConversation('salon-1', {
@@ -189,6 +239,77 @@ describe('ConversationsService', () => {
 
       expect(prisma.message.create).not.toHaveBeenCalled();
       expect(notifications.incrementUnreadCount).not.toHaveBeenCalled();
+    });
+
+    it('réutilise le même fil Inkera et rattache un deuxième RDV', async () => {
+      prisma.user.findUnique
+        .mockResolvedValueOnce(buildUser({ id: 'client-1' }))
+        .mockResolvedValueOnce(buildUser({ id: 'salon-1', role: 'user_salon' }));
+      prisma.appointment.findUnique.mockResolvedValue({
+        id: 'app-2', userId: 'salon-1', clientUserId: 'client-1',
+      });
+      prisma.conversation.findFirst.mockResolvedValue(
+        buildConversation({ appointmentId: 'app-1' }),
+      );
+
+      const result = await service.createConversation('salon-1', {
+        clientUserId: 'client-1',
+        appointmentId: 'app-2',
+        firstMessage: 'Deuxième RDV confirmé',
+      });
+
+      expect(result.id).toBe('conv-1');
+      expect(prisma.conversation.create).not.toHaveBeenCalled();
+      expect(prisma.inboxThreadAppointment.create).toHaveBeenCalledWith({
+        data: { inboxThreadId: 'thread-1', appointmentId: 'app-2' },
+      });
+      expect(prisma.message.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuse de relier le RDV d\'un autre professionnel', async () => {
+      prisma.user.findUnique
+        .mockResolvedValueOnce(buildUser({ id: 'client-1' }))
+        .mockResolvedValueOnce(buildUser({ id: 'salon-1', role: 'user_salon' }));
+      prisma.appointment.findUnique.mockResolvedValue({
+        id: 'app-2', userId: 'autre-salon', clientUserId: 'client-1',
+      });
+
+      await expect(service.createConversation('salon-1', {
+        clientUserId: 'client-1', appointmentId: 'app-2',
+      })).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prisma.inboxThreadAppointment.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('startConversationAsClient', () => {
+    it('permet à un client de reprendre une conversation avec un professionnel payant sans RDV', async () => {
+      prisma.user.findUnique
+        .mockResolvedValueOnce(buildUser({ id: 'client-1', role: 'client' }))
+        .mockResolvedValueOnce(buildUser({
+          id: 'salon-1', role: 'user_salon', saasPlan: 'PRO', saasPlanUntil: null,
+        }));
+      prisma.saasPlanDetails.findUnique.mockResolvedValue(null);
+      const resultDto = { id: 'conv-1' } as any;
+      jest.spyOn(service, 'createConversation').mockResolvedValue(resultDto);
+
+      const result = await service.startConversationAsClient('client-1', 'salon-1');
+
+      expect(result.id).toBe('conv-1');
+      expect(service.createConversation).toHaveBeenCalledWith('salon-1', {
+        clientUserId: 'client-1',
+      });
+    });
+
+    it('refuse de créer un échange pour un professionnel gratuit', async () => {
+      prisma.user.findUnique
+        .mockResolvedValueOnce(buildUser({ id: 'client-1', role: 'client' }))
+        .mockResolvedValueOnce(buildUser({
+          id: 'salon-1', role: 'user_salon', saasPlan: 'FREE', saasPlanUntil: null,
+        }));
+      prisma.saasPlanDetails.findUnique.mockResolvedValue(null);
+
+      await expect(service.startConversationAsClient('client-1', 'salon-1'))
+        .rejects.toBeInstanceOf(ForbiddenException);
     });
   });
 
@@ -209,7 +330,7 @@ describe('ConversationsService', () => {
             skip?: number,
             take?: number,
           },
-        ],
+        ]
       >;
       expect(findManyCall.where?.OR).toEqual([
         { salonId: 'salon-1' },
@@ -255,7 +376,7 @@ describe('ConversationsService', () => {
             take?: number,
             orderBy?: { lastMessageAt?: 'desc' },
           },
-        ],
+        ]
       >;
       expect(findManyCall.where?.salonId).toBe('salon-1');
       expect(findManyCall.take).toBe(10);
@@ -419,7 +540,7 @@ describe('ConversationsService', () => {
             },
             data?: { isRead?: boolean, readAt?: Date },
           },
-        ],
+        ]
       >;
       expect(updateCall?.where).toEqual({
         conversationId: 'conv-1',

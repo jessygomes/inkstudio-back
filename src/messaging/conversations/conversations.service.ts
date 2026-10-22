@@ -14,7 +14,7 @@ import {
 } from './dto/conversation-response.dto';
 import { PaginatedConversationsDto } from './dto/paginated-conversations.dto';
 import { UnreadConversationResponseDto } from './dto/unread-conversation-response.dto';
-import { ConversationStatus, MessageType } from '@prisma/client';
+import { ConversationStatus, InboxChannel, MessageType, Prisma, SaasPlan, SaasPlanStatus } from '@prisma/client';
 import { MessageNotificationService } from '../notifications/message-notification.service';
 
 @Injectable()
@@ -25,7 +25,54 @@ export class ConversationsService {
   ) {}
 
   /**
-   * Crée une nouvelle conversation entre un salon et un client
+   * Point d'entrée public : le client Inkera démarre une conversation sans RDV.
+   * L'identité du professionnel provient du profil public (et non du client).
+   */
+  async startConversationAsClient(
+    clientUserId: string,
+    professionalUserId: string,
+  ): Promise<ConversationResponseDto> {
+    const client = await this.prisma.user.findUnique({
+      where: { id: clientUserId },
+    });
+    if (!client || client.role !== 'client') {
+      throw new ForbiddenException('Un compte client Inkera est nécessaire');
+    }
+
+    const professional = await this.prisma.user.findUnique({
+      where: { id: professionalUserId },
+    });
+    if (
+      !professional ||
+      !['user', 'user_salon', 'user_tatoueur'].includes(professional.role)
+    ) {
+      throw new NotFoundException('Profil professionnel introuvable');
+    }
+
+    // Seuls les professionnels payants reçoivent de nouveaux messages Inkera.
+    // Un professionnel déjà expiré ou résilié doit renouveler son abonnement.
+    const details = await this.prisma.saasPlanDetails.findUnique({
+      where: { userId: professionalUserId },
+    });
+    const expired = professional.saasPlanUntil !== null &&
+      professional.saasPlanUntil < new Date();
+    const inactiveDetails = details && (
+      details.currentPlan === SaasPlan.FREE ||
+      details.planStatus === SaasPlanStatus.EXPIRED ||
+      details.planStatus === SaasPlanStatus.CANCELED ||
+      (details.endDate !== null && details.endDate < new Date())
+    );
+
+    if (professional.saasPlan === SaasPlan.FREE || expired || inactiveDetails) {
+      throw new ForbiddenException('La messagerie est réservée aux professionnels abonnés');
+    }
+
+    return this.createConversation(professionalUserId, { clientUserId });
+  }
+
+  /**
+   * Une seule conversation Inkera par professionnel et client connecté.
+   * Les RDV successifs sont ajoutés à l'InboxThread de cette conversation.
    */
   async createConversation(
     salonId: string,
@@ -55,7 +102,11 @@ export class ConversationsService {
       throw new NotFoundException('Salon non trouvé');
     }
 
-    // Si appointmentId est fourni, vérifier qu'il existe
+    if (!['user', 'user_salon', 'user_tatoueur'].includes(salon.role)) {
+      throw new ForbiddenException('Seul un compte professionnel peut créer cette conversation');
+    }
+
+    // Interdire qu'un RDV d'un autre professionnel/client soit lié ici.
     if (dto.appointmentId) {
       const appointment = await this.prisma.appointment.findUnique({
         where: { id: dto.appointmentId },
@@ -65,43 +116,64 @@ export class ConversationsService {
         throw new NotFoundException('Rendez-vous non trouvé');
       }
 
-      // Vérifier qu'une conversation n'existe pas déjà pour ce RDV
-      const existingConversation = await this.prisma.conversation.findUnique({
-        where: { appointmentId: dto.appointmentId },
-        include: {
-          salon: true,
-          clientUser: true,
-          messages: {
-            orderBy: { createdAt: 'desc' },
-            take: 1,
-          },
-        },
-      });
+      if (appointment.userId !== salonId) {
+        throw new ForbiddenException('Ce rendez-vous appartient à un autre professionnel');
+      }
 
-      if (existingConversation) {
-        // Retourner la conversation existante
-        return this.mapToResponseDto(existingConversation, salonId);
+      if (appointment.clientUserId !== dto.clientUserId) {
+        // Compatibilité avec un RDV CRM initialement créé sans clientUserId.
+        const linkedClient = appointment.clientId
+          ? await this.prisma.client.findUnique({ where: { id: appointment.clientId } })
+          : null;
+
+        if (
+          appointment.clientUserId ||
+          !linkedClient ||
+          linkedClient.userId !== salonId ||
+          linkedClient.linkedUserId !== dto.clientUserId
+        ) {
+          throw new ForbiddenException('Ce rendez-vous ne correspond pas à ce client');
+        }
       }
     }
 
-    // Créer la conversation
-    const conversation = await this.prisma.conversation.create({
-      data: {
-        salonId,
-        clientUserId: dto.clientUserId,
-        appointmentId: dto.appointmentId,
-        subject: dto.subject,
-        status: ConversationStatus.ACTIVE,
-      },
-      include: {
-        salon: true,
-        clientUser: true,
-        appointment: true,
-      },
+    const include = {
+      salon: true,
+      clientUser: true,
+      messages: { orderBy: { createdAt: 'desc' }, take: 1 },
+    } as const;
+
+    // La recherche ne dépend plus de appointmentId : un client peut avoir
+    // plusieurs RDV, mais une seule conversation Inkera par professionnel.
+    let conversation = await this.prisma.conversation.findFirst({
+      where: { salonId, clientUserId: dto.clientUserId },
+      orderBy: { createdAt: 'asc' },
+      include,
     });
 
-    // Si un premier message est fourni, le créer
-    if (dto.firstMessage) {
+    const wasCreated = !conversation;
+    if (!conversation) {
+      conversation = await this.prisma.conversation.create({
+        data: {
+          salonId,
+          clientUserId: dto.clientUserId,
+          appointmentId: dto.appointmentId,
+          subject: dto.subject,
+          status: ConversationStatus.ACTIVE,
+        },
+        include,
+      });
+    }
+
+    // L'inbox est propriétaire des associations multiples aux RDV.
+    const appointmentWasLinked = await this.ensureInboxThread(
+      conversation,
+      dto.appointmentId,
+    );
+
+    // Message initial : à la création du fil ou pour un nouveau RDV seulement.
+    // Une relance identique d'une association déjà existante n'envoie rien.
+    if (dto.firstMessage && (wasCreated || !dto.appointmentId || appointmentWasLinked)) {
       await this.prisma.message.create({
         data: {
           conversationId: conversation.id,
@@ -111,7 +183,6 @@ export class ConversationsService {
         },
       });
 
-      // Incrémenter le compteur non lus pour le client
       await this.notificationService.incrementUnreadCount(
         conversation.id,
         dto.clientUserId,
@@ -119,6 +190,64 @@ export class ConversationsService {
     }
 
     return this.mapToResponseDto(conversation, salonId);
+  }
+
+  /**
+   * Associe la conversation Inkera à son fil d'inbox et, si présent, à un RDV.
+   * Retourne true uniquement lorsqu'un nouveau lien RDV a été créé.
+   */
+  private async ensureInboxThread(
+    conversation: {
+      id: string;
+      salonId: string;
+      appointmentId: string | null;
+      lastMessageAt: Date;
+    },
+    appointmentId?: string,
+  ): Promise<boolean> {
+    const thread = await this.prisma.inboxThread.upsert({
+      where: { conversationId: conversation.id },
+      create: {
+        ownerUserId: conversation.salonId,
+        channel: InboxChannel.INKERA,
+        conversationId: conversation.id,
+        lastMessageAt: conversation.lastMessageAt,
+      },
+      update: {},
+    });
+
+    if (!appointmentId) {
+      return false;
+    }
+
+    try {
+      await this.prisma.inboxThreadAppointment.create({
+        data: { inboxThreadId: thread.id, appointmentId },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        return false;
+      }
+      throw error;
+    }
+
+    // Compatibilité temporaire avec le frontend historique qui n'affiche qu'un
+    // seul appointmentId, sans empêcher les autres liens dans la nouvelle table.
+    if (!conversation.appointmentId) {
+      const existingLegacyLink = await this.prisma.conversation.findUnique({
+        where: { appointmentId },
+        select: { id: true },
+      });
+
+      if (!existingLegacyLink) {
+        await this.prisma.conversation.update({
+          where: { id: conversation.id },
+          data: { appointmentId },
+        });
+      }
+    }
+
+    return true;
   }
 
   /**
@@ -166,6 +295,35 @@ export class ConversationsService {
       limit,
       totalPages: Math.ceil(total / limit),
     };
+  }
+
+  /** Rendez-vous du client connecté avec ce professionnel, indépendamment de la conversation d'origine. */
+  async getClientAppointments(conversationId: string, currentUserId: string, page = 1) {
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: { salonId: true, clientUserId: true },
+    });
+    if (!conversation) throw new NotFoundException('Conversation non trouvée');
+    if (conversation.clientUserId !== currentUserId) {
+      throw new ForbiddenException('Seul le client concerné peut consulter ses rendez-vous');
+    }
+
+    const safePage = Number.isSafeInteger(page) && page > 0 ? page : 1;
+    const where: Prisma.AppointmentWhereInput = {
+      clientUserId: currentUserId,
+      OR: [{ userId: conversation.salonId }, { performerUserId: conversation.salonId }],
+    };
+    const [data, total] = await Promise.all([
+      this.prisma.appointment.findMany({
+        where,
+        orderBy: [{ start: 'desc' }, { id: 'desc' }],
+        skip: (safePage - 1) * 5,
+        take: 5,
+        select: { id: true, title: true, prestation: true, start: true, end: true, status: true },
+      }),
+      this.prisma.appointment.count({ where }),
+    ]);
+    return { data, total, page: safePage, totalPages: Math.ceil(total / 5) };
   }
 
   /**
@@ -437,7 +595,11 @@ export class ConversationsService {
         lastName: string | null;
         salonName: string | null;
         image: string | null;
+        profileImage?: string | null;
         role: string;
+        city?: string | null;
+        postalCode?: string | null;
+        address?: string | null;
       };
       clientUser: {
         id: string;
@@ -463,7 +625,10 @@ export class ConversationsService {
       firstName: conversation.salon.firstName ?? undefined,
       lastName: conversation.salon.lastName ?? undefined,
       salonName: conversation.salon.salonName ?? undefined,
-      image: conversation.salon.image ?? undefined,
+      image: conversation.salon.profileImage ?? conversation.salon.image ?? undefined,
+      city: conversation.salon.city ?? undefined,
+      postalCode: conversation.salon.postalCode ?? undefined,
+      address: conversation.salon.address ?? undefined,
       email: conversation.salon.email,
       role: conversation.salon.role,
     };

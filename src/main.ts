@@ -6,7 +6,9 @@ import { corsOriginDelegate } from './config/cors.config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // Conserver les octets exacts des requêtes pour vérifier la signature Meta.
+  // Le webhook Stripe ci-dessous conserve son traitement dédié.
+  const app = await NestFactory.create(AppModule, { rawBody: true });
 
   // On utilise un pipe pour valider les données entrantes dans les requêtes POST (permet de déclarer un modele de données genre comme ZOD)
   app.useGlobalPipes(

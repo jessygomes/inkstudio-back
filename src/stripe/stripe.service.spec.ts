@@ -29,7 +29,9 @@ describe('StripeService checkout trial', () => {
       },
       checkout: {
         sessions: {
-          create: jest.fn().mockResolvedValue({ url: 'https://checkout.stripe.com/test' }),
+          create: jest
+            .fn()
+            .mockResolvedValue({ url: 'https://checkout.stripe.com/test' }),
         },
       },
     };

@@ -16,6 +16,7 @@ import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { ConversationsService } from './conversations.service';
 import { ConversationAccessGuard } from './guards/conversation-access.guard';
 import { CreateConversationDto } from './dto/create-conversation.dto';
+import { StartConversationDto } from './dto/start-conversation.dto';
 import { UpdateConversationDto } from './dto/update-conversation.dto';
 import { ConversationResponseDto } from './dto/conversation-response.dto';
 import { PaginatedConversationsDto } from './dto/paginated-conversations.dto';
@@ -42,6 +43,22 @@ export class ConversationsController {
     @Body() dto: CreateConversationDto,
   ): Promise<ConversationResponseDto> {
     return this.conversationsService.createConversation(req.user.userId, dto);
+  }
+
+  /**
+   * POST /messaging/conversations/start
+   * Depuis Inkera People : client connecté vers un professionnel payant.
+   * Réutilise la conversation existante, même si elle a déjà des rendez-vous.
+   */
+  @Post('start')
+  async startConversationFromPublicProfile(
+    @Request() req: RequestWithUser,
+    @Body() dto: StartConversationDto,
+  ): Promise<ConversationResponseDto> {
+    return this.conversationsService.startConversationAsClient(
+      req.user.userId,
+      dto.professionalUserId,
+    );
   }
 
   /**
@@ -91,6 +108,18 @@ export class ConversationsController {
   ): Promise<UnreadConversationResponseDto[]> {
     return this.conversationsService.getConversationsWithUnreadMessages(
       req.user.userId,
+    );
+  }
+
+  @Get(':id/appointments')
+  @UseGuards(ConversationAccessGuard)
+  async getClientAppointments(
+    @Request() req: RequestWithUser,
+    @Param('id') id: string,
+    @Query('page') page?: string,
+  ) {
+    return this.conversationsService.getClientAppointments(
+      id, req.user.userId, page ? Number(page) : 1,
     );
   }
 

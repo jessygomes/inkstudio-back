@@ -22,6 +22,11 @@ import { MessageArchivalJob } from './jobs/message-archival.job';
 import { MessageArchivalScheduler } from './jobs/message-archival.scheduler';
 import { MailgunService } from '../email/mailgun.service';
 import { JwtModule } from '@nestjs/jwt';
+import { InboxController } from './inbox/inbox.controller';
+import { InboxService } from './inbox/inbox.service';
+import { InstagramApiService } from './instagram/instagram-api.service';
+import { InstagramService } from './instagram/instagram.service';
+import { InstagramController } from './instagram/instagram.controller';
 
 @Module({
   imports: [
@@ -41,12 +46,17 @@ import { JwtModule } from '@nestjs/jwt';
   controllers: [
     ConversationsController,
     MessagesController,
+    InboxController,
+    InstagramController,
     NotificationPreferencesController,
     TestEmailNotificationController,
   ],
   providers: [
     ConversationsService,
     MessagesService,
+    InboxService,
+    InstagramApiService,
+    InstagramService,
     MessageNotificationService,
     NotificationPreferenceService,
     EmailNotificationService,
@@ -64,6 +74,7 @@ import { JwtModule } from '@nestjs/jwt';
   exports: [
     ConversationsService,
     MessagesService,
+    InboxService,
     MessageNotificationService,
     EmailNotificationService,
     NotificationPreferenceService,
