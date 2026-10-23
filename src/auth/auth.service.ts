@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import {compare, hash} from 'bcryptjs';
 import { JwtService } from '@nestjs/jwt';
@@ -8,6 +8,7 @@ import { LoginUserDto } from './dto/login-user.dto';
 import { MailService } from 'src/email/mailer.service';
 import { createHash, randomBytes } from 'crypto';
 import { SaasService } from 'src/saas/saas.service';
+import { nativeTrialEndDate } from '../saas/trial-policy';
 import { CreateUserClientDto } from './dto/create-userClient.dto';
 import { CreateTatoueurUserDto } from './dto/create-tatoueur-user.dto';
 import { StripeService } from 'src/stripe/stripe.service';
@@ -96,9 +97,7 @@ export class AuthService {
   }
 
   private computeTatoueurTrialEndDate(fromDate = new Date()): Date {
-    const trialEndDate = new Date(fromDate);
-    trialEndDate.setMonth(trialEndDate.getMonth() + this.getTatoueurTrialMonths());
-    return trialEndDate;
+    return nativeTrialEndDate('user_tatoueur', 'PRO', fromDate, this.getTatoueurTrialMonths())!;
   }
 
   //! CONNEXION
@@ -150,7 +149,7 @@ export class AuthService {
           },
         });
   
-        const confirmationUrl = `${process.env.FRONTEND_URL}/verifier-email?token=${token}&email=${email}`;
+        const confirmationUrl = this.buildAuthEmailUrl('/verifier-email', token, email);
 
         // Envoyer le bon template selon le rôle de l'utilisateur
         if (existingUser.role === 'client') {
@@ -235,6 +234,10 @@ export class AuthService {
         };
       }
 
+      if ((saasPlan === SaasPlan.BUSINESS || checkoutPlan === 'BUSINESS') && role !== 'user_salon') {
+        throw new BadRequestException('Le plan Business est réservé aux comptes salon.');
+      }
+
       // Validation métier selon le rôle
       if (role === 'user_salon' && !salonName?.trim()) {
         throw new Error("Le nom du salon est requis pour créer un compte salon.");
@@ -256,9 +259,8 @@ export class AuthService {
       // Hashage du mot de passe
       const hashedPassword = await this.hashPassword({password});
       const isTatoueurRole = role === 'user_tatoueur';
-      const tatoueurTrialEndDate = isTatoueurRole
-        ? this.computeTatoueurTrialEndDate()
-        : null;
+      const initialPlan = isTatoueurRole ? SaasPlan.PRO : (saasPlan || SaasPlan.FREE);
+      const trialEndDate = nativeTrialEndDate(role, initialPlan, new Date(), this.getTatoueurTrialMonths());
   
       // Création de l'utilisateur dans la DB
       const createdUser = await this.prisma.user.create({
@@ -270,28 +272,19 @@ export class AuthService {
           password: hashedPassword,
           role: role as import('@prisma/client').Role,
           ...(role === 'user_salon' ? { salonName } : {}),
-          ...(role === 'user_salon' && saasPlan ? { saasPlan } : {}),
-          ...(isTatoueurRole
-            ? {
-                saasPlan: SaasPlan.PRO,
-                saasPlanUntil: tatoueurTrialEndDate,
-              }
-            : {}),
+          saasPlan: initialPlan,
+          saasPlanUntil: trialEndDate,
           ...((role === 'user_salon' || role === 'user_tatoueur')
             ? {
                 saasPlanDetails: {
                   create: {
-                    ...(role === 'user_salon' && saasPlan
-                      ? { currentPlan: saasPlan }
-                      : {}),
-                    ...(isTatoueurRole
-                      ? {
-                          currentPlan: SaasPlan.PRO,
-                          planStatus: SaasPlanStatus.TRIAL,
-                          trialEndDate: tatoueurTrialEndDate,
-                          nextPaymentDate: tatoueurTrialEndDate,
-                        }
-                      : {}),
+                    ...this.saasService.getPlanConfiguration(initialPlan),
+                    currentPlan: initialPlan,
+                    ...(trialEndDate ? {
+                      planStatus: SaasPlanStatus.TRIAL,
+                      trialEndDate,
+                      nextPaymentDate: null,
+                    } : {}),
                     agendaMode: role === 'user_salon'
                       ? AgendaMode.PAR_TATOUEUR
                       : AgendaMode.GLOBAL,
@@ -331,7 +324,7 @@ export class AuthService {
         },
       });
 
-      const confirmationUrl = `${process.env.FRONTEND_URL}/verifier-email?token=${token}&email=${email}`;
+      const confirmationUrl = this.buildAuthEmailUrl('/verifier-email', token, email);
 
       // Email de vérification adapté selon le rôle
       if (role === 'user_tatoueur') {
@@ -358,7 +351,7 @@ export class AuthService {
       let checkoutError: string | null = null;
 
       // Stripe pour salon et tatoueur si un checkoutPlan est fourni
-      if ((role === 'user_salon' || role === 'user_tatoueur') && checkoutPlan) {
+      if ((role === 'user_salon' || role === 'user_tatoueur') && checkoutPlan && !trialEndDate) {
         try {
           checkoutUrl = await this.stripeService.createCheckoutSession(
             createdUser.id,
@@ -380,6 +373,7 @@ export class AuthService {
       // // Authentifier directement le nouvel utilisateur
       // return this.authenticateUser({userId: createdUser.id});
       return {
+        trialEndDate: trialEndDate?.toISOString() || null,
         message: "Votre compte a été créé avec succès. Veuillez vérifier vos emails pour confirmer votre adresse.",
         checkoutUrl,
         checkoutError,
@@ -474,7 +468,7 @@ export class AuthService {
         },
       });
 
-      const confirmationUrl = `${process.env.FRONTEND_URL}/verifier-email?token=${token}&email=${email}`;
+      const confirmationUrl = this.buildAuthEmailUrl('/verifier-email', token, email);
 
       await this.mailService.sendClientEmailVerification(
         email,
@@ -560,10 +554,11 @@ export class AuthService {
                 saasPlanUntil: tatoueurTrialEndDate,
                 saasPlanDetails: {
                   create: {
+                    ...this.saasService.getPlanConfiguration(SaasPlan.PRO),
                     currentPlan: SaasPlan.PRO,
                     planStatus: SaasPlanStatus.TRIAL,
                     trialEndDate: tatoueurTrialEndDate,
-                    nextPaymentDate: tatoueurTrialEndDate,
+                    nextPaymentDate: null,
                     agendaMode: AgendaMode.GLOBAL,
                   },
                 },
@@ -581,7 +576,7 @@ export class AuthService {
         data: { email, token, expires },
       });
 
-      const confirmationUrl = `${process.env.FRONTEND_URL}/verifier-email?token=${token}&email=${email}`;
+      const confirmationUrl = this.buildAuthEmailUrl('/verifier-email', token, email);
 
       await this.mailService.sendClientEmailVerification(
         email,
@@ -603,10 +598,25 @@ export class AuthService {
     }
   }
 
+  private buildAuthEmailUrl(path: string, token: string, email: string): string {
+    const base = process.env.FRONTEND_URL?.trim();
+    if (!base) throw new Error('FRONTEND_URL est requis pour les emails de sécurité.');
+    const url = new URL(path, base);
+    if (!['http:', 'https:'].includes(url.protocol) ||
+        (process.env.NODE_ENV === 'production' && (url.protocol !== 'https:' || ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)))) {
+      throw new Error('FRONTEND_URL doit être une URL publique HTTPS en production.');
+    }
+    url.search = new URLSearchParams({ token, email }).toString();
+    return url.toString();
+  }
+
   //! MOT DE PASSE OUBLIÉ
   // ENVOIE UN EMAIL DE RÉINITIALISATION DE MOT DE PASSE
   async sendResetPasswordEmail(email: string) {
-    console.log("sendResetPasswordEmail called with email:", email);
+    if (typeof email !== 'string' || !email.trim()) {
+      throw new BadRequestException('Une adresse e-mail est requise.');
+    }
+    email = email.trim().toLowerCase();
 
     // Vérifier si l'utilisateur existe
     const user = await this.prisma.user.findUnique({ where: { email } });
@@ -636,7 +646,7 @@ export class AuthService {
     });
   
     // Construire l'URL de réinitialisation du mot de passe
-    const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${token}&email=${email}`;
+    const resetUrl = this.buildAuthEmailUrl('/reset-password', token, email);
 
     // Envoyer l'email de réinitialisation du mot de passe
     await this.mailService.sendPasswordReset(

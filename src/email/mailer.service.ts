@@ -136,19 +136,19 @@ export class MailService {
 
   //! MAIL DE VERIFICATION D'EMAIL (SALON)
   async sendEmailVerification(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
-    const subject = `Vérification de votre email${salonName ? ` - ${salonName}` : ''}`;
+    const subject = 'Vérification de votre email - Inkera Studio';
     const dataWithSalon = { ...data, salonName: salonName || data.salonName };
     const html = this.emailTemplateService.generateEmailVerificationEmail(dataWithSalon);
     
-    return await this.sendMail(to, subject, html, salonName);
+    return await this.sendMail(to, subject, html, 'Inkera Studio');
   }
 
   //! MAIL DE VERIFICATION D'EMAIL (CLIENT)
   async sendClientEmailVerification(to: string, data: EmailTemplateData): Promise<MailgunResponse> {
-    const subject = 'Vérification de votre email - Inkera';
+    const subject = 'Vérification de votre email - Inkera Studio';
     const html = this.emailTemplateService.generateClientEmailVerificationEmail(data);
     
-    return await this.sendMail(to, subject, html, 'Inkera');
+    return await this.sendMail(to, subject, html, 'Inkera Studio');
   }
 
   //! MAIL DE RAPPEL FIN D'ESSAI (J-3)
@@ -156,6 +156,8 @@ export class MailService {
     recipientName: string;
     salonName?: string | null;
     trialEndDate: string;
+    planName?: string;
+    stripeManaged?: boolean;
   }): Promise<MailgunResponse> {
     const subject = 'Votre essai se termine bientôt';
     const html = this.emailTemplateService.generateTrialEndingSoonEmail({
@@ -163,10 +165,12 @@ export class MailService {
       salonName: data.salonName || 'Inkera Studio',
       trialEndingSoonDetails: {
         trialEndDate: data.trialEndDate,
+        planName: data.planName,
+        stripeManaged: data.stripeManaged,
       },
     });
 
-    return await this.sendMail(to, subject, html, data.salonName || 'Inkera');
+    return await this.sendMail(to, subject, html, 'Inkera Studio');
   }
 
   //! MAIL DE REINITIALISATION DE MOT DE PASSE

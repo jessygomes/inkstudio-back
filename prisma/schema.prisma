@@ -830,6 +830,8 @@ model SaasPlanDetails {
   monthlyPrice       Float?
   yearlyPrice        Float?
   lastPaymentDate    DateTime?
+  /// Premier abonnement payant actif, hors essai. Conservé après résiliation.
+  firstPaidPlanAt    DateTime?
   nextPaymentDate    DateTime?
   pastDueSince       DateTime?
   paymentMethod      String?
@@ -1488,4 +1490,19 @@ model SavedReply {
   createdBy       User         @relation("SavedReplyCreator", fields: [createdByUserId], references: [id], onDelete: Cascade)
 
   @@index([ownerUserId, isActive])
+}
+
+// Anonymous aggregate events survive deletion, without user identifiers.
+model AccountDeparture {
+  id         String   @id @default(uuid())
+  role       Role
+  occurredAt DateTime @default(now())
+  source     String   @default("ADMIN_DELETION")
+
+  @@index([occurredAt, role])
+}
+
+model AdminMetricTracking {
+  key       String   @id
+  startedAt DateTime @default(now())
 }

@@ -44,6 +44,8 @@ export type CancelSubscriptionResult = {
 };
 
 type StripeUserSnapshot = {
+  saasPlanDetails: { currentPlan: string; planStatus: string; trialEndDate: Date | null } | null;
+  role: string;
   id: string;
   email: string;
   salonName: string | null;
@@ -68,6 +70,12 @@ export class StripeService {
     this.stripe = new Stripe(stripeSecretKey, {
       apiVersion: STRIPE_API_VERSION,
     });
+  }
+
+  private assertBusinessEligibility(user: StripeUserSnapshot, plan: CheckoutPlan): void {
+    if (plan === 'BUSINESS' && user.role !== 'user_salon') {
+      throw new BadRequestException('Le plan Business est réservé aux comptes salon.');
+    }
   }
 
   private sanitizeIdempotencyPart(value: string): string {
@@ -224,11 +232,13 @@ export class StripeService {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
+        role: true,
         id: true,
         email: true,
         salonName: true,
         stripeCustomerId: true,
         stripeSubscriptionId: true,
+        saasPlanDetails: { select: { currentPlan: true, planStatus: true, trialEndDate: true } },
       },
     });
 
@@ -363,8 +373,19 @@ export class StripeService {
       const frontendBaseUrl = this.getFrontendBaseUrl();
 
       const user = await this.getUserOrThrow(userId);
+      this.assertBusinessEligibility(user, plan);
       const customerId = await this.getOrCreateCustomerId(user);
       const priceId = this.getPriceIdForPlan(plan);
+      const nativeEnd = user.saasPlanDetails?.planStatus === 'TRIAL' && !user.stripeSubscriptionId && user.saasPlanDetails.currentPlan === plan
+        ? user.saasPlanDetails.trialEndDate : null;
+      const remainingMs = nativeEnd ? nativeEnd.getTime() - Date.now() : 0;
+      const subscriptionData: Stripe.Checkout.SessionCreateParams.SubscriptionData = remainingMs > 0 && nativeEnd ? {
+        // Carry over only the remaining Inkera entitlement, never restart an offer.
+        ...(remainingMs > 49 * 3_600_000 ? { trial_end: Math.floor(nativeEnd.getTime() / 1000) } : {
+          billing_cycle_anchor: Math.floor(nativeEnd.getTime() / 1000), proration_behavior: 'none' as const,
+        }),
+        metadata: { inkera_trial_end: nativeEnd.toISOString(), userId: user.id, plan },
+      } : {};
       const checkoutIdempotencyWindow = Math.floor(Date.now() / 30000);
       const checkoutIdempotencyKey = this.buildIdempotencyKey([
         'stripe',
@@ -395,9 +416,7 @@ export class StripeService {
         },
       ],
 
-      subscription_data: { // Paramètres spécifiques à la souscription créée par ce checkout
-        trial_period_days: 60,
-      },
+      subscription_data: subscriptionData,
 
       /*
        * URLs de redirection après le paiement:
@@ -444,6 +463,7 @@ export class StripeService {
      * - souscription déjà sur le bon plan -> on remonte juste l'état actuel
      */
     const user = await this.getUserOrThrow(userId);
+      this.assertBusinessEligibility(user, plan);
     const customerId = await this.getOrCreateCustomerId(user);
     const targetPriceId = this.getPriceIdForPlan(plan);
 

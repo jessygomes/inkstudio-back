@@ -30,16 +30,25 @@ export class SaasService {
       planDetails = await this.createPlanFromUserChoice(userId);
     }
 
+    const billingUser = await this.prisma.user.findUnique({ where: { id: userId }, select: { stripeSubscriptionId: true } });
+    if (planDetails.planStatus === SaasPlanStatus.TRIAL && planDetails.trialEndDate &&
+        planDetails.trialEndDate <= new Date() && !billingUser?.stripeSubscriptionId) {
+      planDetails = await this.updateUserPlan(userId, SaasPlan.FREE, null, {
+        planStatus: SaasPlanStatus.EXPIRED, trialEndDate: null, nextPaymentDate: null, pastDueSince: null,
+      });
+    }
+
     // Vérifier si le plan est expiré
     if (planDetails.endDate && planDetails.endDate < new Date()) {
       planDetails = await this.expirePlan(userId);
     }
 
     // Retourner les détails du plan
-    return planDetails;
+    return { ...planDetails, hasStripeSubscription: !!billingUser?.stripeSubscriptionId };
   }
 
   async enforceSaasAccess(userId: string, action: SaasGuardAction) {
+    await this.getUserPlanDetails(userId);
     if (action !== 'appointment' && action !== 'client' && action !== 'dashboard' && action !== 'stock') {
       return;
     }
@@ -192,6 +201,12 @@ export class SaasService {
     endDate?: Date | null,
     options?: UpdatePlanOptions,
   ) {
+    if (plan === SaasPlan.BUSINESS) {
+      const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+      if (!user || user.role !== 'user_salon') {
+        throw new BadRequestException('Le plan Business est réservé aux comptes salon.');
+      }
+    }
     const planConfig = this.getPlanConfiguration(plan);
 
     const planStatus = options?.planStatus ?? SaasPlanStatus.ACTIVE;
@@ -283,14 +298,27 @@ export class SaasService {
     userId: string,
     plan: SaasPlan,
     nextPaymentDate: Date | null,
+    paidPlanStartedAt: Date = new Date(),
   ) {
-    return await this.updateUserPlan(userId, plan, null, {
+    const details = await this.updateUserPlan(userId, plan, null, {
       planStatus: SaasPlanStatus.ACTIVE,
       trialEndDate: null,
       nextPaymentDate,
       lastPaymentDate: new Date(),
       pastDueSince: null,
     });
+
+    // Écriture conditionnelle : les renouvellements et webhooks concurrents
+    // ne doivent jamais remplacer la date du premier abonnement actif.
+    if (plan !== SaasPlan.FREE) {
+      await this.prisma.saasPlanDetails.updateMany({
+        where: { userId, firstPaidPlanAt: null },
+        data: { firstPaidPlanAt: paidPlanStartedAt },
+      });
+      return await this.prisma.saasPlanDetails.findUniqueOrThrow({ where: { userId } });
+    }
+
+    return details;
   }
 
   /**
@@ -406,7 +434,7 @@ export class SaasService {
   /**
    * ⚙️ CONFIGURATION DES PLANS
    */
-  private getPlanConfiguration(plan: SaasPlan) {
+  getPlanConfiguration(plan: SaasPlan) {
     switch (plan) {
       case SaasPlan.FREE:
         return {

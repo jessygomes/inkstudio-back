@@ -24,7 +24,7 @@ export class SaasBillingScheduler implements OnModuleInit {
       this.jobName,
       {},
       {
-        repeat: { cron: '0 8 * * *' }, // Tous les jours à 08:00
+        repeat: { cron: '0 * * * *', tz: 'Europe/Paris' }, // Tous les jours à 08:00
         removeOnComplete: true,
         removeOnFail: false,
         attempts: 3,
@@ -32,6 +32,6 @@ export class SaasBillingScheduler implements OnModuleInit {
       },
     );
 
-    this.logger.log('Planification quotidienne du contrôle past_due à 08:00');
+    this.logger.log('Contrôle des essais, rappels et impayés chaque heure (Europe/Paris)');
   }
 }

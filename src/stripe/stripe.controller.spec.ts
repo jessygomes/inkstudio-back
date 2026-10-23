@@ -199,6 +199,7 @@ describe('StripeController webhook flows', () => {
       id: 'sub_123',
       status: 'active',
       current_period_end: currentPeriodEnd,
+      start_date: 1790000000,
       trial_end: null,
       items: {
         data: [{ price: { id: 'price_pro' } }],
@@ -218,6 +219,7 @@ describe('StripeController webhook flows', () => {
       'user-1',
       SaasPlan.PRO,
       expect.any(Date),
+      new Date(1790000000 * 1000),
     );
   });
 

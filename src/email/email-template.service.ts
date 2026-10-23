@@ -76,6 +76,8 @@ export interface EmailTemplateData {
   trialEndingSoonDetails?: {
     trialEndDate: string;
     billingUrl?: string;
+    planName?: string;
+    stripeManaged?: boolean;
   };
   
   verificationToken?: string;
@@ -124,6 +126,10 @@ export interface EmailTemplateData {
 
 @Injectable()
 export class EmailTemplateService {
+  private escapeHtml(value: string): string {
+    return value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!);
+  }
+
   private isLocalhostUrl(value: string): boolean {
     try {
       const hasProtocol = /^[a-zA-Z][a-zA-Z\d+.-]*:\/\//.test(value);
@@ -206,8 +212,8 @@ export class EmailTemplateService {
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>${title}</title>
-        <link href="https://fonts.googleapis.com/css2?family=Didact+Gothic&family=Exo+2:wght@300;400;500;600;700&family=Montserrat+Alternates:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <title>${this.escapeHtml(title)}</title>
+
         <style>
           * {
             margin: 0;
@@ -216,7 +222,7 @@ export class EmailTemplateService {
           }
           
           body {
-            font-family: 'Didact Gothic', sans-serif;
+            font-family: Arial, Helvetica, sans-serif;
             background-color: #ffffff;
             color: #171717;
             line-height: 1.6;
@@ -228,7 +234,7 @@ export class EmailTemplateService {
             max-width: 600px;
             margin: 0 auto;
             background: linear-gradient(135deg, #131313 0%, #1a1a1a 100%);
-            border-radius: 20px;
+            border-radius: 16px;
             overflow: hidden;
             box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
           }
@@ -238,22 +244,11 @@ export class EmailTemplateService {
             padding: 30px 40px;
             text-align: center;
             position: relative;
-            font-family: 'Exo 2', sans-serif;
-          }
-          
-          .header::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: linear-gradient(135deg, #131313 0%, #1a1a1a 100%);
-            pointer-events: none;
+            font-family: Arial, Helvetica, sans-serif;
           }
           
           .logo {
-            font-family: 'Montserrat Alternates', sans-serif;
+            font-family: Arial, Helvetica, sans-serif;
             font-size: 32px;
             font-weight: 700;
             color: #ffffff;
@@ -277,7 +272,7 @@ export class EmailTemplateService {
           }
           
           .greeting {
-            font-family: 'Exo 2', sans-serif;
+            font-family: Arial, Helvetica, sans-serif;
             font-size: 24px;
             font-weight: 600;
             color: #2d1f1a;
@@ -288,13 +283,14 @@ export class EmailTemplateService {
             font-size: 16px;
             margin-bottom: 30px;
             color: #3e2c27;
-            font-family: 'Exo 2', sans-serif;
+            font-family: Arial, Helvetica, sans-serif;
           }
           
           .details-card {
-            background: linear-gradient(135deg, #c79f8b, #af7e70);
+            background-color: #3e2c27;
+            background-image: linear-gradient(135deg, #3e2c27, #2d1f1a);
             color: #fff;
-            font-family: 'Exo 2', sans-serif;
+            font-family: Arial, Helvetica, sans-serif;
             font-size: 16px;
             padding: 25px;
             border-radius: 15px;
@@ -302,7 +298,7 @@ export class EmailTemplateService {
           }
           
           .details-title {
-            font-family: 'Montserrat Alternates', sans-serif;
+            font-family: Arial, Helvetica, sans-serif;
             font-size: 18px;
             font-weight: 600;
             margin-bottom: 15px;
@@ -338,12 +334,13 @@ export class EmailTemplateService {
           
           .cta-button {
             display: inline-block;
-            background: linear-gradient(90deg, #ff9d00, #ff5500);
+            background-color: #c74700;
+            background-image: linear-gradient(90deg, #d85500, #c74700);
             color: #ffffff;
             text-decoration: none;
             padding: 15px 30px;
             border-radius: 25px;
-            font-family: 'Exo 2', sans-serif;
+            font-family: Arial, Helvetica, sans-serif;
             font-weight: 600;
             font-size: 16px;
             text-align: center;
@@ -357,11 +354,11 @@ export class EmailTemplateService {
             border-radius: 10px;
             margin: 20px 0;
             text-align: center;
-            font-family: 'Exo 2', sans-serif;
+            font-family: Arial, Helvetica, sans-serif;
           }
           
           .warning-box strong {
-            font-family: 'Montserrat Alternates', sans-serif;
+            font-family: Arial, Helvetica, sans-serif;
           }
           
           .footer {
@@ -369,7 +366,7 @@ export class EmailTemplateService {
             padding: 30px 40px;
             text-align: center;
             color: #ffffff;
-            font-family: 'Exo 2', sans-serif;
+            font-family: Arial, Helvetica, sans-serif;
           }
           
           .footer-content {
@@ -409,7 +406,7 @@ export class EmailTemplateService {
             border-radius: 15px;
             text-align: center;
             margin: 25px 0;
-            font-family: 'Montserrat Alternates', sans-serif;
+            font-family: Arial, Helvetica, sans-serif;
             font-size: 24px;
             font-weight: 700;
             letter-spacing: 3px;
@@ -436,8 +433,12 @@ export class EmailTemplateService {
           }
           
           @media (max-width: 600px) {
+            body { padding: 12px !important; }
+            .content { overflow-wrap: anywhere; }
+            .cta-button { box-sizing: border-box; min-height: 44px; }
+
             .email-container {
-              margin: 10px;
+              margin: 0;
             }
             
             .header, .content, .footer {
@@ -468,7 +469,8 @@ export class EmailTemplateService {
           ${content}
           <div class="footer">
             <div class="footer-content">
-              <p><strong>${salonName}</strong></p>
+              <p><strong>${this.escapeHtml(salonName)}</strong></p>
+              <p style="margin-top:10px;font-size:12px;color:#bdb7b3;">Envoyé avec Inkera · Gestion de salons &amp; artistes</p>
             </div>
           </div>
         </div>
@@ -504,8 +506,8 @@ export class EmailTemplateService {
         </div>
 
         ${data.appointmentDetails ? `
-          <div style="margin: 25px 0; padding: 0; background: transparent; color: #171717; font-family: 'Exo 2', sans-serif;">
-            <div style="font-family: 'Montserrat Alternates', sans-serif; font-size: 18px; font-weight: 600; margin-bottom: 15px; color: #171717;">📅 Détails de votre rendez-vous</div>
+          <div style="margin: 25px 0; padding: 0; background: transparent; color: #171717; font-family: Arial, Helvetica, sans-serif;">
+            <div style="font-family: Arial, Helvetica, sans-serif; font-size: 18px; font-weight: 600; margin-bottom: 15px; color: #171717;">📅 Détails de votre rendez-vous</div>
             <ul style="list-style: none; padding: 0; margin: 0;">
               <li>
                 <span style="font-weight: 500; color: #171717;">Date : </span>
@@ -572,7 +574,7 @@ export class EmailTemplateService {
 
     return this.getBaseTemplate(
       content, 
-      `Confirmation de rendez-vous - ${data.salonName || 'Inkera Studio'}`, 
+      `Confirmation de rendez-vous - ${data.salonName || 'Inkera Studio'}`,
       data.salonName || 'Inkera Studio',
       
     );
@@ -591,9 +593,9 @@ export class EmailTemplateService {
         </div>
 
         ${data.appointmentDetails ? `
-          <div style="margin: 25px 0; padding: 0; background: transparent; color: #171717; font-family: 'Exo 2', sans-serif;">
-            <div style="font-family: 'Montserrat Alternates', sans-serif; font-size: 18px; font-weight: 600; margin-bottom: 15px; color: #171717;">📋 Résumé du rendez-vous</div>
-            <ul style="list-style: none; padding: 0; margin: 0; font-family: 'Exo 2', sans-serif; color: #171717;">
+          <div style="margin: 25px 0; padding: 0; background: transparent; color: #171717; font-family: Arial, Helvetica, sans-serif;">
+            <div style="font-family: Arial, Helvetica, sans-serif; font-size: 18px; font-weight: 600; margin-bottom: 15px; color: #171717;">📋 Résumé du rendez-vous</div>
+            <ul style="list-style: none; padding: 0; margin: 0; font-family: Arial, Helvetica, sans-serif; color: #171717;">
               <li>
                 <span style="font-weight: 500; color: #171717;">👤 Client :</span>
                 <span style="font-weight: 600; color: #171717;">${data.recipientName || 'Nouveau client'}</span>
@@ -650,7 +652,7 @@ export class EmailTemplateService {
 
     return this.getBaseTemplate(
       content, 
-      `Nouveau rendez-vous - ${data.salonName || 'Inkera Studio'}`, 
+      `Nouveau rendez-vous - ${data.salonName || 'Inkera Studio'}`,
       data.salonName || 'Inkera Studio',
     );
   }
@@ -710,8 +712,8 @@ export class EmailTemplateService {
 
     return this.getBaseTemplate(
       content, 
-      `Vérification d'email - ${data.salonName || 'Inkera Studio'}`, 
-      data.salonName || 'Inkera Studio',
+      "Vérification d'email - Inkera Studio",
+      'Inkera Studio',
     
     );
   }
@@ -727,7 +729,7 @@ export class EmailTemplateService {
 
     const billingUrl = this.sanitizeSiteUrl(
       details.billingUrl,
-      '/dashboard',
+      '/parametres#facturation',
     );
 
     const content = `
@@ -741,25 +743,24 @@ export class EmailTemplateService {
         <div class="message-box">
           <p class="welcome-subtitle">Bonjour ${data.recipientName || 'cher utilisateur'},</p>
           <p>
-            Votre période d'essai de 30 jours pour <strong>${data.salonName || 'Inkera Studio'}</strong>
+            Votre période offerte ${this.escapeHtml(details.planName || '')} sur <strong>Inkera Studio</strong>
             se termine le <strong>${details.trialEndDate}</strong>.
           </p>
           <br/>
           <p>
-            Aucun changement n'est nécessaire si votre moyen de paiement est valide:
-            la facturation se fera automatiquement à la fin de l'essai.
+            ${details.stripeManaged ? 'Votre abonnement est déjà souscrit. Vérifiez votre moyen de paiement avant le premier prélèvement.' : 'Pour conserver vos fonctionnalités, souscrivez à votre abonnement avant cette date. Sans souscription, votre compte repassera en formule Free à la fin de la période offerte. Aucun prélèvement automatique ne sera effectué sans souscription.'}
           </p>
         </div>
 
         <div style="text-align: center;">
           <a href="${billingUrl}" class="cta-button">
-            💳 Vérifier mon moyen de paiement
+            ${details.stripeManaged ? 'Gérer mon abonnement' : 'Souscrire à mon abonnement'}
           </a>
         </div>
 
         <div style="background: rgba(249, 115, 22, 0.1); border: 1px solid rgba(249, 115, 22, 0.2); border-radius: 12px; padding: 16px; margin: 24px 0; text-align: center;">
           <p style="font-size: 13px; color: rgba(249, 115, 22, 0.9); margin: 0;">
-            <strong>⚠️ Important :</strong> En cas d'échec du paiement, votre compte passera en statut <strong>PAST_DUE</strong> avant un retour automatique au plan FREE après 5 jours.
+            <strong>À retenir :</strong> ${details.stripeManaged ? 'Vérifiez votre moyen de paiement pour éviter une interruption de votre abonnement.' : 'Souscrivez avant la date de fin pour continuer. Vos données sont conservées si votre compte repasse en Free.'}
           </p>
         </div>
 
@@ -782,7 +783,7 @@ export class EmailTemplateService {
    *! Template pour réinitialisation de mot de passe
    */
   generatePasswordResetEmail(data: EmailTemplateData): string {
-    // const resetUrl = data.resetUrl || `${process.env.FRONTEND_URL || ''}/reset-password?token=${data.resetToken}&email=${data.recipientName}`;
+    const resetUrl = this.escapeHtml(this.sanitizeSiteUrl(data.resetUrl, '/reset-password'));
     
     const content = `
       <div class="content">
@@ -793,10 +794,11 @@ export class EmailTemplateService {
           <p>Cliquez sur le bouton ci-dessous pour créer un nouveau mot de passe :</p>
         </div>
 
-        <a href="${this.sanitizeSiteUrl(data.resetUrl, '/reset-password')}" class="cta-button">
-          🔑 Réinitialiser mon mot de passe
+        <a href="${resetUrl}" class="cta-button">
+          Réinitialiser mon mot de passe →
         </a>
 
+<p style="font-size:12px;color:#666;overflow-wrap:anywhere;">Si le bouton ne fonctionne pas, copiez ce lien dans votre navigateur :<br><a href="${resetUrl}" style="color:#a83c00;word-break:break-all;">${resetUrl}</a></p>
         <div class="warning-box">
           <strong>⏱️ Important :</strong> Ce lien est valide pendant 15 minutes seulement.
         </div>
@@ -810,7 +812,7 @@ export class EmailTemplateService {
 
     return this.getBaseTemplate(
       content, 
-      `Réinitialisation de mot de passe - ${data.salonName || 'Inkera Studio'}`, 
+      `Réinitialisation de mot de passe - ${data.salonName || 'Inkera Studio'}`,
       data.salonName || 'Inkera Studio'
     );
   }
@@ -870,7 +872,7 @@ export class EmailTemplateService {
 
     return this.getBaseTemplate(
       content, 
-      `Suivi de votre tatouage - ${data.salonName || 'Inkera Studio'}`, 
+      `Suivi de votre tatouage - ${data.salonName || 'Inkera Studio'}`,
       data.salonName || 'Inkera Studio'
     );
   }
@@ -939,7 +941,7 @@ export class EmailTemplateService {
 
     return this.getBaseTemplate(
       content, 
-      `Modification de rendez-vous - ${data.salonName || 'Inkera Studio'}`, 
+      `Modification de rendez-vous - ${data.salonName || 'Inkera Studio'}`,
       data.salonName || 'Inkera Studio'
     );
   }
@@ -997,7 +999,7 @@ export class EmailTemplateService {
 
     return this.getBaseTemplate(
       content, 
-      `Annulation de rendez-vous - ${data.salonName || 'Inkera Studio'}`, 
+      `Annulation de rendez-vous - ${data.salonName || 'Inkera Studio'}`,
       data.salonName || 'Inkera Studio'
     );
   }
@@ -1015,8 +1017,8 @@ export class EmailTemplateService {
         </div>
 
 <div style="background: transparent; border: 2px solid #e5e7eb; border-radius: 12px; padding: 25px; margin: 25px 0;">
-        <div style="font-family: 'Montserrat Alternates', sans-serif; font-size: 18px; font-weight: 600; margin-bottom: 15px; color: #171717;">${data.subject}</div>
-        <div style="margin-top: 12px; line-height: 1.8; white-space: pre-wrap; color: #171717; font-family: 'Exo 2', sans-serif; font-size: 16px;">${data.customMessage || ''}</div>
+        <div style="font-family: Arial, Helvetica, sans-serif; font-size: 18px; font-weight: 600; margin-bottom: 15px; color: #171717;">${data.subject}</div>
+        <div style="margin-top: 12px; line-height: 1.8; white-space: pre-wrap; color: #171717; font-family: Arial, Helvetica, sans-serif; font-size: 16px;">${data.customMessage || ''}</div>
         </div>
 
         <div class="message" style="margin-top: 30px;">
@@ -1066,8 +1068,8 @@ export class EmailTemplateService {
         </div>
 
         <div style="background: transparent; border: 2px solid #e5e7eb; border-radius: 12px; padding: 25px; margin: 25px 0;">
-          <div style="font-family: 'Montserrat Alternates', sans-serif; font-size: 18px; font-weight: 600; margin-bottom: 15px; color: #171717;">📝 Description du projet</div>
-          <div style="margin-top: 12px; line-height: 1.8; white-space: pre-wrap; color: #171717; font-family: 'Exo 2', sans-serif; font-size: 16px;">${details?.projectDescription || ''}</div>
+          <div style="font-family: Arial, Helvetica, sans-serif; font-size: 18px; font-weight: 600; margin-bottom: 15px; color: #171717;">📝 Description du projet</div>
+          <div style="margin-top: 12px; line-height: 1.8; white-space: pre-wrap; color: #171717; font-family: Arial, Helvetica, sans-serif; font-size: 16px;">${details?.projectDescription || ''}</div>
           ${details?.sourceIp ? `<div style="margin-top: 16px; font-size: 12px; color: #6b7280;">IP source: ${details.sourceIp}</div>` : ''}
         </div>
 
@@ -1172,7 +1174,7 @@ export class EmailTemplateService {
 
     return this.getBaseTemplate(
       content, 
-      `Nouveau rendez-vous en attente - ${data.salonName || 'Inkera Studio'}`, 
+      `Nouveau rendez-vous en attente - ${data.salonName || 'Inkera Studio'}`,
       data.salonName || 'Inkera Studio'
     );
   }
@@ -1234,7 +1236,7 @@ export class EmailTemplateService {
 
     return this.getBaseTemplate(
       content, 
-      `Rendez-vous confirmé - ${data.salonName || 'Inkera Studio'}`, 
+      `Rendez-vous confirmé - ${data.salonName || 'Inkera Studio'}`,
       data.salonName || 'Inkera Studio'
     );
   }
@@ -1292,7 +1294,7 @@ export class EmailTemplateService {
 
     return this.getBaseTemplate(
       content, 
-      `Reprogrammation nécessaire - ${data.salonName || 'Inkera Studio'}`, 
+      `Reprogrammation nécessaire - ${data.salonName || 'Inkera Studio'}`,
       data.salonName || 'Inkera Studio'
     );
   }
@@ -1350,7 +1352,7 @@ export class EmailTemplateService {
 
     return this.getBaseTemplate(
       content, 
-      `Reprogrammation acceptée - ${data.salonName || 'Inkera Studio'}`, 
+      `Reprogrammation acceptée - ${data.salonName || 'Inkera Studio'}`,
       data.salonName || 'Inkera Studio'
     );
   }
@@ -1403,7 +1405,7 @@ export class EmailTemplateService {
 
     return this.getBaseTemplate(
       content, 
-      `Rendez-vous reprogrammé - ${data.salonName || 'Inkera Studio'}`, 
+      `Rendez-vous reprogrammé - ${data.salonName || 'Inkera Studio'}`,
       data.salonName || 'Inkera Studio'
     );
   }
@@ -1446,7 +1448,7 @@ export class EmailTemplateService {
 
     return this.getBaseTemplate(
       content, 
-      `Réponse à votre suivi - ${data.salonName || 'Inkera Studio'}`, 
+      `Réponse à votre suivi - ${data.salonName || 'Inkera Studio'}`,
       data.salonName || 'Inkera Studio'
     );
   }
@@ -1495,7 +1497,7 @@ export class EmailTemplateService {
 
     return this.getBaseTemplate(
       content, 
-      `Suivi de cicatrisation - ${data.salonName || 'Inkera Studio'}`, 
+      `Suivi de cicatrisation - ${data.salonName || 'Inkera Studio'}`,
       data.salonName || 'Inkera Studio'
     );
   }
@@ -1559,7 +1561,7 @@ export class EmailTemplateService {
 
     return this.getBaseTemplate(
       content, 
-      `Comment s'est passé votre ${details.prestationName.toLowerCase()} ? - ${data.salonName || 'Inkera Studio'}`, 
+      `Comment s'est passé votre ${details.prestationName.toLowerCase()} ? - ${data.salonName || 'Inkera Studio'}`,
       data.salonName || 'Inkera Studio'
     );
   }
@@ -1616,7 +1618,7 @@ export class EmailTemplateService {
           </ul>
         </div>
 
-        <a href="${this.buildFrontendUrl('/login')}" class="cta-button">
+        <a href="${this.buildFrontendUrl('/connexion')}" class="cta-button">
           🔑 Se connecter à mon espace
         </a>
 
@@ -1629,7 +1631,7 @@ export class EmailTemplateService {
 
     return this.getBaseTemplate(
       content, 
-      `Mot de passe modifié - ${data.salonName || 'Inkera Studio'}`, 
+      `Mot de passe modifié - ${data.salonName || 'Inkera Studio'}`,
       data.salonName || 'Inkera Studio'
     );
   }
@@ -1665,7 +1667,7 @@ export class EmailTemplateService {
         ` : ''}
 
         <div style="margin: 25px 0; padding: 20px; background: transparent; border: 1px solid #e5e7eb; border-radius: 12px; color: #171717;">
-          <div style="font-family: 'Montserrat Alternates', sans-serif; font-size: 18px; font-weight: 600; margin-bottom: 15px; color: #171717;">🔧 Retouches gratuites disponibles</div>
+          <div style="font-family: Arial, Helvetica, sans-serif; font-size: 18px; font-weight: 600; margin-bottom: 15px; color: #171717;">🔧 Retouches gratuites disponibles</div>
           <div class="message" style="color: #171717; margin: 15px 0;">
             <p style="margin-bottom: 12px;">Si vous constatez que votre tatouage a besoin d'une petite retouche ? (zones moins pigmentées, traits à reprendre...)</p>
             
@@ -1691,7 +1693,7 @@ export class EmailTemplateService {
           <p>Nous serons ravis de vous accueillir à nouveau pour parfaire votre œuvre d'art ! 🎯</p>
         </div>
 
-        <a href="${this.buildFrontendUrl('/contact')}" class="cta-button">
+        <a href="${this.buildFrontendUrl('/contactez-nous')}" class="cta-button">
           📞 Nous contacter pour une retouche
         </a>
 
@@ -1710,7 +1712,7 @@ export class EmailTemplateService {
 
     return this.getBaseTemplate(
       content, 
-      `Retouches gratuites disponibles - ${data.retouchesReminderDetails?.salonName || data.salonName || 'Inkera Studio'}`, 
+      `Retouches gratuites disponibles - ${data.retouchesReminderDetails?.salonName || data.salonName || 'Inkera Studio'}`,
       data.retouchesReminderDetails?.salonName || data.salonName || 'Inkera Studio'
     );
   }
@@ -2025,7 +2027,7 @@ export class EmailTemplateService {
 
     return this.getBaseTemplate(
       content, 
-      'Vérification d\'email - Inkera Studio', 
+      'Vérification d\'email - Inkera Studio',
       'Inkera Studio'
     );
   }

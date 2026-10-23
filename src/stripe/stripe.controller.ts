@@ -214,7 +214,18 @@ export class StripeController {
       return;
     }
 
-    await this.saasService.markSubscriptionActive(userId, targetPlan, nextPaymentDate);
+    if (subscription.status !== 'active') return;
+
+    // La fin d'essai marque le début de la période payante, sinon c'est
+    // le début de la souscription. Stable même si le webhook est rejoué.
+    const paidStart = subscription.trial_end ?? subscription.start_date;
+    if (paidStart) {
+      await this.saasService.markSubscriptionActive(
+        userId, targetPlan, nextPaymentDate, new Date(paidStart * 1000),
+      );
+    } else {
+      await this.saasService.markSubscriptionActive(userId, targetPlan, nextPaymentDate);
+    }
   }
 
   // Méthode pour obtenir la date de fin de période actuelle d'une souscription Stripe
@@ -753,6 +764,7 @@ export class StripeController {
 
   private async handleSubscriptionTrialWillEnd(event: Stripe.Event) {
     const subscription = event.data.object as Stripe.Subscription;
+    if (subscription.metadata?.inkera_trial_end) return;
     const customerId =
       typeof subscription.customer === 'string'
         ? subscription.customer
@@ -782,6 +794,7 @@ export class StripeController {
       recipientName,
       salonName: user.salonName,
       trialEndDate: trialEndDate.toLocaleDateString('fr-FR'),
+      stripeManaged: true,
     });
 
     this.logger.log(`Rappel de fin d'essai envoyé au salon ${user.id}`);

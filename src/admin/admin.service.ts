@@ -1,3 +1,4 @@
+import { getMembershipDuration } from './account-membership';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CacheService } from 'src/redis/cache.service';
@@ -12,6 +13,17 @@ export class AdminService {
     private cacheService: CacheService,
     private readonly mailService: MailService,
   ) {}
+
+  private withMembership<T extends { createdAt?: string | Date }>(user: T) {
+    return user.createdAt ? { ...user, membership: getMembershipDuration(user.createdAt) } : user;
+  }
+
+  private styleError(error: unknown) {
+    const code = typeof error === 'object' && error ? (error as { code?: string }).code : undefined;
+    if (code === 'P2002') return { error: true, message: 'Ce style existe déjà.' };
+    if (code === 'P2025') return { error: true, message: 'Style introuvable.' };
+    return { error: true, message: 'Impossible d’enregistrer la modification du style. Réessayez.' };
+  }
 
   private slugify(value: string): string {
     return value
@@ -49,65 +61,71 @@ export class AdminService {
 
   //! CRÉER UN STYLE (admin) - refusé s'il existe déjà ou s'il est quasi identique à un existant
   async createStyle(rawName: string) {
-    const name = rawName.trim().toUpperCase();
-    const key = styleKey(name);
-    if (!key) {
-      return { error: true, message: 'Nom de style invalide.' };
-    }
-    const known = await this.prisma.style.findMany({ select: { name: true, key: true } });
-    const closest = findClosestStyle(key, known);
-    if (closest) {
-      return { error: true, message: `Ce style existe déjà ou est trop proche de « ${closest.name} ».` };
-    }
-    const style = await this.prisma.style.create({ data: { name, key } });
-    await this.cacheService.delPattern('portfolio:*');
-    return { error: false, message: 'Style créé', style };
+    try {
+      const name = rawName.trim().toUpperCase();
+      const key = styleKey(name);
+      if (!key) {
+        return { error: true, message: 'Nom de style invalide.' };
+      }
+      const known = await this.prisma.style.findMany({ select: { name: true, key: true } });
+      const closest = findClosestStyle(key, known);
+      if (closest) {
+        return { error: true, message: `Ce style existe déjà ou est trop proche de « ${closest.name} ».` };
+      }
+      const style = await this.prisma.style.create({ data: { name, key } });
+      await this.cacheService.delPattern('portfolio:*');
+      return { error: false, message: 'Style créé', style };
+    } catch (error) { return this.styleError(error); }
   }
 
   //! RENOMMER UN STYLE (admin) - répercuté sur toutes les photos
   async updateStyle(id: string, rawName: string) {
-    const existing = await this.prisma.style.findUnique({ where: { id } });
-    if (!existing) {
-      return { error: true, message: 'Style introuvable.' };
-    }
-    const name = rawName.trim().toUpperCase();
-    const key = styleKey(name);
-    if (!key) {
-      return { error: true, message: 'Nom de style invalide.' };
-    }
-    const others = await this.prisma.style.findMany({
-      where: { id: { not: id } },
-      select: { name: true, key: true },
-    });
-    const closest = findClosestStyle(key, others);
-    if (closest) {
-      return { error: true, message: `Ce nom existe déjà ou est trop proche de « ${closest.name} ».` };
-    }
+    try {
+      const existing = await this.prisma.style.findUnique({ where: { id } });
+      if (!existing) {
+        return { error: true, message: 'Style introuvable.' };
+      }
+      const name = rawName.trim().toUpperCase();
+      const key = styleKey(name);
+      if (!key) {
+        return { error: true, message: 'Nom de style invalide.' };
+      }
+      const others = await this.prisma.style.findMany({
+        where: { id: { not: id } },
+        select: { name: true, key: true },
+      });
+      const closest = findClosestStyle(key, others);
+      if (closest) {
+        return { error: true, message: `Ce nom existe déjà ou est trop proche de « ${closest.name} ».` };
+      }
 
-    const [style] = await this.prisma.$transaction([
-      this.prisma.style.update({ where: { id }, data: { name, key } }),
-      this.prisma.$executeRaw`
-        UPDATE "Portfolio" SET "style" = array_replace("style", ${existing.name}, ${name})
-        WHERE ${existing.name} = ANY("style")`,
-    ]);
-    await this.cacheService.delPattern('portfolio:*');
-    return { error: false, message: 'Style mis à jour', style };
+      const [style] = await this.prisma.$transaction([
+        this.prisma.style.update({ where: { id }, data: { name, key } }),
+        this.prisma.$executeRaw`
+          UPDATE "Portfolio" SET "style" = array_replace("style", ${existing.name}, ${name})
+          WHERE ${existing.name} = ANY("style")`,
+      ]);
+      await this.cacheService.delPattern('portfolio:*');
+      return { error: false, message: 'Style mis à jour', style };
+    } catch (error) { return this.styleError(error); }
   }
 
   //! SUPPRIMER UN STYLE (admin) - retiré de toutes les photos
   async deleteStyle(id: string) {
-    const existing = await this.prisma.style.findUnique({ where: { id } });
-    if (!existing) {
-      return { error: true, message: 'Style introuvable.' };
-    }
-    await this.prisma.$transaction([
-      this.prisma.$executeRaw`
-        UPDATE "Portfolio" SET "style" = array_remove("style", ${existing.name})
-        WHERE ${existing.name} = ANY("style")`,
-      this.prisma.style.delete({ where: { id } }),
-    ]);
-    await this.cacheService.delPattern('portfolio:*');
-    return { error: false, message: 'Style supprimé' };
+    try {
+      const existing = await this.prisma.style.findUnique({ where: { id } });
+      if (!existing) {
+        return { error: true, message: 'Style introuvable.' };
+      }
+      await this.prisma.$transaction([
+        this.prisma.$executeRaw`
+          UPDATE "Portfolio" SET "style" = array_remove("style", ${existing.name})
+          WHERE ${existing.name} = ANY("style")`,
+        this.prisma.style.delete({ where: { id } }),
+      ]);
+      await this.cacheService.delPattern('portfolio:*');
+      return { error: false, message: 'Style supprimé' };
+    } catch (error) { return this.styleError(error); }
   }
 
   //! LISTER LES CATÉGORIES DE TATOUAGE (admin)
@@ -274,7 +292,7 @@ export class AdminService {
       }>(cacheKey);
 
       if (cachedResult) {
-        return cachedResult;
+        return { ...cachedResult, salons: cachedResult.salons.map(user => this.withMembership(user)) };
       }
 
       // 2. Construire les conditions de recherche
@@ -316,6 +334,9 @@ export class AdminService {
           verifiedSalon: true,
           SalonVerificationDocument: true,
           saasPlan: true,
+          saasPlanDetails: {
+            select: { firstPaidPlanAt: true, currentPlan: true, planStatus: true },
+          },
           createdAt: true,
           updatedAt: true,
         },
@@ -328,7 +349,7 @@ export class AdminService {
 
       const result = {
         error: false,
-        salons,
+        salons: salons.map(user => this.withMembership(user)),
         pagination: {
           currentPage,
           limit: perPage,
@@ -380,7 +401,7 @@ export class AdminService {
       }>(cacheKey);
 
       if (cachedResult) {
-        return cachedResult;
+        return { ...cachedResult, clients: cachedResult.clients.map(user => this.withMembership(user)) };
       }
 
       // 2. Construire les conditions de recherche
@@ -421,6 +442,9 @@ export class AdminService {
             },
           },
           saasPlan: true,
+          saasPlanDetails: {
+            select: { firstPaidPlanAt: true, currentPlan: true, planStatus: true },
+          },
           createdAt: true,
           updatedAt: true,
         },
@@ -433,7 +457,7 @@ export class AdminService {
 
       const result = {
         error: false,
-        clients,
+        clients: clients.map(user => this.withMembership(user)),
         pagination: {
           currentPage,
           limit: perPage,
@@ -470,24 +494,6 @@ export class AdminService {
       const currentPage = Math.max(1, Number(page) || 1);
       const perPage = Math.min(100, Math.max(1, Number(limit) || 10));
       const skip = (currentPage - 1) * perPage;
-
-      const cacheKey = `admin:salons:pending:${JSON.stringify({
-        page: currentPage,
-        limit: perPage,
-        search: search?.trim() || null,
-        saasPlan: saasPlan || null,
-        verifiedSalon: verifiedSalon !== undefined ? verifiedSalon : null,
-      })}`;
-
-      const cachedResult = await this.cacheService.get<{
-        error: boolean;
-        salons: any[];
-        pagination: any;
-      }>(cacheKey);
-
-      if (cachedResult) {
-        return cachedResult;
-      }
 
       const searchConditions = search
         ? {
@@ -526,6 +532,9 @@ export class AdminService {
           verifiedSalon: true,
           SalonVerificationDocument: true,
           saasPlan: true,
+          saasPlanDetails: {
+            select: { firstPaidPlanAt: true, currentPlan: true, planStatus: true },
+          },
           createdAt: true,
           updatedAt: true,
         },
@@ -538,7 +547,7 @@ export class AdminService {
 
       const result = {
         error: false,
-        salons,
+        salons: salons.map(user => this.withMembership(user)),
         pagination: {
           currentPage,
           limit: perPage,
@@ -549,7 +558,7 @@ export class AdminService {
         },
       };
 
-      await this.cacheService.set(cacheKey, result, 600);
+
 
       return result;
     } catch (error: unknown) {
@@ -583,6 +592,9 @@ export class AdminService {
           description: true,
           verifiedSalon: true,
           saasPlan: true,
+          saasPlanDetails: {
+            select: { firstPaidPlanAt: true, currentPlan: true, planStatus: true },
+          },
           createdAt: true,
           updatedAt: true,
           Tatoueur: {
@@ -634,7 +646,7 @@ export class AdminService {
 
       return {
         error: false,
-        user,
+        user: this.withMembership(user),
       };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
@@ -761,6 +773,10 @@ export class AdminService {
         await tx.tatoueur.deleteMany({ where: { userId } });
         await tx.client.deleteMany({ where: { userId } });
 
+        // Keep only anonymous counts, atomically with the actual deletion.
+        if (([Role.user, Role.user_salon, Role.user_tatoueur] as Role[]).includes(user.role)) {
+          await tx.accountDeparture.create({ data: { role: user.role, source: 'ADMIN_DELETION' } });
+        }
         // Enfin, suppression du compte utilisateur.
         await tx.user.delete({ where: { id: userId } });
       });
@@ -885,83 +901,44 @@ export class AdminService {
   //! RÉCUPÉRER LES DONNÉES D'ÉVOLUTION MENSUELLE
   async getMonthlyEvolution(monthsCount: number = 6) {
     try {
+      const count = Number.isFinite(monthsCount) ? Math.min(24, Math.max(1, Math.trunc(monthsCount))) : 6;
       const now = new Date();
-      const monthsData: Array<{
-        month: string;
-        salons: number;
-        appointments: number;
-        revenue: number;
-      }> = [];
-
-      // Noms des mois en français
-      const monthNames = ['Janv', 'Fév', 'Mars', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sept', 'Oct', 'Nov', 'Déc'];
-
-      // Récupérer les données pour les N derniers mois
-      for (let i = monthsCount - 1; i >= 0; i--) {
-        const monthDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
-        const nextMonthDate = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
-
-        // Nouveaux salons inscrits ce mois
-        const salons = await this.prisma.user.count({
-          where: {
-            role: { in: [Role.user, Role.user_salon, Role.user_tatoueur] },
-            createdAt: {
-              gte: monthDate,
-              lt: nextMonthDate,
-            },
-          },
-        });
-
-        // Rendez-vous pris ce mois
-        const appointments = await this.prisma.appointment.count({
-          where: {
-            createdAt: {
-              gte: monthDate,
-              lt: nextMonthDate,
-            },
-          },
-        });
-
-        // Calcul des revenus estimés basés sur les abonnements
-        // NOTE: À adapter selon votre modèle de revenus réel
-        const salonsPro = await this.prisma.user.count({
-          where: {
-            role: { in: [Role.user, Role.user_salon, Role.user_tatoueur] },
-            saasPlan: SaasPlan.PRO,
-            createdAt: { lte: nextMonthDate },
-          },
-        });
-
-        const salonsBusiness = await this.prisma.user.count({
-          where: {
-            role: { in: [Role.user, Role.user_salon, Role.user_tatoueur] },
-            saasPlan: SaasPlan.BUSINESS,
-            createdAt: { lte: nextMonthDate },
-          },
-        });
-
-        // Estimation: BUSINESS = 80€/mois, PRO = 40€/mois
-        const revenue = (salonsBusiness * 80) + (salonsPro * 40);
-
-        monthsData.push({
-          month: monthNames[monthDate.getMonth()],
-          salons,
-          appointments,
-          revenue,
-        });
-      }
-
-      return {
-        error: false,
-        data: monthsData,
+      const paris = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit' }).formatToParts(now);
+      const year = Number(paris.find(part => part.type === 'year')!.value);
+      const month = Number(paris.find(part => part.type === 'month')!.value) - 1;
+      const tracking = await this.prisma.adminMetricTracking.findUnique({ where: { key: 'account-departures' } });
+      const professionalRoles = [Role.user, Role.user_salon, Role.user_tatoueur];
+      // Civil months in Paris, independently of the deployment server timezone.
+      const boundary = (yearValue: number, monthValue: number) => {
+        const date = new Date(Date.UTC(yearValue, monthValue, 1));
+        const offset = new Intl.DateTimeFormat('en', { timeZone: 'Europe/Paris', timeZoneName: 'longOffset' }).formatToParts(date).find(part => part.type === 'timeZoneName')!.value;
+        const match = offset.match(/GMT([+-])(\d{2}):(\d{2})/);
+        const minutes = match ? (Number(match[2]) * 60 + Number(match[3])) * (match[1] === '+' ? 1 : -1) : 0;
+        return new Date(date.getTime() - minutes * 60000);
       };
+      const data = await Promise.all(Array.from({ length: count }, async (_, index) => {
+        const calendar = new Date(Date.UTC(year, month - count + 1 + index, 1));
+        const from = boundary(year, month - count + 1 + index);
+        const to = boundary(year, month - count + 2 + index);
+        const departureFrom = tracking && tracking.startedAt > from ? tracking.startedAt : from;
+        const [salons, appointments, departures] = await Promise.all([
+          this.prisma.user.count({ where: { role: { in: professionalRoles }, createdAt: { gte: from, lt: to } } }),
+          this.prisma.appointment.count({ where: { createdAt: { gte: from, lt: to } } }),
+          tracking && to > tracking.startedAt
+            ? this.prisma.accountDeparture.count({ where: { role: { in: professionalRoles }, occurredAt: { gte: departureFrom, lt: to } } })
+            : Promise.resolve(null),
+        ]);
+        return {
+          period: calendar.toISOString().slice(0, 7),
+          month: new Intl.DateTimeFormat('fr-FR', { month: 'short', timeZone: 'UTC' }).format(calendar),
+          salons, appointments, departures,
+          departuresTrackingSince: tracking?.startedAt.toISOString() ?? null,
+        };
+      }));
+      return { error: false, data };
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
-      console.error('Erreur lors de la récupération des données d\'évolution:', errorMessage);
-      return {
-        error: true,
-        message: 'Une erreur est survenue lors de la récupération des données d\'évolution.',
-      };
+      console.error('Erreur statistiques mensuelles:', error instanceof Error ? error.message : 'unknown');
+      return { error: true, message: "Impossible de récupérer les données d’évolution." };
     }
   }
 }

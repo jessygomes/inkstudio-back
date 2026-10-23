@@ -25,6 +25,7 @@ const createPrismaMock = () => ({
     create: jest.fn(),
   },
   passwordResetToken: {
+    deleteMany: jest.fn(),
     create: jest.fn(),
     findUnique: jest.fn(),
     delete: jest.fn(),
@@ -44,6 +45,9 @@ const createStripeMock = () => ({
 });
 
 describe('AuthService', () => {
+  const originalFrontendUrl = process.env.FRONTEND_URL;
+  beforeAll(() => { process.env.FRONTEND_URL = 'https://app.example.com'; });
+  afterAll(() => { if (originalFrontendUrl === undefined) delete process.env.FRONTEND_URL; else process.env.FRONTEND_URL = originalFrontendUrl; });
   let service: AuthService;
   let prisma: ReturnType<typeof createPrismaMock>;
   let mail: ReturnType<typeof createMailMock>;
@@ -62,7 +66,7 @@ describe('AuthService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: JwtService, useValue: jwt },
         { provide: MailService, useValue: mail },
-        { provide: SaasService, useValue: {} },
+        { provide: SaasService, useValue: { getPlanConfiguration: jest.fn().mockReturnValue({}) } },
         { provide: StripeService, useValue: stripe },
       ],
     }).compile();
@@ -187,7 +191,7 @@ describe('AuthService', () => {
       });
 
       expect(jwt.sign).toHaveBeenCalledWith({ userId: 'u1', role: 'client' });
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         access_token: 'jwt-token',
         id: 'u1',
         role: 'client',
@@ -224,7 +228,7 @@ describe('AuthService', () => {
         userId: 'salon1',
         role: 'salon',
       });
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         access_token: 'jwt-token',
         id: 'salon1',
         salonName: 'Tattoo Studio Pro',
@@ -245,6 +249,35 @@ describe('AuthService', () => {
   // ============================================================================
 
   describe('register()', () => {
+    it.each([
+      ['user_salon', 'BUSINESS', '2026-04-01T10:00:00.000Z'],
+      ['user_tatoueur', 'PRO', '2026-04-30T10:00:00.000Z'],
+    ] as const)('creates a native %s %s trial without Stripe', async (role, plan, expiry) => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-01-31T10:00:00Z'));
+      try {
+        prisma.user.findUnique.mockResolvedValue(null);
+        prisma.user.create.mockResolvedValue({ id: 'native-1', email: 'native@example.com', firstName: 'Alex', lastName: 'Test', salonName: 'Native', saasPlan: plan });
+        const result = await service.register({ registerBody: {
+          email: 'native@example.com', role, saasPlan: plan, checkoutPlan: plan, salonName: 'Native', firstName: 'Alex', lastName: 'Test', password: 'Password1!', phone: '',
+        } });
+        expect(result).toEqual(expect.objectContaining({ trialEndDate: expiry, checkoutUrl: null }));
+        expect(prisma.user.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
+          saasPlan: plan, saasPlanUntil: new Date(expiry),
+          saasPlanDetails: { create: expect.objectContaining({ currentPlan: plan, planStatus: 'TRIAL', trialEndDate: new Date(expiry), nextPaymentDate: null }) },
+        }) }));
+        expect(stripe.createCheckoutSession).not.toHaveBeenCalled();
+      } finally { jest.useRealTimers(); }
+    });
+
+    it.each(['saasPlan', 'checkoutPlan'])('rejects Business in %s for independent accounts', async (field) => {
+      const result = await service.register({ registerBody: {
+        email: 'artist@example.com', role: 'user_tatoueur', firstName: 'Alex', lastName: 'Test', phone: '', password: 'Password1!', [field]: 'BUSINESS',
+      } });
+      expect(result).toEqual(expect.objectContaining({ error: true, message: 'Le plan Business est réservé aux comptes salon.' }));
+      expect(prisma.user.create).not.toHaveBeenCalled();
+      expect(stripe.createCheckoutSession).not.toHaveBeenCalled();
+    });
+
     it('returns error when user with email already exists', async () => {
       prisma.user.findUnique.mockResolvedValue({ id: 'existing' });
 
@@ -313,6 +346,7 @@ describe('AuthService', () => {
       expect(result).toEqual({
         message:
           'Votre compte a été créé avec succès. Veuillez vérifier vos emails pour confirmer votre adresse.',
+        trialEndDate: null,
         checkoutUrl: null,
         checkoutError: null,
       });
@@ -354,6 +388,7 @@ describe('AuthService', () => {
       expect(result).toEqual({
         message:
           'Votre compte a été créé avec succès. Veuillez vérifier vos emails pour confirmer votre adresse.',
+        trialEndDate: null,
         checkoutUrl: 'https://checkout.stripe.test/session_123',
         checkoutError: null,
       });

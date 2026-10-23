@@ -4,6 +4,8 @@ import { SaasService } from './saas.service';
 const createPrismaMock = () => ({
   saasPlanDetails: {
     findMany: jest.fn(),
+    updateMany: jest.fn(),
+    findUniqueOrThrow: jest.fn(),
   },
 });
 
@@ -15,6 +17,29 @@ describe('SaasService billing lifecycle', () => {
     prisma = createPrismaMock();
     service = new SaasService(prisma as never);
     jest.clearAllMocks();
+  });
+
+  it('records the first active paid plan only when the date is still empty', async () => {
+    const firstPaidPlanAt = new Date('2026-10-01T10:00:00Z');
+    jest.spyOn(service, 'updateUserPlan').mockResolvedValue({} as never);
+    prisma.saasPlanDetails.findUniqueOrThrow.mockResolvedValue({ firstPaidPlanAt });
+
+    const result = await service.markSubscriptionActive('user-1', SaasPlan.PRO, null, firstPaidPlanAt);
+
+    expect(prisma.saasPlanDetails.updateMany).toHaveBeenCalledWith({
+      where: { userId: 'user-1', firstPaidPlanAt: null },
+      data: { firstPaidPlanAt },
+    });
+    expect(result.firstPaidPlanAt).toEqual(firstPaidPlanAt);
+  });
+
+  it('does not record a paid start date during a trial or on Free', async () => {
+    jest.spyOn(service, 'updateUserPlan').mockResolvedValue({} as never);
+
+    await service.markSubscriptionTrialing('user-1', SaasPlan.PRO, new Date());
+    await service.markSubscriptionActive('user-1', SaasPlan.FREE, null);
+
+    expect(prisma.saasPlanDetails.updateMany).not.toHaveBeenCalled();
   });
 
   it('delegates markSubscriptionPastDue to updateUserPlan with expected options', async () => {
@@ -129,5 +154,18 @@ describe('SaasService billing lifecycle', () => {
 
     expect(result.scanned).toBe(2);
     expect(result.downgraded).toBe(1);
+  });
+});
+
+describe('Native trial access expiry', () => {
+  it.each([false, true])('expires overdue access only when not subscribed (Stripe: %s)', async subscribed => {
+    const details = { userId: 'u1', currentPlan: SaasPlan.BUSINESS, planStatus: SaasPlanStatus.TRIAL, trialEndDate: new Date(Date.now()-1000), endDate: null };
+    const prisma = { saasPlanDetails: { findUnique: jest.fn().mockResolvedValue(details) }, user: { findUnique: jest.fn().mockResolvedValue({ stripeSubscriptionId: subscribed ? 'sub_1' : null }) } };
+    const service = new SaasService(prisma as never);
+    const update = jest.spyOn(service, 'updateUserPlan').mockResolvedValue({ ...details, currentPlan: SaasPlan.FREE, planStatus: SaasPlanStatus.EXPIRED, trialEndDate: null } as never);
+    const result = await service.getUserPlanDetails('u1');
+    expect(update).toHaveBeenCalledTimes(subscribed ? 0 : 1);
+    expect(result.currentPlan).toBe(subscribed ? SaasPlan.BUSINESS : SaasPlan.FREE);
+    expect(result.hasStripeSubscription).toBe(subscribed);
   });
 });

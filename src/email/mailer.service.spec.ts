@@ -383,6 +383,14 @@ describe('MailService', () => {
   });
 
   describe('sendEmailVerification', () => {
+    it.each([undefined, 'My Salon'])('should always use Inkera Studio for verification sender (%s)', async (salonName) => {
+      await service.sendEmailVerification('salon@example.com', buildEmailTemplateData(), salonName);
+      expect(mailgunService.sendEmail).toHaveBeenCalledWith(expect.objectContaining({
+        from: expect.stringContaining('Inkera Studio <noreply@'),
+        subject: 'Vérification de votre email - Inkera Studio',
+      }));
+    });
+
     it('should send email verification for salon', async () => {
       const data = buildEmailTemplateData();
 
@@ -400,6 +408,14 @@ describe('MailService', () => {
   });
 
   describe('sendClientEmailVerification', () => {
+    it('should use Inkera Studio for client verification sender', async () => {
+      await service.sendClientEmailVerification('client@example.com', buildEmailTemplateData());
+      expect(mailgunService.sendEmail).toHaveBeenCalledWith(expect.objectContaining({
+        from: expect.stringContaining('Inkera Studio <noreply@'),
+        subject: 'Vérification de votre email - Inkera Studio',
+      }));
+    });
+
     it('should send email verification for client', async () => {
       const data = buildEmailTemplateData();
 
