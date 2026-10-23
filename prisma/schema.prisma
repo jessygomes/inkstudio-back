@@ -597,6 +597,30 @@ model TimeSlot {
 }
 
 //! MODEL POUR LES IMAGES DE PORTFOLIO
+enum PieceSize {
+  SMALL
+  MEDIUM
+  LARGE
+}
+
+//! REGISTRE DES STYLES (nom canonique + clé normalisée unique pour éviter les doublons)
+model Style {
+  id        String   @id @default(cuid())
+  name      String
+  key       String   @unique
+  createdAt DateTime @default(now())
+}
+
+//! CATEGORIES DE TATOUAGE (Walk-ins, Patchwork, Touriste...) LIEES AUX PHOTOS DE PORTFOLIO
+model TattooCategory {
+  id         String      @id @default(cuid())
+  slug       String      @unique
+  name       String
+  sortOrder  Int         @default(0)
+  isActive   Boolean     @default(true)
+  portfolios Portfolio[]
+}
+
 model Portfolio {
   id          String    @id @default(cuid())
   userId      String
@@ -604,6 +628,9 @@ model Portfolio {
   description String?
   imageUrl    String
   style       String[] @default([])
+  pieceSize   PieceSize?
+  categories  TattooCategory[]
+  hashtags    String[] @default([])
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   tatoueurId  String?

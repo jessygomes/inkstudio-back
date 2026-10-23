@@ -1,4 +1,5 @@
-import { IsArray, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsEnum, IsOptional, IsString } from 'class-validator';
+import { PieceSize } from '@prisma/client';
 
 export class AddPhotoDto {
   @IsString()
@@ -19,4 +20,18 @@ export class AddPhotoDto {
   @IsArray()
   @IsString({ each: true })
   style?: string[]; // Styles associés à l'image portfolio
+
+  @IsOptional()
+  @IsEnum(PieceSize)
+  pieceSize?: PieceSize; // Taille de la pièce (petite, moyenne, grosse)
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  categoryIds?: string[]; // Catégories de tatouage (walk-ins, patchwork, touriste...)
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  hashtags?: string[];
 }

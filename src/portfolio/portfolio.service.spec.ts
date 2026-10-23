@@ -6,6 +6,10 @@ import { CacheService } from 'src/redis/cache.service';
 import { AddPhotoDto } from './dto/add-photo.dto';
 
 const createPrismaMock = () => ({
+  style: {
+    findMany: jest.fn().mockResolvedValue([]),
+    upsert: jest.fn().mockImplementation(({ create }) => Promise.resolve(create)),
+  },
   user: {
     findUnique: jest.fn(),
   },
@@ -93,6 +97,7 @@ describe('PortfolioService', () => {
           imageUrl: 'http://img',
           style: ['FINE LINE'],
         }),
+        include: { categories: true },
       });
       expect(cache.delPattern).toHaveBeenCalledWith('portfolio:photos:u1:*');
     });
@@ -135,7 +140,7 @@ describe('PortfolioService', () => {
 
       expect(result.photos).toHaveLength(2);
       expect(cache.set).toHaveBeenCalledWith(
-        'portfolio:photos:u1:all:page:1:limit:all',
+        'portfolio:photos:u1:all:page:1:limit:all:s:all:h:all:c:all:z:all',
         result,
         900,
       );
@@ -275,7 +280,7 @@ describe('PortfolioService', () => {
         }),
       );
       expect(cache.set).toHaveBeenCalledWith(
-        'portfolio:inspirations:page:1:limit:12:city:all:style:all',
+        'portfolio:inspirations:page:1:limit:12:city:all:s:all:h:all:c:all:z:all',
         result,
         900,
       );
@@ -324,10 +329,31 @@ describe('PortfolioService', () => {
         }),
       );
       expect(cache.set).toHaveBeenCalledWith(
-        'portfolio:inspirations:page:1:limit:12:city:Paris:style:FINE LINE|MINIMALIST',
+        'portfolio:inspirations:page:1:limit:12:city:Paris:s:FINE LINE|MINIMALIST:h:all:c:all:z:all',
         expect.objectContaining({ photos: [{ id: 'p1' }] }),
         900,
       );
+    });
+
+    it('filters inspiration photos by category, hashtag and piece size', async () => {
+      cache.get.mockResolvedValue(null);
+      prisma.portfolio.count.mockResolvedValue(0);
+      prisma.portfolio.findMany.mockResolvedValue([]);
+
+      await service.getInspirationPortfolioPhotos({
+        hashtag: '#Rose,floral',
+        category: 'Walk-ins',
+        pieceSize: 'small,bogus',
+      });
+
+      expect(prisma.portfolio.count).toHaveBeenCalledWith({
+        where: {
+          user: { isInspirationSalon: true },
+          hashtags: { hasSome: ['rose', 'floral'] },
+          categories: { some: { slug: { in: ['walk-ins'] } } },
+          pieceSize: { in: ['SMALL'] },
+        },
+      });
     });
 
     it('throws on inspiration retrieval error', async () => {
@@ -403,6 +429,7 @@ describe('PortfolioService', () => {
         data: {
           style: ['FINE LINE', 'BLACKWORK'],
         },
+        include: { categories: true },
       });
     });
   });
@@ -433,6 +460,73 @@ describe('PortfolioService', () => {
       await expect(service.deletePortfolioPhoto('p1', 'u1')).rejects.toThrow(
         'Erreur lors de la suppression de la photo du portfolio',
       );
+    });
+  });
+
+  describe('style registry', () => {
+    const known = [
+      { name: 'FINELINE', key: 'fineline' },
+      { name: 'BLACKWORK', key: 'blackwork' },
+    ];
+
+    const addWithStyles = async (style: string[]) => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'u1' });
+      prisma.portfolio.create.mockResolvedValue({ id: 'p1' });
+      await service.addPhotoToPortfolio({
+        userId: 'u1',
+        portfolioBody: buildPhotoDto({ style, tatoueurId: undefined }),
+      });
+      return prisma.portfolio.create.mock.calls[0][0].data.style;
+    };
+
+    it('reuses an existing style when the spelling is a close typo', async () => {
+      prisma.style.findMany.mockResolvedValue(known);
+
+      expect(await addWithStyles(['fineeline', 'Fine-Line'])).toEqual(['FINELINE']);
+      expect(prisma.style.upsert).not.toHaveBeenCalled();
+    });
+
+    it('creates a style that has no close match', async () => {
+      prisma.style.findMany.mockResolvedValue(known);
+
+      expect(await addWithStyles(['Réalisme'])).toEqual(['RÉALISME']);
+      expect(prisma.style.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { key: 'realisme' } }),
+      );
+    });
+
+    it('suggests matching styles and flags when creation is allowed', async () => {
+      prisma.style.findMany.mockResolvedValue(known);
+
+      const result = await service.suggestStyles('fi');
+      expect(result.suggestions).toEqual(['FINELINE']);
+      expect(result.canCreate).toBe(true);
+
+      const typo = await service.suggestStyles('fineeline');
+      expect(typo.canCreate).toBe(false);
+      expect(typo).toMatchObject({ didYouMean: 'FINELINE' });
+    });
+
+    it('lists all styles without userId', async () => {
+      prisma.style.findMany.mockResolvedValue([{ name: 'BLACKWORK' }]);
+
+      expect(await service.getStyles()).toEqual({ error: false, styles: [{ name: 'BLACKWORK' }] });
+    });
+
+    it('lists only styles present in a portfolio with counts', async () => {
+      prisma.user.findUnique.mockResolvedValue({ role: 'user', linkedTatoueurs: [] });
+      prisma.portfolio.findMany.mockResolvedValue([
+        { style: ['FINELINE', 'BLACKWORK'] },
+        { style: ['FINELINE'] },
+      ]);
+
+      expect(await service.getStyles({ userId: 'u1' })).toEqual({
+        error: false,
+        styles: [
+          { name: 'BLACKWORK', count: 1 },
+          { name: 'FINELINE', count: 2 },
+        ],
+      });
     });
   });
 });

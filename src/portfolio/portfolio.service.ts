@@ -1,7 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { AddPhotoDto } from './dto/add-photo.dto';
+import { AddPhotosBatchDto } from './dto/add-photos-batch.dto';
 import { CacheService } from 'src/redis/cache.service';
+import { PieceSize } from '@prisma/client';
+
+export interface PortfolioFilters {
+  style?: string;
+  hashtag?: string;
+  category?: string;
+  pieceSize?: string;
+}
 
 @Injectable()
 export class PortfolioService {
@@ -21,6 +30,233 @@ export class PortfolioService {
           ),
         ]
       : [];
+  }
+
+  private styleKey(value: string): string {
+    return value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
+  }
+
+  private levenshtein(a: string, b: string): number {
+    if (a === b) return 0;
+    let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+    for (let i = 1; i <= a.length; i++) {
+      const curr = [i];
+      for (let j = 1; j <= b.length; j++) {
+        curr[j] = Math.min(
+          prev[j] + 1,
+          curr[j - 1] + 1,
+          prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+        );
+      }
+      prev = curr;
+    }
+    return prev[b.length];
+  }
+
+  // Tolérance de faute de frappe selon la longueur (aucune pour les mots très courts)
+  private typoTolerance(key: string): number {
+    if (key.length <= 4) return 0;
+    return key.length <= 8 ? 1 : 2;
+  }
+
+  private findClosestStyle<T extends { key: string }>(key: string, styles: T[]): T | undefined {
+    const exact = styles.find((s) => s.key === key);
+    if (exact) return exact;
+    const tolerance = this.typoTolerance(key);
+    if (tolerance === 0) return undefined;
+    let best: T | undefined;
+    let bestDistance = tolerance + 1;
+    for (const style of styles) {
+      if (Math.abs(style.key.length - key.length) > tolerance) continue;
+      const distance = this.levenshtein(key, style.key);
+      if (distance < bestDistance) {
+        best = style;
+        bestDistance = distance;
+      }
+    }
+    return best;
+  }
+
+  // Associe chaque style saisi au style existant (même orthographe approchante) ou le crée, sans doublon
+  private async resolveStyles(styleInput: unknown): Promise<string[]> {
+    const requested = this.normalizeStyles(styleInput);
+    if (requested.length === 0) return [];
+
+    const known = await this.prisma.style.findMany({ select: { name: true, key: true } });
+    const resolved = new Set<string>();
+
+    for (const name of requested) {
+      const key = this.styleKey(name);
+      if (!key) continue;
+      const match = this.findClosestStyle(key, known);
+      if (match) {
+        resolved.add(match.name);
+        continue;
+      }
+      const created = await this.prisma.style.upsert({
+        where: { key },
+        update: {},
+        create: { name, key },
+        select: { name: true, key: true },
+      });
+      known.push(created);
+      resolved.add(created.name);
+    }
+
+    return [...resolved];
+  }
+
+  //! LISTER LES STYLES (tous, ou seulement ceux présents dans le portfolio d'un user)
+  async getStyles({ userId, tatoueurId }: { userId?: string; tatoueurId?: string } = {}) {
+    if (!userId) {
+      const styles = await this.prisma.style.findMany({ orderBy: { name: 'asc' }, select: { name: true } });
+      return { error: false, styles: styles.map((s) => ({ name: s.name })) };
+    }
+
+    const { ownerWhere } = await this.resolveOwnerScope(userId, tatoueurId);
+    const photos = await this.prisma.portfolio.findMany({
+      where: ownerWhere,
+      select: { style: true },
+    });
+
+    const counts = new Map<string, number>();
+    for (const photo of photos) {
+      for (const name of photo.style) {
+        counts.set(name, (counts.get(name) ?? 0) + 1);
+      }
+    }
+
+    const styles = [...counts.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    return { error: false, styles };
+  }
+
+  //! SUGGESTIONS DE STYLES PENDANT LA SAISIE
+  async suggestStyles(query?: string) {
+    const raw = (query ?? '').trim();
+    const key = this.styleKey(raw);
+    const known = await this.prisma.style.findMany({ orderBy: { name: 'asc' }, select: { name: true, key: true } });
+
+    if (!key) {
+      return { error: false, suggestions: [], exactMatch: false, canCreate: false };
+    }
+
+    const tolerance = this.typoTolerance(key);
+    const suggestions = known
+      .filter(
+        (s) =>
+          s.key.includes(key) ||
+          (tolerance > 0 && this.levenshtein(key, s.key.slice(0, key.length)) <= tolerance) ||
+          (tolerance > 0 && this.levenshtein(key, s.key) <= tolerance),
+      )
+      .sort((a, b) => Number(b.key.startsWith(key)) - Number(a.key.startsWith(key)) || a.name.localeCompare(b.name))
+      .slice(0, 10)
+      .map((s) => s.name);
+
+    const closest = this.findClosestStyle(key, known);
+    return {
+      error: false,
+      suggestions,
+      exactMatch: closest?.key === key,
+      // Un style quasi identique à un existant sera fusionné avec lui à l'enregistrement
+      canCreate: !closest,
+      ...(closest && closest.key !== key ? { didYouMean: closest.name } : {}),
+    };
+  }
+
+  private async resolveOwnerScope(userId: string, tatoueurId?: string) {
+    const requestedUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        role: true,
+        linkedTatoueurs: {
+          select: {
+            id: true,
+            salonName: true,
+          },
+        },
+      },
+    });
+
+    const linkedTatoueurUserIds = requestedUser?.role === 'user_salon'
+      ? (requestedUser.linkedTatoueurs ?? []).map((tatoueurUser) => tatoueurUser.id)
+      : [];
+
+    const linkedTatoueurNameByUserId = new Map(
+      requestedUser?.role === 'user_salon'
+        ? (requestedUser.linkedTatoueurs ?? []).map((tatoueurUser) => [
+            tatoueurUser.id,
+            tatoueurUser.salonName?.trim() || 'Tatoueur',
+          ])
+        : [],
+    );
+
+    const normalizedTatoueurId = tatoueurId?.trim() || '';
+    const linkedTatoueurFilterUserId = normalizedTatoueurId
+      ? linkedTatoueurUserIds.find(
+          (linkedUserId) =>
+            linkedUserId === normalizedTatoueurId ||
+            `linked_${linkedUserId}` === normalizedTatoueurId ||
+            `linked_user_${linkedUserId}` === normalizedTatoueurId,
+        )
+      : undefined;
+
+    const portfolioOwnerIds = Array.from(new Set([userId, ...linkedTatoueurUserIds]));
+
+    const ownerWhere: Record<string, any> = {
+      userId: linkedTatoueurFilterUserId
+        ? linkedTatoueurFilterUserId
+        : portfolioOwnerIds.length === 1
+          ? portfolioOwnerIds[0]
+          : { in: portfolioOwnerIds },
+      ...(normalizedTatoueurId && !linkedTatoueurFilterUserId
+        ? { tatoueurId: normalizedTatoueurId }
+        : {}),
+    };
+
+    return { requestedUser, linkedTatoueurNameByUserId, ownerWhere };
+  }
+
+  private normalizeHashtags(input: unknown): string[] {
+    return Array.isArray(input)
+      ? [
+          ...new Set(
+            input
+              .filter((item): item is string => typeof item === 'string')
+              .map((item) => item.trim().replace(/^#+/, '').toLowerCase())
+              .filter(Boolean),
+          ),
+        ]
+      : [];
+  }
+
+  private normalizeIds(input: unknown): string[] {
+    return Array.isArray(input)
+      ? [...new Set(input.filter((i): i is string => typeof i === 'string' && i.trim() !== ''))]
+      : [];
+  }
+
+  private async validateCategoryIds(ids: string[]) {
+    if (ids.length === 0) return null;
+    const count = await this.prisma.tattooCategory.count({
+      where: { id: { in: ids }, isActive: true },
+    });
+    return count === ids.length
+      ? null
+      : { error: true, message: 'Une ou plusieurs catégories sont invalides.' };
+  }
+
+  //! LISTER LES CATEGORIES DE TATOUAGE
+  async getCategories() {
+    return this.prisma.tattooCategory.findMany({
+      where: { isActive: true },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    });
   }
 
   private async validateTatoueurForSalon(tatoueurId: string, userId: string) {
@@ -45,8 +281,10 @@ export class PortfolioService {
    //! AJOUTER UNE PHOTO AU PORTFOLIO
   async addPhotoToPortfolio({portfolioBody, userId}: {portfolioBody: AddPhotoDto, userId: string}) {
     try {
-      const { title, imageUrl, description, tatoueurId } = portfolioBody;
-      const normalizedStyles = this.normalizeStyles((portfolioBody as { style?: unknown }).style);
+      const { title, imageUrl, description, tatoueurId, pieceSize } = portfolioBody;
+      const normalizedStyles = await this.resolveStyles((portfolioBody as { style?: unknown }).style);
+      const normalizedHashtags = this.normalizeHashtags(portfolioBody.hashtags);
+      const categoryIds = this.normalizeIds(portfolioBody.categoryIds);
 
       // Vérifier si l'utilisateur existe
       const user = await this.prisma.user.findUnique({
@@ -67,6 +305,11 @@ export class PortfolioService {
         }
       }
 
+      const categoryValidation = await this.validateCategoryIds(categoryIds);
+      if (categoryValidation) {
+        return categoryValidation;
+      }
+
       // Ajouter la photo au portfolio
       const newPhoto = await this.prisma.portfolio.create({
         data: {
@@ -76,7 +319,11 @@ export class PortfolioService {
           description,
           tatoueurId,
           style: normalizedStyles,
+          pieceSize,
+          hashtags: normalizedHashtags,
+          categories: { connect: categoryIds.map((id) => ({ id })) },
         },
+        include: { categories: true },
       });
 
       // Invalider le cache après ajout
@@ -96,9 +343,97 @@ export class PortfolioService {
     }
   }
 
-  //! VOIR TOUTES LES PHOTOS D'UN PORTFOLIO
-  async getPortfolioPhotos(userId: string, tatoueurId?: string, page: number = 1, limit?: number) {
+  //! AJOUTER PLUSIEURS PHOTOS AU PORTFOLIO (PAR LOT)
+  async addPhotosBatchToPortfolio({ batchBody, userId }: { batchBody: AddPhotosBatchDto; userId: string }) {
     try {
+      const { pieceSize, tatoueurId, photos } = batchBody;
+      const styles = await this.resolveStyles(batchBody.style);
+      const hashtags = this.normalizeHashtags(batchBody.hashtags);
+      const categoryIds = this.normalizeIds(batchBody.categoryIds);
+
+      const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+      if (!user) {
+        return { error: true, message: 'Utilisateur non trouvé' };
+      }
+
+      if (tatoueurId) {
+        const tatoueurValidation = await this.validateTatoueurForSalon(tatoueurId, userId);
+        if (tatoueurValidation) {
+          return tatoueurValidation;
+        }
+      }
+
+      const categoryValidation = await this.validateCategoryIds(categoryIds);
+      if (categoryValidation) {
+        return categoryValidation;
+      }
+
+      const createdPhotos = await this.prisma.$transaction(
+        photos.map((photo, index) =>
+          this.prisma.portfolio.create({
+            data: {
+              userId,
+              title: photo.title?.trim() || `Photo ${index + 1}`,
+              imageUrl: photo.imageUrl,
+              description: photo.description,
+              tatoueurId,
+              style: styles,
+              pieceSize,
+              hashtags,
+              categories: { connect: categoryIds.map((id) => ({ id })) },
+            },
+            include: { categories: true },
+          }),
+        ),
+      );
+
+      await this.cacheService.delPattern(`portfolio:photos:${userId}:*`);
+
+      return {
+        error: false,
+        message: `${createdPhotos.length} photo(s) ajoutée(s) avec succès au portfolio`,
+        photos: createdPhotos,
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      return { error: true, message: errorMessage };
+    }
+  }
+
+  private parseCsv(value?: string, transform: (v: string) => string = (v) => v): string[] {
+    return [...new Set((value ?? '').split(',').map((v) => transform(v.trim())).filter(Boolean))];
+  }
+
+  // Construit les filtres communs (style, hashtag, catégorie, taille) ; les valeurs multiples s'additionnent en "OU"
+  private buildPhotoFilters(filters: PortfolioFilters = {}) {
+    const styles = this.parseCsv(filters.style, (v) => v.toUpperCase());
+    const hashtags = this.parseCsv(filters.hashtag, (v) => v.replace(/^#+/, '').toLowerCase());
+    const categories = this.parseCsv(filters.category, (v) => v.toLowerCase());
+    const pieceSizes = this.parseCsv(filters.pieceSize, (v) => v.toUpperCase()).filter((v) =>
+      (Object.values(PieceSize) as string[]).includes(v),
+    ) as PieceSize[];
+
+    const where: Record<string, any> = {
+      ...(styles.length ? { style: { hasSome: styles } } : {}),
+      ...(hashtags.length ? { hashtags: { hasSome: hashtags } } : {}),
+      ...(categories.length ? { categories: { some: { slug: { in: categories } } } } : {}),
+      ...(pieceSizes.length ? { pieceSize: { in: pieceSizes } } : {}),
+    };
+    const cacheKey = `s:${styles.join('|') || 'all'}:h:${hashtags.join('|') || 'all'}:c:${categories.join('|') || 'all'}:z:${pieceSizes.join('|') || 'all'}`;
+
+    return { where, cacheKey };
+  }
+
+  //! VOIR TOUTES LES PHOTOS D'UN PORTFOLIO
+  async getPortfolioPhotos(
+    userId: string,
+    tatoueurId?: string,
+    page: number = 1,
+    limit?: number,
+    filters: PortfolioFilters = {},
+  ) {
+    try {
+      const { where: filterWhere, cacheKey: filterKey } = this.buildPhotoFilters(filters);
       const normalizedLimit =
         typeof limit === 'number' && !Number.isNaN(limit) && limit > 0
           ? Math.floor(limit)
@@ -109,7 +444,7 @@ export class PortfolioService {
           : page
         : 1;
       const skip = normalizedLimit ? (currentPage - 1) * normalizedLimit : 0;
-      const cacheKey = `portfolio:photos:${userId}:${tatoueurId ?? 'all'}:page:${currentPage}:limit:${normalizedLimit ?? 'all'}`;
+      const cacheKey = `portfolio:photos:${userId}:${tatoueurId ?? 'all'}:page:${currentPage}:limit:${normalizedLimit ?? 'all'}:${filterKey}`;
 
       // 1. Vérifier dans Redis
       const cachedPhotos = await this.cacheService.get<{
@@ -134,53 +469,14 @@ export class PortfolioService {
         return cachedPhotos;
       }
 
-      const requestedUser = await this.prisma.user.findUnique({
-        where: { id: userId },
-        select: {
-          role: true,
-          linkedTatoueurs: {
-            select: {
-              id: true,
-              salonName: true,
-            },
-          },
-        },
-      });
-
-      const linkedTatoueurUserIds = requestedUser?.role === 'user_salon'
-        ? (requestedUser.linkedTatoueurs ?? []).map((tatoueurUser) => tatoueurUser.id)
-        : [];
-
-      const linkedTatoueurNameByUserId = new Map(
-        requestedUser?.role === 'user_salon'
-          ? (requestedUser.linkedTatoueurs ?? []).map((tatoueurUser) => [
-              tatoueurUser.id,
-              tatoueurUser.salonName?.trim() || 'Tatoueur',
-            ])
-          : [],
+      const { requestedUser, linkedTatoueurNameByUserId, ownerWhere } = await this.resolveOwnerScope(
+        userId,
+        tatoueurId,
       );
 
-      const normalizedTatoueurId = tatoueurId?.trim() || '';
-      const linkedTatoueurFilterUserId = normalizedTatoueurId
-        ? linkedTatoueurUserIds.find(
-            (linkedUserId) =>
-              linkedUserId === normalizedTatoueurId ||
-              `linked_${linkedUserId}` === normalizedTatoueurId ||
-              `linked_user_${linkedUserId}` === normalizedTatoueurId,
-          )
-        : undefined;
-
-      const portfolioOwnerIds = Array.from(new Set([userId, ...linkedTatoueurUserIds]));
-
       const whereClause: Record<string, any> = {
-        userId: linkedTatoueurFilterUserId
-          ? linkedTatoueurFilterUserId
-          : portfolioOwnerIds.length === 1
-            ? portfolioOwnerIds[0]
-            : { in: portfolioOwnerIds },
-        ...(normalizedTatoueurId && !linkedTatoueurFilterUserId
-          ? { tatoueurId: normalizedTatoueurId }
-          : {}),
+        ...ownerWhere,
+        ...filterWhere,
       };
 
       const total = await this.prisma.portfolio.count({
@@ -190,6 +486,7 @@ export class PortfolioService {
       // 2. Sinon, aller chercher en DB
       const photosFromDb = await this.prisma.portfolio.findMany({
         where: whereClause,
+        include: { categories: { select: { id: true, slug: true, name: true } } },
         orderBy: { createdAt: 'desc' }, // Optionnel : trier par date de création
         ...(normalizedLimit
           ? {
@@ -249,22 +546,30 @@ export class PortfolioService {
     limit = 12,
     city,
     style,
+    hashtag,
+    category,
+    pieceSize,
   }: {
     page?: number;
     limit?: number;
     city?: string;
     style?: string;
+    hashtag?: string;
+    category?: string;
+    pieceSize?: string;
   }) {
     try {
       const pageSize = Math.min(50, Math.max(1, Number(limit) || 12));
       const currentPage = Number.isNaN(page) || page < 1 ? 1 : page;
       const skip = (currentPage - 1) * pageSize;
       const normalizedCity = city?.trim() || '';
-      const styleFilters = (style ?? '')
-        .split(',')
-        .map((item) => item.trim().toUpperCase())
-        .filter(Boolean);
-      const cacheKey = `portfolio:inspirations:page:${currentPage}:limit:${pageSize}:city:${normalizedCity || 'all'}:style:${styleFilters.length ? styleFilters.join('|') : 'all'}`;
+      const { where: filterWhere, cacheKey: filterKey } = this.buildPhotoFilters({
+        style,
+        hashtag,
+        category,
+        pieceSize,
+      });
+      const cacheKey = `portfolio:inspirations:page:${currentPage}:limit:${pageSize}:city:${normalizedCity || 'all'}:${filterKey}`;
 
       const cachedPhotos = await this.cacheService.get<{
         photos: any[];
@@ -294,13 +599,7 @@ export class PortfolioService {
               }
             : {}),
         },
-        ...(styleFilters.length > 0
-          ? {
-              style: {
-                hasSome: styleFilters,
-              },
-            }
-          : {}),
+        ...filterWhere,
       };
 
       const total = await this.prisma.portfolio.count({
@@ -318,6 +617,9 @@ export class PortfolioService {
           description: true,
           imageUrl: true,
           style: true,
+          pieceSize: true,
+          categories: { select: { id: true, slug: true, name: true } },
+          hashtags: true,
           createdAt: true,
           updatedAt: true,
           user: {
@@ -393,17 +695,33 @@ export class PortfolioService {
         }
       }
 
-      const dataToUpdate: Partial<AddPhotoDto> = {
-        ...updateData,
+      const { categoryIds: rawCategoryIds, ...rest } = updateData;
+      let categoriesUpdate: { categories: { set: { id: string }[] } } | object = {};
+      if (rawCategoryIds !== undefined) {
+        const categoryIds = this.normalizeIds(rawCategoryIds);
+        const categoryValidation = await this.validateCategoryIds(categoryIds);
+        if (categoryValidation) {
+          return categoryValidation;
+        }
+        categoriesUpdate = { categories: { set: categoryIds.map((cid) => ({ id: cid })) } };
+      }
+
+      const dataToUpdate = {
+        ...rest,
         ...(updateData.style !== undefined
-          ? { style: this.normalizeStyles((updateData as { style?: unknown }).style) }
+          ? { style: await this.resolveStyles((updateData as { style?: unknown }).style) }
           : {}),
+        ...(updateData.hashtags !== undefined
+          ? { hashtags: this.normalizeHashtags(updateData.hashtags) }
+          : {}),
+        ...categoriesUpdate,
       };
 
       // Mettre à jour la photo
       const updatedPhoto = await this.prisma.portfolio.update({
         where: { id },
         data: dataToUpdate,
+        include: { categories: true },
       });
 
       // Invalider le cache après mise à jour

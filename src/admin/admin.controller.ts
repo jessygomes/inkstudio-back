@@ -1,4 +1,5 @@
-import { Controller, Get, Query, UseGuards, Request, Param, Delete, Post, Body } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards, Request, Param, Delete, Post, Body, Patch } from '@nestjs/common';
+import { CreateTattooCategoryDto, UpdateTattooCategoryDto } from './dto/tattoo-category.dto';
 import { AdminService } from './admin.service';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { RequestWithUser } from 'src/auth/jwt.strategy';
@@ -114,6 +115,30 @@ export class AdminController {
   }
 
   //! 2️⃣ ROUTES DÉTAIL (par id)
+  //! LISTER TOUTES LES CATÉGORIES DE TATOUAGE (y compris inactives)
+  @Get('tattoo-categories')
+  async getTattooCategories() {
+    return await this.adminService.getTattooCategories();
+  }
+
+  //! CRÉER UNE CATÉGORIE DE TATOUAGE
+  @Post('tattoo-categories')
+  async createTattooCategory(@Body() body: CreateTattooCategoryDto) {
+    return await this.adminService.createTattooCategory(body);
+  }
+
+  //! MODIFIER UNE CATÉGORIE DE TATOUAGE
+  @Patch('tattoo-categories/:id')
+  async updateTattooCategory(@Param('id') id: string, @Body() body: UpdateTattooCategoryDto) {
+    return await this.adminService.updateTattooCategory(id, body);
+  }
+
+  //! SUPPRIMER UNE CATÉGORIE DE TATOUAGE
+  @Delete('tattoo-categories/:id')
+  async deleteTattooCategory(@Param('id') id: string) {
+    return await this.adminService.deleteTattooCategory(id);
+  }
+
   //! RÉCUPÉRER UN UTILISATEUR PAR ID
   @Get('users/:id')
   async getUserById(

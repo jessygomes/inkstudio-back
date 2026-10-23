@@ -12,6 +12,91 @@ export class AdminService {
     private readonly mailService: MailService,
   ) {}
 
+  private slugify(value: string): string {
+    return value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+
+  private categoryError(error: unknown) {
+    if (typeof error === 'object' && error && (error as { code?: string }).code === 'P2002') {
+      return { error: true, message: 'Une catégorie avec ce slug existe déjà.' };
+    }
+    if (typeof error === 'object' && error && (error as { code?: string }).code === 'P2025') {
+      return { error: true, message: 'Catégorie introuvable.' };
+    }
+    return { error: true, message: error instanceof Error ? error.message : 'Erreur inconnue' };
+  }
+
+  //! LISTER LES CATÉGORIES DE TATOUAGE (admin)
+  async getTattooCategories() {
+    const categories = await this.prisma.tattooCategory.findMany({
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      include: { _count: { select: { portfolios: true } } },
+    });
+    return { error: false, categories };
+  }
+
+  //! CRÉER UNE CATÉGORIE DE TATOUAGE (admin)
+  async createTattooCategory(data: { name: string; slug?: string; sortOrder?: number; isActive?: boolean }) {
+    const name = data.name.trim();
+    const slug = this.slugify(data.slug?.trim() || name);
+    if (!name || !slug) {
+      return { error: true, message: 'Nom de catégorie invalide.' };
+    }
+    try {
+      const category = await this.prisma.tattooCategory.create({
+        data: { name, slug, sortOrder: data.sortOrder ?? 0, isActive: data.isActive ?? true },
+      });
+      await this.cacheService.delPattern('portfolio:*');
+      return { error: false, message: 'Catégorie créée', category };
+    } catch (error) {
+      return this.categoryError(error);
+    }
+  }
+
+  //! MODIFIER UNE CATÉGORIE DE TATOUAGE (admin)
+  async updateTattooCategory(
+    id: string,
+    data: { name?: string; slug?: string; sortOrder?: number; isActive?: boolean },
+  ) {
+    const name = data.name?.trim();
+    const slug = data.slug !== undefined ? this.slugify(data.slug) : undefined;
+    if ((data.name !== undefined && !name) || (data.slug !== undefined && !slug)) {
+      return { error: true, message: 'Nom ou slug invalide.' };
+    }
+    try {
+      const category = await this.prisma.tattooCategory.update({
+        where: { id },
+        data: {
+          ...(name !== undefined ? { name } : {}),
+          ...(slug !== undefined ? { slug } : {}),
+          ...(data.sortOrder !== undefined ? { sortOrder: data.sortOrder } : {}),
+          ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
+        },
+      });
+      await this.cacheService.delPattern('portfolio:*');
+      return { error: false, message: 'Catégorie mise à jour', category };
+    } catch (error) {
+      return this.categoryError(error);
+    }
+  }
+
+  //! SUPPRIMER UNE CATÉGORIE DE TATOUAGE (admin) - la retire des photos associées
+  async deleteTattooCategory(id: string) {
+    try {
+      await this.prisma.tattooCategory.delete({ where: { id } });
+      await this.cacheService.delPattern('portfolio:*');
+      return { error: false, message: 'Catégorie supprimée' };
+    } catch (error) {
+      return this.categoryError(error);
+    }
+  }
+
   //! ENVOYER UN EMAIL À UN CLIENT (admin)
   async sendEmailToClient({
     clientId,
