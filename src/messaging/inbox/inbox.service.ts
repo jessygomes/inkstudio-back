@@ -4,6 +4,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { MessageNotificationService } from '../notifications/message-notification.service';
 import { MessagesGateway } from '../websocket/messages.gateway';
 import { InstagramService } from '../instagram/instagram.service';
+import { assertProfessionalCanCreateClient, assertProfessionalCanMessage } from '../plan-access';
 import {
   AssignInboxThreadDto, CreateInboxClientDto, InboxMemberPermissionDto, InboxReplyDto,
   ListInboxThreadsDto, SaveInboxReplyDto,
@@ -321,6 +322,7 @@ export class InboxService {
 
   async createAndLinkClient(userId: string, threadId: string, dto: CreateInboxClientDto) {
     const thread = await this.assertAccess(userId, threadId, 'reply');
+    await assertProfessionalCanCreateClient(this.prisma, thread.ownerUserId);
     const email = dto.email.trim().toLowerCase();
     // L'email n'est utilisé que pour réutiliser une fiche existante au sein
     // du même espace CRM. Aucune conversation externe n'est fusionnée.
@@ -445,6 +447,7 @@ export class InboxService {
    */
   async sendReply(userId: string, threadId: string, dto: InboxReplyDto) {
     const thread = await this.assertAccess(userId, threadId, 'reply');
+    await assertProfessionalCanMessage(this.prisma, thread.ownerUserId);
     if (thread.channel === InboxChannel.INSTAGRAM) {
       if (!this.instagram) throw new BadRequestException('Connecteur Instagram indisponible');
       return this.instagram.sendReply(userId, thread, dto);

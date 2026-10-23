@@ -13,6 +13,7 @@ import {
 import { PaginatedMessagesDto } from './dto/paginated-messages.dto';
 import { MessageNotificationService } from '../notifications/message-notification.service';
 import { MessageType } from '@prisma/client';
+import { assertProfessionalCanMessage } from '../plan-access';
 
 @Injectable()
 export class MessagesService {
@@ -46,6 +47,9 @@ export class MessagesService {
         "Vous n'avez pas accès à cette conversation",
       );
     }
+
+    // Plan FREE : conversation en lecture seule, dans les deux sens
+    await assertProfessionalCanMessage(this.prisma, conversation.salonId);
 
     // Créer le message avec les pièces jointes
     const message = await this.prisma.message.create({

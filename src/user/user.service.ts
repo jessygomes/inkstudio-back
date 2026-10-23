@@ -1526,6 +1526,7 @@ export class UserService {
         },
         select: {
           role: true,
+          saasPlan: true,
           projectAppointmentDurationMinutes: true,
           projectAppointmentIsFree: true,
           projectAppointmentPrice: true,
@@ -1542,6 +1543,7 @@ export class UserService {
 
       const typedExistingUser = existingUser as {
         role?: string | null;
+        saasPlan?: SaasPlan | null;
         projectAppointmentDurationMinutes?: number | null;
         projectAppointmentIsFree?: boolean | null;
         projectAppointmentPrice?: number | null;
@@ -1599,9 +1601,8 @@ export class UserService {
         },
         create: {
           userId,
-          ...(typedExistingUser.saasPlanDetails?.currentPlan
-            ? { currentPlan: typedExistingUser.saasPlanDetails.currentPlan }
-            : {}),
+          currentPlan:
+            typedExistingUser.saasPlanDetails?.currentPlan ?? typedExistingUser.saasPlan ?? SaasPlan.FREE,
           agendaMode: nextSettings.agendaMode,
         },
       });

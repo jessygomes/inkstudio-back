@@ -163,15 +163,24 @@ export class SaasService {
    */
   private async expirePlan(userId: string) {
     const freeConfig = this.getPlanConfiguration(SaasPlan.FREE);
-    
-    return await this.prisma.saasPlanDetails.update({
-      where: { userId },
-      data: {
-        planStatus: SaasPlanStatus.EXPIRED,
-        currentPlan: SaasPlan.FREE,
-        ...freeConfig,
-      },
-    });
+
+    // Les deux tables doivent rester synchronisées (User.saasPlan et saasPlanDetails.currentPlan)
+    const [, saasPlanDetails] = await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { saasPlan: SaasPlan.FREE, saasPlanUntil: null },
+      }),
+      this.prisma.saasPlanDetails.update({
+        where: { userId },
+        data: {
+          planStatus: SaasPlanStatus.EXPIRED,
+          currentPlan: SaasPlan.FREE,
+          ...freeConfig,
+        },
+      }),
+    ]);
+
+    return saasPlanDetails;
   }
 
   /**

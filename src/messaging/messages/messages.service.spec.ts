@@ -21,6 +21,14 @@ const createPrismaMock = () => ({
     findUnique: jest.fn(),
     update: jest.fn(),
   },
+  user: {
+    findUnique: jest.fn().mockResolvedValue({
+      role: 'user_salon',
+      saasPlan: 'PRO',
+      saasPlanUntil: null,
+      saasPlanDetails: null,
+    }),
+  },
   emailNotificationQueue: {
     deleteMany: jest.fn(),
   },
@@ -105,6 +113,20 @@ describe('MessagesService', () => {
   });
 
   describe('sendMessage', () => {
+    it.each(['salon-1', 'client-1'])('blocks %s when the professional is FREE', async (senderId) => {
+      prisma.conversation.findUnique.mockResolvedValue(buildConversation());
+      prisma.user.findUnique.mockResolvedValue({
+        role: 'user_salon',
+        saasPlan: 'FREE',
+        saasPlanUntil: null,
+        saasPlanDetails: null,
+      });
+
+      await expect(
+        service.sendMessage(senderId, { conversationId: 'conv-1', content: 'Hello' } as any),
+      ).rejects.toThrow('lecture seule');
+    });
+
     it('should send a new message with content', async () => {
       const dto = {
         conversationId: 'conv-1',

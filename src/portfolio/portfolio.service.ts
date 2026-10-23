@@ -4,6 +4,7 @@ import { AddPhotoDto } from './dto/add-photo.dto';
 import { AddPhotosBatchDto } from './dto/add-photos-batch.dto';
 import { CacheService } from 'src/redis/cache.service';
 import { PieceSize } from '@prisma/client';
+import { findClosestStyle, levenshtein, styleKey, typoTolerance } from './style.utils';
 
 export interface PortfolioFilters {
   style?: string;
@@ -32,54 +33,10 @@ export class PortfolioService {
       : [];
   }
 
-  private styleKey(value: string): string {
-    return value
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, '');
-  }
-
-  private levenshtein(a: string, b: string): number {
-    if (a === b) return 0;
-    let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
-    for (let i = 1; i <= a.length; i++) {
-      const curr = [i];
-      for (let j = 1; j <= b.length; j++) {
-        curr[j] = Math.min(
-          prev[j] + 1,
-          curr[j - 1] + 1,
-          prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
-        );
-      }
-      prev = curr;
-    }
-    return prev[b.length];
-  }
-
-  // Tolérance de faute de frappe selon la longueur (aucune pour les mots très courts)
-  private typoTolerance(key: string): number {
-    if (key.length <= 4) return 0;
-    return key.length <= 8 ? 1 : 2;
-  }
-
-  private findClosestStyle<T extends { key: string }>(key: string, styles: T[]): T | undefined {
-    const exact = styles.find((s) => s.key === key);
-    if (exact) return exact;
-    const tolerance = this.typoTolerance(key);
-    if (tolerance === 0) return undefined;
-    let best: T | undefined;
-    let bestDistance = tolerance + 1;
-    for (const style of styles) {
-      if (Math.abs(style.key.length - key.length) > tolerance) continue;
-      const distance = this.levenshtein(key, style.key);
-      if (distance < bestDistance) {
-        best = style;
-        bestDistance = distance;
-      }
-    }
-    return best;
-  }
+  private styleKey = styleKey;
+  private levenshtein = levenshtein;
+  private typoTolerance = typoTolerance;
+  private findClosestStyle = findClosestStyle;
 
   // Associe chaque style saisi au style existant (même orthographe approchante) ou le crée, sans doublon
   private async resolveStyles(styleInput: unknown): Promise<string[]> {
@@ -404,7 +361,8 @@ export class PortfolioService {
     return [...new Set((value ?? '').split(',').map((v) => transform(v.trim())).filter(Boolean))];
   }
 
-  // Construit les filtres communs (style, hashtag, catégorie, taille) ; les valeurs multiples s'additionnent en "OU"
+  // Construit les filtres communs (style, hashtag, catégorie, taille) ; les valeurs multiples d'un même filtre se combinent en "OU"
+  // (la photo est renvoyée si elle a au moins une des valeurs), les filtres différents se combinent en "ET"
   private buildPhotoFilters(filters: PortfolioFilters = {}) {
     const styles = this.parseCsv(filters.style, (v) => v.toUpperCase());
     const hashtags = this.parseCsv(filters.hashtag, (v) => v.replace(/^#+/, '').toLowerCase());
@@ -631,6 +589,23 @@ export class PortfolioService {
               postalCode: true,
               instagram: true,
               isInspirationSalon: true,
+              saasPlan: true,
+              role: true,
+              profileImage: true,
+              firstName: true,
+              lastName: true,
+              salon: {
+                select: {
+                  id: true,
+                  salonName: true,
+                  image: true,
+                  profileImage: true,
+                  city: true,
+                  postalCode: true,
+                  instagram: true,
+                  saasPlan: true,
+                },
+              },
             },
           },
           tatoueur: {

@@ -1,5 +1,6 @@
 import { Controller, Get, Query, UseGuards, Request, Param, Delete, Post, Body, Patch } from '@nestjs/common';
 import { CreateTattooCategoryDto, UpdateTattooCategoryDto } from './dto/tattoo-category.dto';
+import { StyleNameDto } from './dto/style.dto';
 import { AdminService } from './admin.service';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { RequestWithUser } from 'src/auth/jwt.strategy';
@@ -115,6 +116,29 @@ export class AdminController {
   }
 
   //! 2️⃣ ROUTES DÉTAIL (par id)
+  //! LISTER LES STYLES AVEC LEUR NOMBRE D'UTILISATIONS
+  @Get('styles')
+  async getStyles() {
+    return await this.adminService.getStyles();
+  }
+
+  //! CRÉER UN STYLE
+  @Post('styles')
+  async createStyle(@Body() body: StyleNameDto) {
+    return await this.adminService.createStyle(body.name);
+  }
+
+  //! RENOMMER UN STYLE (mis à jour sur toutes les photos qui l'utilisent)
+  @Patch('styles/:id')
+  async updateStyle(@Param('id') id: string, @Body() body: StyleNameDto) {
+    return await this.adminService.updateStyle(id, body.name);
+  }
+
+  //! SUPPRIMER UN STYLE (retiré de toutes les photos qui l'utilisent)
+  @Delete('styles/:id')
+  async deleteStyle(@Param('id') id: string) {
+    return await this.adminService.deleteStyle(id);
+  }
   //! LISTER TOUTES LES CATÉGORIES DE TATOUAGE (y compris inactives)
   @Get('tattoo-categories')
   async getTattooCategories() {

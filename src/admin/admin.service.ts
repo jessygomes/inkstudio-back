@@ -3,6 +3,7 @@ import { PrismaService } from 'src/database/prisma.service';
 import { CacheService } from 'src/redis/cache.service';
 import { Role, SaasPlan, VerificationStatusDocument } from '@prisma/client';
 import { MailService } from 'src/email/mailer.service';
+import { findClosestStyle, styleKey } from 'src/portfolio/style.utils';
 
 @Injectable()
 export class AdminService {
@@ -30,6 +31,83 @@ export class AdminService {
       return { error: true, message: 'Catégorie introuvable.' };
     }
     return { error: true, message: error instanceof Error ? error.message : 'Erreur inconnue' };
+  }
+
+  //! LISTER LES STYLES AVEC LEUR NOMBRE D'UTILISATIONS (admin)
+  async getStyles() {
+    const [styles, usage] = await Promise.all([
+      this.prisma.style.findMany({ orderBy: { name: 'asc' } }),
+      this.prisma.$queryRaw<{ name: string; count: bigint }[]>`
+        SELECT s AS name, count(*) AS count FROM "Portfolio", unnest("style") AS s GROUP BY s`,
+    ]);
+    const countByName = new Map(usage.map((u) => [u.name, Number(u.count)]));
+    return {
+      error: false,
+      styles: styles.map((s) => ({ ...s, photoCount: countByName.get(s.name) ?? 0 })),
+    };
+  }
+
+  //! CRÉER UN STYLE (admin) - refusé s'il existe déjà ou s'il est quasi identique à un existant
+  async createStyle(rawName: string) {
+    const name = rawName.trim().toUpperCase();
+    const key = styleKey(name);
+    if (!key) {
+      return { error: true, message: 'Nom de style invalide.' };
+    }
+    const known = await this.prisma.style.findMany({ select: { name: true, key: true } });
+    const closest = findClosestStyle(key, known);
+    if (closest) {
+      return { error: true, message: `Ce style existe déjà ou est trop proche de « ${closest.name} ».` };
+    }
+    const style = await this.prisma.style.create({ data: { name, key } });
+    await this.cacheService.delPattern('portfolio:*');
+    return { error: false, message: 'Style créé', style };
+  }
+
+  //! RENOMMER UN STYLE (admin) - répercuté sur toutes les photos
+  async updateStyle(id: string, rawName: string) {
+    const existing = await this.prisma.style.findUnique({ where: { id } });
+    if (!existing) {
+      return { error: true, message: 'Style introuvable.' };
+    }
+    const name = rawName.trim().toUpperCase();
+    const key = styleKey(name);
+    if (!key) {
+      return { error: true, message: 'Nom de style invalide.' };
+    }
+    const others = await this.prisma.style.findMany({
+      where: { id: { not: id } },
+      select: { name: true, key: true },
+    });
+    const closest = findClosestStyle(key, others);
+    if (closest) {
+      return { error: true, message: `Ce nom existe déjà ou est trop proche de « ${closest.name} ».` };
+    }
+
+    const [style] = await this.prisma.$transaction([
+      this.prisma.style.update({ where: { id }, data: { name, key } }),
+      this.prisma.$executeRaw`
+        UPDATE "Portfolio" SET "style" = array_replace("style", ${existing.name}, ${name})
+        WHERE ${existing.name} = ANY("style")`,
+    ]);
+    await this.cacheService.delPattern('portfolio:*');
+    return { error: false, message: 'Style mis à jour', style };
+  }
+
+  //! SUPPRIMER UN STYLE (admin) - retiré de toutes les photos
+  async deleteStyle(id: string) {
+    const existing = await this.prisma.style.findUnique({ where: { id } });
+    if (!existing) {
+      return { error: true, message: 'Style introuvable.' };
+    }
+    await this.prisma.$transaction([
+      this.prisma.$executeRaw`
+        UPDATE "Portfolio" SET "style" = array_remove("style", ${existing.name})
+        WHERE ${existing.name} = ANY("style")`,
+      this.prisma.style.delete({ where: { id } }),
+    ]);
+    await this.cacheService.delPattern('portfolio:*');
+    return { error: false, message: 'Style supprimé' };
   }
 
   //! LISTER LES CATÉGORIES DE TATOUAGE (admin)
