@@ -1,3 +1,4 @@
+import { renderInkeraEmail, escapeEmailHtml } from './email-layout';
 import { Injectable, Logger } from '@nestjs/common';
 import Mailgun from 'mailgun.js';
 import FormData from 'form-data';
@@ -157,15 +158,13 @@ export class MailgunService {
         from: `INKERA <postmaster@${this.config.domain}>`,
         to: testEmail,
         subject: "Test Production - INKERA STUDIO",
-        html: `
-          <h2>🎉 Test de Production Réussi !</h2>
+        html: renderInkeraEmail(`<div class="content"><h2>🎉 Test de Production Réussi !</h2>
           <p>Félicitations ! Votre configuration Mailgun fonctionne parfaitement en production.</p>
-          <p><strong>Domaine :</strong> ${this.config.domain}</p>
-          <p><strong>Base URL :</strong> ${this.config.baseUrl}</p>
+          <p><strong>Domaine :</strong> ${escapeEmailHtml(this.config.domain)}</p>
+          <p><strong>Base URL :</strong> ${escapeEmailHtml(this.config.baseUrl || '')}</p>
           <p>Vous pouvez maintenant envoyer des emails depuis votre application INKERA STUDIO !</p>
           <br>
-          <p><em>Envoyé via Mailgun API</em></p>
-        `
+          <p><em>Envoyé via Mailgun API</em></p></div>`, "Test de configuration - Inkera Studio")
       };
 
       const result = await this.sendEmail(testOptions);

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { renderInkeraEmail } from './email-layout';
 
 export interface EmailTemplateData {
   recipientName?: string;
@@ -201,296 +202,9 @@ export class EmailTemplateService {
   }
 
 
-  /**
-   * Template de base avec le design cohérent du site
-   */
-  private getBaseTemplate(content: string, title: string = 'Inkera Studio', salonName: string = 'Inkera Studio'): string {
-    
-    return `
-      <!DOCTYPE html>
-      <html lang="fr">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>${this.escapeHtml(title)}</title>
-
-        <style>
-          * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-          }
-          
-          body {
-            font-family: Arial, Helvetica, sans-serif;
-            background-color: #ffffff;
-            color: #171717;
-            line-height: 1.6;
-            margin: 0;
-            padding: 20px;
-          }
-          
-          .email-container {
-            max-width: 600px;
-            margin: 0 auto;
-            background: linear-gradient(135deg, #131313 0%, #1a1a1a 100%);
-            border-radius: 16px;
-            overflow: hidden;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
-          }
-          
-          .header {
-            background: linear-gradient(135deg, #131313 0%, #1a1a1a 100%);
-            padding: 30px 40px;
-            text-align: center;
-            position: relative;
-            font-family: Arial, Helvetica, sans-serif;
-          }
-          
-          .logo {
-            font-family: Arial, Helvetica, sans-serif;
-            font-size: 32px;
-            font-weight: 700;
-            color: #ffffff;
-            margin-bottom: 8px;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
-          }
-          
-          .tagline {
-            font-family: 'Didact Gothic', sans-serif;
-            font-size: 14px;
-            color: #ffffff;
-            opacity: 0.9;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-          }
-          
-          .content {
-            padding: 40px;
-            background-color: #ffffff;
-            color: #171717;
-          }
-          
-          .greeting {
-            font-family: Arial, Helvetica, sans-serif;
-            font-size: 24px;
-            font-weight: 600;
-            color: #2d1f1a;
-            margin-bottom: 20px;
-          }
-          
-          .message {
-            font-size: 16px;
-            margin-bottom: 30px;
-            color: #3e2c27;
-            font-family: Arial, Helvetica, sans-serif;
-          }
-          
-          .details-card {
-            background-color: #3e2c27;
-            background-image: linear-gradient(135deg, #3e2c27, #2d1f1a);
-            color: #fff;
-            font-family: Arial, Helvetica, sans-serif;
-            font-size: 16px;
-            padding: 25px;
-            border-radius: 15px;
-            margin: 25px 0;
-          }
-          
-          .details-title {
-            font-family: Arial, Helvetica, sans-serif;
-            font-size: 18px;
-            font-weight: 600;
-            margin-bottom: 15px;
-            color: #fff;
-          }
-          
-          .details-list {
-            list-style: none;
-            padding: 0;
-          }
-          
-          .details-list li {
-            padding: 8px 0;
-            border-bottom: 1px solid #ffffffbb;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-          }
-          
-          .details-list li:last-child {
-            border-bottom: none;
-          }
-          
-          .detail-label {
-            font-weight: 500;
-            color: #ffffffbb;
-          }
-          
-          .detail-value {
-            font-weight: 600;
-            color: #ffffff;
-          }
-          
-          .cta-button {
-            display: inline-block;
-            background-color: #c74700;
-            background-image: linear-gradient(90deg, #d85500, #c74700);
-            color: #ffffff;
-            text-decoration: none;
-            padding: 15px 30px;
-            border-radius: 25px;
-            font-family: Arial, Helvetica, sans-serif;
-            font-weight: 600;
-            font-size: 16px;
-            text-align: center;
-            margin: 20px 0;
-          }
-          
-          .warning-box {
-            background: linear-gradient(135deg, #131313 0%, #1a1a1a 100%);
-            color: #ffffff;
-            padding: 20px;
-            border-radius: 10px;
-            margin: 20px 0;
-            text-align: center;
-            font-family: Arial, Helvetica, sans-serif;
-          }
-          
-          .warning-box strong {
-            font-family: Arial, Helvetica, sans-serif;
-          }
-          
-          .footer {
-            background: linear-gradient(135deg, #131313, #1a1a1a);
-            padding: 30px 40px;
-            text-align: center;
-            color: #ffffff;
-            font-family: Arial, Helvetica, sans-serif;
-          }
-          
-          .footer-content {
-            font-size: 14px;
-            margin-bottom: 15px;
-            opacity: 0.8;
-          }
-          
-          .social-links {
-            margin: 20px 0;
-          }
-          
-          .social-link {
-            display: inline-block;
-            margin: 0 10px;
-            color: #ff9d00;
-            text-decoration: none;
-            font-weight: 500;
-            transition: color 0.3s ease;
-          }
-          
-          .social-link:hover {
-            color: #ff5500;
-          }
-          
-          .divider {
-            height: 2px;
-            background: linear-gradient(90deg, #ff9d00, #ff5500);
-            margin: 20px 0;
-            border-radius: 1px;
-          }
-          
-          .token-display {
-            background: linear-gradient(135deg, #ff9d00, #ff5500);
-            color: #ffffff;
-            padding: 20px;
-            border-radius: 15px;
-            text-align: center;
-            margin: 25px 0;
-            font-family: Arial, Helvetica, sans-serif;
-            font-size: 24px;
-            font-weight: 700;
-            letter-spacing: 3px;
-            box-shadow: 0 5px 15px #fff1e4;
-          }
-          
-          .appointment-summary {
-            background: linear-gradient(135deg, #131313 0%, #1a1a1a 100%);
-            border: 2px solid #ff5500;
-            padding: 25px;
-            border-radius: 15px;
-            margin: 25px 0;
-          }
-          
-          .price-highlight {
-            background: linear-gradient(90deg, #ff9d00, #ff5500);
-            color: #ffffff;
-            padding: 10px 20px;
-            border-radius: 20px;
-            font-weight: 700;
-            font-size: 18px;
-            display: inline-block;
-            box-shadow: 0 3px 10px #1a1a1a;
-          }
-          
-          @media (max-width: 600px) {
-            body { padding: 12px !important; }
-            .content { overflow-wrap: anywhere; }
-            .cta-button { box-sizing: border-box; min-height: 44px; }
-
-            .email-container {
-              margin: 0;
-            }
-            
-            .header, .content, .footer {
-              padding: 20px;
-            }
-            
-            .logo {
-              font-size: 24px;
-            }
-            
-            .greeting {
-              font-size: 20px;
-            }
-            
-            .cta-button {
-              width: 100%;
-              padding: 12px 20px;
-            }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="email-container">
-          <div class="header">
-            <div class="logo">${salonName}</div>
-            <div class="tagline">Votre salon de tatouage</div>
-          </div>
-          ${content}
-          <div class="footer">
-            <div class="footer-content">
-              <p><strong>${this.escapeHtml(salonName)}</strong></p>
-              <p style="margin-top:10px;font-size:12px;color:#bdb7b3;">Envoyé avec Inkera · Gestion de salons &amp; artistes</p>
-            </div>
-          </div>
-        </div>
-      </body>
-      </html>
-    `;
+  private getBaseTemplate(content: string, title = 'Inkera Studio', salonName = 'Inkera Studio'): string {
+    return renderInkeraEmail(content, title, salonName);
   }
-
-  // <div class="footer">
-  //           <div class="footer-content">
-  //             <p><strong>${salonName}</strong> - Votre partenaire créatif</p>
-  //             <div class="divider"></div>
-  //             <p>Besoin d'aide ? Contactez-nous à <a href="mailto:contact@inkerastudio.fr" style="color: #af7e70;">contact@inkerastudio.fr</a></p>
-  //           </div>
-  //           <div class="social-links">
-  //             <a href="#" class="social-link">Instagram</a> 
-  //             <a href="#" class="social-link">Facebook</a>
-  //             <a href="#" class="social-link">TikTok</a>
-  //           </div>
-  //         </div>
 
   /**
    *! Template pour confirmation de rendez-vous (client)
@@ -498,7 +212,7 @@ export class EmailTemplateService {
   generateAppointmentConfirmationEmail(data: EmailTemplateData): string {
     const content = `
       <div class="content">
-        <div class="greeting">Bonjour ${data.recipientName || 'cher client'} ! 🎨</div>
+        <div class="greeting">Bonjour ${data.recipientName || 'cher client'} ! </div>
         
         <div class="message">
           <p>Parfait ! Votre rendez-vous a été <strong>confirmé avec succès</strong>.</p>
@@ -506,46 +220,46 @@ export class EmailTemplateService {
         </div>
 
         ${data.appointmentDetails ? `
-          <div style="margin: 25px 0; padding: 0; background: transparent; color: #171717; font-family: Arial, Helvetica, sans-serif;">
-            <div style="font-family: Arial, Helvetica, sans-serif; font-size: 18px; font-weight: 600; margin-bottom: 15px; color: #171717;">📅 Détails de votre rendez-vous</div>
-            <ul style="list-style: none; padding: 0; margin: 0;">
+          <div class="details-card">
+            <div class="details-title"> Détails de votre rendez-vous</div>
+            <ul class="details-list">
               <li>
-                <span style="font-weight: 500; color: #171717;">Date : </span>
-                <span style="font-weight: 600; color: #171717;">${data.appointmentDetails.date}</span>
+                <span style="font-weight: 500; color: #3e2c27;">Date : </span>
+                <span style="font-weight: 600; color: #3e2c27;">${data.appointmentDetails.date}</span>
               </li>
               <li>
-                <span style="font-weight: 500; color: #171717;">Heure : </span>
-                <span style="font-weight: 600; color: #171717;">${data.appointmentDetails.time}</span>
+                <span style="font-weight: 500; color: #3e2c27;">Heure : </span>
+                <span style="font-weight: 600; color: #3e2c27;">${data.appointmentDetails.time}</span>
               </li>
               ${data.appointmentDetails.duration ? `
                 <li>
-                  <span style="font-weight: 500; color: #171717;">Durée : </span>
-                  <span style="font-weight: 600; color: #171717;">${data.appointmentDetails.duration}</span>
+                  <span style="font-weight: 500; color: #3e2c27;">Durée : </span>
+                  <span style="font-weight: 600; color: #3e2c27;">${data.appointmentDetails.duration}</span>
                 </li>
               ` : ''}
               <li>
-                <span style="font-weight: 500; color: #171717;">Prestation :</span>
-                <span style="font-weight: 600; color: #171717;">${data.appointmentDetails.service}</span>
+                <span style="font-weight: 500; color: #3e2c27;">Prestation :</span>
+                <span style="font-weight: 600; color: #3e2c27;">${data.appointmentDetails.service}</span>
               </li>
               ${data.appointmentDetails.tatoueur ? `
                 <li>
-                  <span style="font-weight: 500; color: #171717;">Artiste : </span>
-                  <span style="font-weight: 600; color: #171717;">${data.appointmentDetails.tatoueur}</span>
+                  <span style="font-weight: 500; color: #3e2c27;">Artiste : </span>
+                  <span style="font-weight: 600; color: #3e2c27;">${data.appointmentDetails.tatoueur}</span>
                 </li>
               ` : ''}
               ${data.appointmentDetails.price ? `
                 <li>
-                  <span style="font-weight: 500; color: #171717;">Prix : </span>
-                  <span style="font-weight: 600; color: #171717;">${data.appointmentDetails.price}€</span>
+                  <span style="font-weight: 500; color: #3e2c27;">Prix : </span>
+                  <span style="font-weight: 600; color: #3e2c27;">${data.appointmentDetails.price}€</span>
                 </li>
               ` : ''}
               ${data.appointmentDetails.visio && data.appointmentDetails.visioRoom ? `
                 <li>
-                  <span style="font-weight: 500; color: #171717;">Visioconférence :</span>
+                  <span style="font-weight: 500; color: #3e2c27;">Visioconférence :</span>
                   <span class="detail-value">
                     <a href="${this.sanitizeSiteUrl(data.appointmentDetails.visioRoom, '/dashboard')}" 
-                      style="background: #059669; color: white; padding: 8px 16px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; margin-top: 8px;">
-                      🎥 Rejoindre la visioconférence
+                      class="cta-button" style="padding: 8px 16px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; margin-top: 8px;">
+                       Rejoindre la visioconférence
                     </a>
                   </span>
                 </li>
@@ -555,19 +269,19 @@ export class EmailTemplateService {
         ` : ''}
 
         ${data.customMessage ? `
-          <div style="background: rgba(245, 158, 11, 0.1); border-left: 4px solid #f59e0b; padding: 20px; border-radius: 8px; margin: 24px 0;">
-            <p style="margin: 0 0 8px 0; color: #f59e0b; font-weight: 600;">💬 Message du salon :</p>
-            <p style="margin: 0; color: #1e1e1fff; font-style: italic;">"${data.customMessage}"</p>
+          <div style="background-color: #f5eee9; border-left: 4px solid #e5d8cf; padding: 20px; border-radius: 8px; margin: 24px 0;">
+            <p style="margin: 0 0 8px 0; color: #3e2c27; font-weight: 600;"> Message du salon :</p>
+            <p style="margin: 0; color: #3e2c27; font-style: italic;">"${data.customMessage}"</p>
           </div>
         ` : ''}
 
         <div class="warning-box">
-          <strong>⚠️ Important :</strong> Merci d'arriver 10 minutes avant votre rendez-vous et de vous présenter avec une pièce d'identité.
+          <strong> Important :</strong> Merci d'arriver 10 minutes avant votre rendez-vous et de vous présenter avec une pièce d'identité.
         </div>
 
         <div class="message">
           <p>Si vous avez des questions ou besoin de modifier votre rendez-vous, n'hésitez pas à nous contacter.</p>
-          <p><strong>À très bientôt chez ${data.salonName || 'Inkera Studio'} ! ✨</strong></p>
+          <p><strong>À très bientôt chez ${data.salonName || 'Inkera Studio'} ! </strong></p>
         </div>
       </div>
     `;
@@ -586,51 +300,51 @@ export class EmailTemplateService {
   generateNewAppointmentNotificationEmail(data: EmailTemplateData): string {
     const content = `
       <div class="content">
-        <div class="greeting">Nouveau rendez-vous ! 🎉</div>
+        <div class="greeting">Nouveau rendez-vous ! </div>
         
         <div class="message">
           <p>Un nouveau rendez-vous vient d'être confirmé dans votre salon <strong>${data.salonName || 'Inkera Studio'}</strong>.</p>
         </div>
 
         ${data.appointmentDetails ? `
-          <div style="margin: 25px 0; padding: 0; background: transparent; color: #171717; font-family: Arial, Helvetica, sans-serif;">
-            <div style="font-family: Arial, Helvetica, sans-serif; font-size: 18px; font-weight: 600; margin-bottom: 15px; color: #171717;">📋 Résumé du rendez-vous</div>
-            <ul style="list-style: none; padding: 0; margin: 0; font-family: Arial, Helvetica, sans-serif; color: #171717;">
+          <div class="details-card">
+            <div class="details-title"> Résumé du rendez-vous</div>
+            <ul style="list-style: none; padding: 0; margin: 0; font-family: 'Didact Gothic', Arial, Helvetica, sans-serif; color: #3e2c27;">
               <li>
-                <span style="font-weight: 500; color: #171717;">👤 Client :</span>
-                <span style="font-weight: 600; color: #171717;">${data.recipientName || 'Nouveau client'}</span>
+                <span style="font-weight: 500; color: #3e2c27;"> Client :</span>
+                <span style="font-weight: 600; color: #3e2c27;">${data.recipientName || 'Nouveau client'}</span>
               </li>
               <li>
-                <span style="font-weight: 500; color: #171717;">📅 Date :</span>
-                <span style="font-weight: 600; color: #171717;">${data.appointmentDetails.date}</span>
+                <span style="font-weight: 500; color: #3e2c27;"> Date :</span>
+                <span style="font-weight: 600; color: #3e2c27;">${data.appointmentDetails.date}</span>
               </li>
               <li>
-                <span style="font-weight: 500; color: #171717;">⏰ Heure :</span>
-                <span style="font-weight: 600; color: #171717;">${data.appointmentDetails.time}</span>
+                <span style="font-weight: 500; color: #3e2c27;">⏰ Heure :</span>
+                <span style="font-weight: 600; color: #3e2c27;">${data.appointmentDetails.time}</span>
               </li>
               <li>
-                <span style="font-weight: 500; color: #171717;">🎨 Prestation :</span>
-                <span style="font-weight: 600; color: #171717;">${data.appointmentDetails.service}</span>
+                <span style="font-weight: 500; color: #3e2c27;"> Prestation :</span>
+                <span style="font-weight: 600; color: #3e2c27;">${data.appointmentDetails.service}</span>
               </li>
               ${data.appointmentDetails.tatoueur ? `
                 <li>
-                  <span style="font-weight: 500; color: #171717;">👨‍🎨 Artiste :</span>
-                  <span style="font-weight: 600; color: #171717;">${data.appointmentDetails.tatoueur}</span>
+                  <span style="font-weight: 500; color: #3e2c27;"> Artiste :</span>
+                  <span style="font-weight: 600; color: #3e2c27;">${data.appointmentDetails.tatoueur}</span>
                 </li>
               ` : ''}
               ${data.appointmentDetails.price ? `
                 <li>
-                  <span style="font-weight: 500; color: #171717;">💰 Prix :</span>
-                  <span style="font-weight: 600; color: #171717;">${data.appointmentDetails.price}€</span>
+                  <span style="font-weight: 500; color: #3e2c27;"> Prix :</span>
+                  <span style="font-weight: 600; color: #3e2c27;">${data.appointmentDetails.price}€</span>
                 </li>
               ` : ''}
               ${data.appointmentDetails.visio && data.appointmentDetails.visioRoom ? `
                 <li>
-                  <span style="font-weight: 500; color: #171717;">🎥 Visioconférence :</span>
-                  <span style="font-weight: 600; color: #171717;">
+                  <span style="font-weight: 500; color: #3e2c27;"> Visioconférence :</span>
+                  <span style="font-weight: 600; color: #3e2c27;">
                     <a href="${this.sanitizeSiteUrl(data.appointmentDetails.visioRoom, '/dashboard')}" 
-                      style="background: #059669; color: white; padding: 8px 16px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; margin-top: 8px;">
-                      🎥 Rejoindre la visioconférence
+                      class="cta-button" style="padding: 8px 16px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; margin-top: 8px;">
+                       Rejoindre la visioconférence
                     </a>
                   </span>
                 </li>
@@ -640,12 +354,12 @@ export class EmailTemplateService {
         ` : ''}
 
         <a href="${this.buildFrontendUrl('/dashboard')}" class="cta-button">
-          📊 Voir dans le dashboard
+           Voir dans le dashboard
         </a>
 
         <div class="message">
           <p>Le client recevra automatiquement un email de confirmation.</p>
-          <p><strong>Bonne journée ! 🎨</strong></p>
+          <p><strong>Bonne journée ! </strong></p>
         </div>
       </div>
     `;
@@ -679,33 +393,34 @@ export class EmailTemplateService {
         ${data.verificationUrl ? `
           <div style="text-align: center;">
             <a href="${this.sanitizeSiteUrl(data.verificationUrl, '/verifier-email')}" class="cta-button">
-              ✅ Confirmer mon adresse email
+               Confirmer mon adresse email
             </a>
           </div>
         ` : ''}
         
         ${data.verificationToken ? `
           <div class="token-display">
-            Code de vérification : ${data.verificationToken}
+            <p style="font-size:13px;letter-spacing:0;font-weight:400;margin:0 0 10px;">Code de vérification</p>
+            ${data.verificationToken}
           </div>
         ` : ''}
         
         <div class="info-grid">
           <div class="info-item">
-            <div class="info-item-label">🔒 Expiration dans 10min | Lien unique</div>
+            <div class="info-item-label"> Expiration dans 10min | Lien unique</div>
           </div>
         </div>
         
-        <div style="background: rgba(249, 115, 22, 0.1); border: 1px solid rgba(249, 115, 22, 0.2); border-radius: 12px; padding: 16px; margin: 24px 0; text-align: center;">
-          <p style="font-size: 13px; color: rgba(249, 115, 22, 0.9); margin: 0;">
-            <strong>⚠️ Important :</strong> Ce lien expire dans 10 minutes pour votre sécurité.
+        <div style="background-color: #f5eee9; border: 1px solid #e5d8cf; border-radius: 12px; padding: 16px; margin: 24px 0; text-align: center;">
+          <p style="font-size: 13px; color: #3e2c27; margin: 0;">
+            <strong> Important :</strong> Ce lien expire dans 10 minutes pour votre sécurité.
           </p>
         </div>
 
         <div class="message">
           <p class="welcome-subtitle">Si vous n'avez pas créé de compte, vous pouvez ignorer cet email en toute sécurité.</p>
           <br/>
-          <p><strong>Merci de nous faire confiance ! ✨</strong></p>
+          <p><strong>Merci de nous faire confiance ! </strong></p>
         </div>
       </div>
     `;
@@ -758,8 +473,8 @@ export class EmailTemplateService {
           </a>
         </div>
 
-        <div style="background: rgba(249, 115, 22, 0.1); border: 1px solid rgba(249, 115, 22, 0.2); border-radius: 12px; padding: 16px; margin: 24px 0; text-align: center;">
-          <p style="font-size: 13px; color: rgba(249, 115, 22, 0.9); margin: 0;">
+        <div style="background-color: #f5eee9; border: 1px solid #e5d8cf; border-radius: 12px; padding: 16px; margin: 24px 0; text-align: center;">
+          <p style="font-size: 13px; color: #3e2c27; margin: 0;">
             <strong>À retenir :</strong> ${details.stripeManaged ? 'Vérifiez votre moyen de paiement pour éviter une interruption de votre abonnement.' : 'Souscrivez avant la date de fin pour continuer. Vos données sont conservées si votre compte repasse en Free.'}
           </p>
         </div>
@@ -767,7 +482,7 @@ export class EmailTemplateService {
         <div class="message">
           <p>Besoin d'aide ? Vous pouvez nous contacter à tout moment.</p>
           <br/>
-          <p><strong>Merci de votre confiance ! ✨</strong></p>
+          <p><strong>Merci de votre confiance ! </strong></p>
         </div>
       </div>
     `;
@@ -787,7 +502,7 @@ export class EmailTemplateService {
     
     const content = `
       <div class="content">
-        <div class="greeting">Réinitialisation de votre mot de passe 🔐</div>
+        <div class="greeting">Réinitialisation de votre mot de passe </div>
         
         <div class="message">
           <p>Vous avez demandé à réinitialiser votre mot de passe pour votre compte ${data.salonName || 'Inkera Studio'}.</p>
@@ -798,9 +513,9 @@ export class EmailTemplateService {
           Réinitialiser mon mot de passe →
         </a>
 
-<p style="font-size:12px;color:#666;overflow-wrap:anywhere;">Si le bouton ne fonctionne pas, copiez ce lien dans votre navigateur :<br><a href="${resetUrl}" style="color:#a83c00;word-break:break-all;">${resetUrl}</a></p>
+<p style="font-size:12px;color: #3e2c27;overflow-wrap:anywhere;">Si le bouton ne fonctionne pas, copiez ce lien dans votre navigateur :<br><a href="${resetUrl}" style="color: #3e2c27;word-break:break-all;">${resetUrl}</a></p>
         <div class="warning-box">
-          <strong>⏱️ Important :</strong> Ce lien est valide pendant 15 minutes seulement.
+          <strong>⏱ Important :</strong> Ce lien est valide pendant 15 minutes seulement.
         </div>
 
         <div class="message">
@@ -823,19 +538,19 @@ export class EmailTemplateService {
   generateFollowUpEmail(data: EmailTemplateData): string {
     const content = `
       <div class="content">
-        <div class="greeting">Comment va votre tatouage ? 🎨</div>
+        <div class="greeting">Comment va votre tatouage ? </div>
         
         <div class="message">
           <p>Bonjour ${data.recipientName || 'cher client'} !</p>
-          <p>Nous espérons que vous êtes ravi(e) de votre nouveau tatouage ! ✨</p>
+          <p>Nous espérons que vous êtes ravi(e) de votre nouveau tatouage ! </p>
         </div>
 
         ${data.followUpDetails ? `
           <div class="details-card">
-            <div class="details-title">📅 Votre dernier rendez-vous</div>
+            <div class="details-title"> Votre dernier rendez-vous</div>
             <ul class="details-list">
               <li>
-                <span class="detail-label">📅 Date :</span>
+                <span class="detail-label"> Date :</span>
                 <span class="detail-value">${data.followUpDetails.appointmentDate}</span>
               </li>
               <li>
@@ -848,12 +563,12 @@ export class EmailTemplateService {
 
         ${data.followUpDetails?.instructions ? `
           <div class="appointment-summary">
-            <div class="details-title">💡 Conseils de soin</div>
+            <div class="details-title"> Conseils de soin</div>
             <p style="color: #3e2c27; margin: 0;">${data.followUpDetails.instructions}</p>
           </div>
         ` : `
           <div class="appointment-summary">
-            <div class="details-title">💡 Conseils de soin</div>
+            <div class="details-title"> Conseils de soin</div>
             <ul style="color: #3e2c27; margin: 0; padding-left: 20px;">
               <li>Nettoyez délicatement avec un savon neutre</li>
               <li>Appliquez une crème cicatrisante recommandée</li>
@@ -865,7 +580,7 @@ export class EmailTemplateService {
 
         <div class="message">
           <p>Si vous avez des questions ou préoccupations concernant la cicatrisation, n'hésitez pas à nous contacter.</p>
-          <p><strong>Prenez soin de vous et de votre tatouage ! 🌟</strong></p>
+          <p><strong>Prenez soin de vous et de votre tatouage ! </strong></p>
         </div>
       </div>
     `;
@@ -883,7 +598,7 @@ export class EmailTemplateService {
   generateAppointmentModificationEmail(data: EmailTemplateData): string {
     const content = `
       <div class="content">
-        <div class="greeting">Rendez-vous modifié ! 📅</div>
+        <div class="greeting">Rendez-vous modifié ! </div>
         
         <div class="message">
           <p>Bonjour ${data.recipientName || 'cher client'} !</p>
@@ -893,10 +608,10 @@ export class EmailTemplateService {
 
         ${data.appointmentDetails ? `
           <div class="details-card">
-            <div class="details-title">📅 Nouveaux détails du rendez-vous</div>
+            <div class="details-title"> Nouveaux détails du rendez-vous</div>
             <ul class="details-list">
               <li>
-                <span class="detail-label">📅 Nouvelle date :</span>
+                <span class="detail-label"> Nouvelle date :</span>
                 <span class="detail-value">${data.appointmentDetails.date}</span>
               </li>
               <li>
@@ -904,22 +619,22 @@ export class EmailTemplateService {
                 <span class="detail-value">${data.appointmentDetails.time}</span>
               </li>
               <li>
-                <span class="detail-label">🎨 Prestation :</span>
+                <span class="detail-label"> Prestation :</span>
                 <span class="detail-value">${data.appointmentDetails.service}</span>
               </li>
               ${data.appointmentDetails.tatoueur ? `
                 <li>
-                  <span class="detail-label">👨‍🎨 Artiste :</span>
+                  <span class="detail-label"> Artiste :</span>
                   <span class="detail-value">${data.appointmentDetails.tatoueur}</span>
                 </li>
               ` : ''}
               ${data.appointmentDetails.visio && data.appointmentDetails.visioRoom ? `
                 <li>
-                  <span class="detail-label">🎥 Visioconférence :</span>
+                  <span class="detail-label"> Visioconférence :</span>
                   <span class="detail-value">
                     <a href="${this.sanitizeSiteUrl(data.appointmentDetails.visioRoom, '/dashboard')}" 
-                       style="background: #059669; color: white; padding: 8px 16px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; margin-top: 8px;">
-                      🎥 Rejoindre la visioconférence
+                       class="cta-button" style="padding: 8px 16px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block; margin-top: 8px;">
+                       Rejoindre la visioconférence
                     </a>
                   </span>
                 </li>
@@ -929,12 +644,12 @@ export class EmailTemplateService {
         ` : ''}
 
         <div class="warning-box">
-          <strong>📝 N'oubliez pas :</strong> Notez bien ces nouvelles informations dans votre agenda !
+          <strong> N'oubliez pas :</strong> Notez bien ces nouvelles informations dans votre agenda !
         </div>
 
         <div class="message">
           <p>Si vous avez des questions concernant cette modification, n'hésitez pas à nous contacter.</p>
-          <p><strong>À bientôt chez ${data.salonName || 'Inkera Studio'} ! ✨</strong></p>
+          <p><strong>À bientôt chez ${data.salonName || 'Inkera Studio'} ! </strong></p>
         </div>
       </div>
     `;
@@ -952,7 +667,7 @@ export class EmailTemplateService {
   generateAppointmentCancellationEmail(data: EmailTemplateData): string {
     const content = `
       <div class="content">
-        <div class="greeting">Rendez-vous annulé 😔</div>
+        <div class="greeting">Rendez-vous annulé </div>
         
         <div class="message">
           <p>Bonjour ${data.recipientName || 'cher client'} !</p>
@@ -961,10 +676,10 @@ export class EmailTemplateService {
 
         ${data.appointmentDetails ? `
           <div class="details-card">
-            <div class="details-title">📅 Rendez-vous annulé</div>
+            <div class="details-title"> Rendez-vous annulé</div>
             <ul class="details-list">
               <li>
-                <span class="detail-label">📅 Date :</span>
+                <span class="detail-label"> Date :</span>
                 <span class="detail-value">${data.appointmentDetails.date}</span>
               </li>
               <li>
@@ -972,7 +687,7 @@ export class EmailTemplateService {
                 <span class="detail-value">${data.appointmentDetails.time}</span>
               </li>
               <li>
-                <span class="detail-label">🎨 Prestation :</span>
+                <span class="detail-label"> Prestation :</span>
                 <span class="detail-value">${data.appointmentDetails.service}</span>
               </li>
             </ul>
@@ -980,9 +695,9 @@ export class EmailTemplateService {
         ` : ''}
 
         ${data.customMessage ? `
-          <div style="background: rgba(239, 68, 68, 0.1); border-left: 4px solid #ef4444; padding: 20px; border-radius: 8px; margin: 24px 0;">
-            <p style="margin: 0 0 8px 0; color: #ef4444; font-weight: 600;">💬 Message du salon :</p>
-            <p style="margin: 0; color: #1e1e1fff; font-style: italic;">"${data.customMessage}"</p>
+          <div style="background-color: #f5eee9; border-left: 4px solid #e5d8cf; padding: 20px; border-radius: 8px; margin: 24px 0;">
+            <p style="margin: 0 0 8px 0; color: #3e2c27; font-weight: 600;"> Message du salon :</p>
+            <p style="margin: 0; color: #3e2c27; font-style: italic;">"${data.customMessage}"</p>
           </div>
         ` : ''}
 
@@ -992,7 +707,7 @@ export class EmailTemplateService {
         </div>
 
         <div class="message">
-          <p><strong>À bientôt chez ${data.salonName || 'Inkera Studio'} ! 🎨</strong></p>
+          <p><strong>À bientôt chez ${data.salonName || 'Inkera Studio'} ! </strong></p>
         </div>
       </div>
     `;
@@ -1010,20 +725,20 @@ export class EmailTemplateService {
   generateAdminMessageEmail(data: EmailTemplateData & { subject: string }): string {
     const content = `
       <div class="content">
-        <div class="greeting">Bonjour ${data.recipientName || 'cher utilisateur'} 👋</div>
+        <div class="greeting">Bonjour ${data.recipientName || 'cher utilisateur'} </div>
 
         <div class="message">
           <p>Vous recevez ce message de la part de l'équipe <strong>Inkera Studio</strong>.</p>
         </div>
 
-<div style="background: transparent; border: 2px solid #e5e7eb; border-radius: 12px; padding: 25px; margin: 25px 0;">
-        <div style="font-family: Arial, Helvetica, sans-serif; font-size: 18px; font-weight: 600; margin-bottom: 15px; color: #171717;">${data.subject}</div>
-        <div style="margin-top: 12px; line-height: 1.8; white-space: pre-wrap; color: #171717; font-family: Arial, Helvetica, sans-serif; font-size: 16px;">${data.customMessage || ''}</div>
+<div style="background-color: #f5eee9; border: 2px solid #e5d8cf; border-radius: 12px; padding: 25px; margin: 25px 0;">
+        <div class="details-title">${data.subject}</div>
+        <div style="margin-top: 12px; line-height: 1.8; white-space: pre-wrap; color: #3e2c27; font-family: 'Didact Gothic', Arial, Helvetica, sans-serif; font-size: 16px;">${data.customMessage || ''}</div>
         </div>
 
         <div class="message" style="margin-top: 30px;">
           <p>Si vous avez des questions ou avez besoin d'assistance, n'hésitez pas à répondre à cet email.</p>
-          <p style="margin-top: 12px;"><strong>L'équipe Inkera Studio ✨</strong></p>
+          <p style="margin-top: 12px;"><strong>L'équipe Inkera Studio </strong></p>
         </div>
       </div>
     `;
@@ -1043,39 +758,39 @@ export class EmailTemplateService {
 
     const content = `
       <div class="content">
-        <div class="greeting">Nouveau message depuis votre profil public 👋</div>
+        <div class="greeting">Nouveau message depuis votre profil public </div>
 
         <div class="message">
           <p>Vous avez reçu une nouvelle demande de contact pour <strong>${data.salonName || 'votre profil'}</strong>.</p>
         </div>
 
         <div class="details-card">
-          <div class="details-title">📩 Détails du message</div>
+          <div class="details-title"> Détails du message</div>
           <ul class="details-list">
             <li>
-              <span class="detail-label">👤 Nom :</span>
+              <span class="detail-label"> Nom :</span>
               <span class="detail-value">${details?.senderFullName || 'Non renseigné'}</span>
             </li>
             <li>
-              <span class="detail-label">📧 Email :</span>
+              <span class="detail-label"> Email :</span>
               <span class="detail-value">${details?.senderEmail || 'Non renseigné'}</span>
             </li>
             <li>
-              <span class="detail-label">📍 Partie du corps :</span>
+              <span class="detail-label"> Partie du corps :</span>
               <span class="detail-value">${details?.bodyPart || 'Non renseigné'}</span>
             </li>
           </ul>
         </div>
 
-        <div style="background: transparent; border: 2px solid #e5e7eb; border-radius: 12px; padding: 25px; margin: 25px 0;">
-          <div style="font-family: Arial, Helvetica, sans-serif; font-size: 18px; font-weight: 600; margin-bottom: 15px; color: #171717;">📝 Description du projet</div>
-          <div style="margin-top: 12px; line-height: 1.8; white-space: pre-wrap; color: #171717; font-family: Arial, Helvetica, sans-serif; font-size: 16px;">${details?.projectDescription || ''}</div>
-          ${details?.sourceIp ? `<div style="margin-top: 16px; font-size: 12px; color: #6b7280;">IP source: ${details.sourceIp}</div>` : ''}
+        <div style="background-color: #f5eee9; border: 2px solid #e5d8cf; border-radius: 12px; padding: 25px; margin: 25px 0;">
+          <div class="details-title"> Description du projet</div>
+          <div style="margin-top: 12px; line-height: 1.8; white-space: pre-wrap; color: #3e2c27; font-family: 'Didact Gothic', Arial, Helvetica, sans-serif; font-size: 16px;">${details?.projectDescription || ''}</div>
+          ${details?.sourceIp ? `<div style="margin-top: 16px; font-size: 12px; color: #3e2c27;">IP source: ${details.sourceIp}</div>` : ''}
         </div>
 
         <div class="message">
           <p>Vous pouvez répondre directement à cet email pour reprendre contact avec la personne.</p>
-          <p style="margin-top: 12px;"><strong>L'équipe Inkera Studio ✨</strong></p>
+          <p style="margin-top: 12px;"><strong>L'équipe Inkera Studio </strong></p>
         </div>
       </div>
     `;
@@ -1093,7 +808,7 @@ export class EmailTemplateService {
   generateCustomEmail(data: EmailTemplateData, subject: string = `Message de ${data.salonName || 'Inkera Studio'}`): string {
     const content = `
       <div class="content">
-        <div class="greeting">Bonjour ${data.recipientName || 'cher client'} ! 🎨</div>
+        <div class="greeting">Bonjour ${data.recipientName || 'cher client'} ! </div>
         
         <div class="message">
           ${data.customMessage || `<p>Nous vous contactons depuis ${data.salonName || 'Inkera Studio'}.</p>`}
@@ -1101,7 +816,7 @@ export class EmailTemplateService {
 
         <div class="message">
           <p>Si vous avez des questions, n'hésitez pas à nous contacter.</p>
-          <p><strong>L'équipe ${data.salonName || 'Inkera Studio'} ✨</strong></p>
+          <p><strong>L'équipe ${data.salonName || 'Inkera Studio'} </strong></p>
         </div>
       </div>
     `;
@@ -1127,22 +842,22 @@ export class EmailTemplateService {
 
         ${data.appointmentDetails ? `
           <div class="details-card">
-            <div class="details-title">📋 Détails du rendez-vous</div>
+            <div class="details-title"> Détails du rendez-vous</div>
             <ul class="details-list">
               <li>
-                <span class="detail-label">👤 Client :</span>
+                <span class="detail-label"> Client :</span>
                 <span class="detail-value">${data.recipientName || 'Nouveau client'}</span>
               </li>
               <li>
-                <span class="detail-label">📧 Email :</span>
+                <span class="detail-label"> Email :</span>
                 <span class="detail-value">${data.appointmentDetails.clientEmail || 'Non renseigné'}</span>
               </li>
               <li>
-                <span class="detail-label">📞 Téléphone :</span>
+                <span class="detail-label"> Téléphone :</span>
                 <span class="detail-value">${data.appointmentDetails.clientPhone || 'Non renseigné'}</span>
               </li>
               <li>
-                <span class="detail-label">📅 Date :</span>
+                <span class="detail-label"> Date :</span>
                 <span class="detail-value">${data.appointmentDetails.date}</span>
               </li>
               <li>
@@ -1150,11 +865,11 @@ export class EmailTemplateService {
                 <span class="detail-value">${data.appointmentDetails.time}</span>
               </li>
               <li>
-                <span class="detail-label">🎨 Prestation :</span>
+                <span class="detail-label"> Prestation :</span>
                 <span class="detail-value">${data.appointmentDetails.service}</span>
               </li>
               <li>
-                <span class="detail-label">📝 Titre :</span>
+                <span class="detail-label"> Titre :</span>
                 <span class="detail-value">${data.appointmentDetails.title || 'Non renseigné'}</span>
               </li>
             </ul>
@@ -1162,12 +877,12 @@ export class EmailTemplateService {
         ` : ''}
 
         <a href="${this.buildFrontendUrl('/dashboard')}" class="cta-button">
-          ✅ Confirmer le rendez-vous
+           Confirmer le rendez-vous
         </a>
 
         <div class="message">
           <p>Connectez-vous à votre espace pour confirmer ou modifier ce rendez-vous.</p>
-          <p><strong>Action requise ! ⚡</strong></p>
+          <p><strong>Action requise ! </strong></p>
         </div>
       </div>
     `;
@@ -1185,20 +900,20 @@ export class EmailTemplateService {
   generateAutoConfirmedAppointmentEmail(data: EmailTemplateData): string {
     const content = `
       <div class="content">
-        <div class="greeting">Rendez-vous confirmé automatiquement ! ✅</div>
+        <div class="greeting">Rendez-vous confirmé automatiquement ! </div>
         
         <div class="message">
           <p>Bonjour ${data.recipientName || 'cher client'} !</p>
           <p>Votre rendez-vous a été <strong>confirmé automatiquement</strong>.</p>
-          <p>Nous avons hâte de vous voir ! 🎨</p>
+          <p>Nous avons hâte de vous voir ! </p>
         </div>
 
         ${data.appointmentDetails ? `
           <div class="details-card">
-            <div class="details-title">📅 Détails de votre rendez-vous</div>
+            <div class="details-title"> Détails de votre rendez-vous</div>
             <ul class="details-list">
               <li>
-                <span class="detail-label">📅 Date :</span>
+                <span class="detail-label"> Date :</span>
                 <span class="detail-value">${data.appointmentDetails.date}</span>
               </li>
               <li>
@@ -1206,16 +921,16 @@ export class EmailTemplateService {
                 <span class="detail-value">${data.appointmentDetails.time}</span>
               </li>
               <li>
-                <span class="detail-label">🎨 Prestation :</span>
+                <span class="detail-label"> Prestation :</span>
                 <span class="detail-value">${data.appointmentDetails.service}</span>
               </li>
               <li>
-                <span class="detail-label">📝 Titre :</span>
+                <span class="detail-label"> Titre :</span>
                 <span class="detail-value">${data.appointmentDetails.title || 'Non renseigné'}</span>
               </li>
               ${data.appointmentDetails.tatoueur ? `
                 <li>
-                  <span class="detail-label">👨‍🎨 Artiste :</span>
+                  <span class="detail-label"> Artiste :</span>
                   <span class="detail-value">${data.appointmentDetails.tatoueur}</span>
                 </li>
               ` : ''}
@@ -1224,12 +939,12 @@ export class EmailTemplateService {
         ` : ''}
 
         <div class="warning-box">
-          <strong>⚠️ Important :</strong> Merci d'arriver 10 minutes avant votre rendez-vous et de vous présenter avec une pièce d'identité.
+          <strong> Important :</strong> Merci d'arriver 10 minutes avant votre rendez-vous et de vous présenter avec une pièce d'identité.
         </div>
 
         <div class="message">
           <p>Si vous avez des questions, n'hésitez pas à nous contacter.</p>
-          <p><strong>À très bientôt chez ${data.salonName || 'Inkera Studio'} ! ✨</strong></p>
+          <p><strong>À très bientôt chez ${data.salonName || 'Inkera Studio'} ! </strong></p>
         </div>
       </div>
     `;
@@ -1252,7 +967,7 @@ export class EmailTemplateService {
 
     const content = `
       <div class="content">
-        <div class="greeting">Reprogrammation de votre rendez-vous 📅</div>
+        <div class="greeting">Reprogrammation de votre rendez-vous </div>
         
         <div class="message">
           <p>Bonjour ${data.recipientName || 'cher client'},</p>
@@ -1260,24 +975,24 @@ export class EmailTemplateService {
         </div>
 
         <div class="details-card">
-          <h3 style="color: #f97316; margin: 0 0 16px 0;">📅 Rendez-vous actuel</h3>
-          <div style="background: rgba(0,0,0,0.2); padding: 16px; border-radius: 8px; margin-bottom: 16px;">
-            <p style="margin: 0 0 8px 0; color: #cbd5e1;"><strong>📅 Date :</strong> ${reschedule.currentDate}</p>
-            ${reschedule.oldTatoueurName ? `<p style="margin: 0 0 8px 0; color: #cbd5e1;"><strong>👨‍🎨 Tatoueur :</strong> ${reschedule.oldTatoueurName}</p>` : ''}
-            ${reschedule.newTatoueurName ? `<p style="margin: 0; color: #60a5fa;"><strong>👨‍🎨 Nouveau tatoueur :</strong> ${reschedule.newTatoueurName}</p>` : ''}
+          <h3 style="color: #3e2c27; margin: 0 0 16px 0;"> Rendez-vous actuel</h3>
+          <div style="background-color: #f5eee9; padding: 16px; border-radius: 8px; margin-bottom: 16px;">
+            <p style="margin: 0 0 8px 0; color: #3e2c27;"><strong> Date :</strong> ${reschedule.currentDate}</p>
+            ${reschedule.oldTatoueurName ? `<p style="margin: 0 0 8px 0; color: #3e2c27;"><strong> Tatoueur :</strong> ${reschedule.oldTatoueurName}</p>` : ''}
+            ${reschedule.newTatoueurName ? `<p style="margin: 0; color: #3e2c27;"><strong> Nouveau tatoueur :</strong> ${reschedule.newTatoueurName}</p>` : ''}
           </div>
         </div>
 
         ${reschedule.reason ? `
-          <div style="background: rgba(245, 158, 11, 0.1); border-left: 4px solid #f59e0b; padding: 20px; border-radius: 8px; margin: 24px 0;">
-            <p style="margin: 0 0 8px 0; color: #f59e0b; font-weight: 600;">Motif de la reprogrammation :</p>
-            <p style="margin: 0; color: #141414ff; font-style: italic;">${reschedule.reason}</p>
+          <div style="background-color: #f5eee9; border-left: 4px solid #e5d8cf; padding: 20px; border-radius: 8px; margin: 24px 0;">
+            <p style="margin: 0 0 8px 0; color: #3e2c27; font-weight: 600;">Motif de la reprogrammation :</p>
+            <p style="margin: 0; color: #3e2c27; font-style: italic;">${reschedule.reason}</p>
           </div>
         ` : ''}
 
         <div style="text-align: center; margin: 32px 0;">
           <a href="${this.sanitizeSiteUrl(reschedule.rescheduleUrl, '/nouveau-creneau')}" class="cta-button">
-            📅 Choisir de nouveaux créneaux
+             Choisir de nouveaux créneaux
           </a>
         </div>
 
@@ -1287,7 +1002,7 @@ export class EmailTemplateService {
 
         <div class="message">
           <p>Si vous avez des questions, n'hésitez pas à nous contacter.</p>
-          <p><strong>Merci de votre compréhension ! 🙏</strong></p>
+          <p><strong>Merci de votre compréhension ! </strong></p>
         </div>
       </div>
     `;
@@ -1310,37 +1025,37 @@ export class EmailTemplateService {
 
     const content = `
       <div class="content">
-        <div class="greeting" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 20px; border-radius: 12px; margin-bottom: 24px;">
-          ✅ Reprogrammation Acceptée
+        <div class="greeting" style="background-color: #f5eee9; color: #3e2c27; padding: 20px; border-radius: 12px; margin-bottom: 24px;">
+           Reprogrammation Acceptée
         </div>
         
         <div class="message">
           <p>Bonjour <strong>${data.salonName || 'Salon'}</strong>,</p>
-          <p>🎉 Le client <strong>${reschedule.clientName}</strong> a accepté la reprogrammation et choisi un nouveau créneau !</p>
+          <p> Le client <strong>${reschedule.clientName}</strong> a accepté la reprogrammation et choisi un nouveau créneau !</p>
         </div>
 
         <div class="details-card">
-          <h3 class="details-title">📅 Détails de la reprogrammation</h3>
-          <div style="background: rgba(0,0,0,0.2); padding: 16px; border-radius: 8px; margin-bottom: 16px;">
-            <p style="margin: 0 0 8px 0; color: #f87171;"><strong>📅 Ancien créneau :</strong> ${reschedule.originalDate}</p>
-            <p style="margin: 0 0 8px 0; color: #6ee7b7;"><strong>📅 Nouveau créneau :</strong> ${reschedule.newDate}</p>
-            <p style="margin: 0; color: #cbd5e1;"><strong>👨‍🎨 Tatoueur :</strong> ${reschedule.tatoueurName}</p>
+          <h3 class="details-title"> Détails de la reprogrammation</h3>
+          <div style="background-color: #f5eee9; padding: 16px; border-radius: 8px; margin-bottom: 16px;">
+            <p style="margin: 0 0 8px 0; color: #3e2c27;"><strong> Ancien créneau :</strong> ${reschedule.originalDate}</p>
+            <p style="margin: 0 0 8px 0; color: #3e2c27;"><strong> Nouveau créneau :</strong> ${reschedule.newDate}</p>
+            <p style="margin: 0; color: #3e2c27;"><strong> Tatoueur :</strong> ${reschedule.tatoueurName}</p>
           </div>
         </div>
 
         <div class="details-card">
-          <h3 class="details-title">👥 Informations du client</h3>
-          <div style="background: rgba(0,0,0,0.2); padding: 12px; border-radius: 6px;">
-            <p style="margin: 0 0 4px 0; color: #cbd5e1;"><strong>Nom :</strong> ${reschedule.clientName}</p>
-            <p style="margin: 0 0 4px 0; color: #cbd5e1;"><strong>Email :</strong> ${reschedule.clientEmail}</p>
-            <p style="margin: 0; color: #cbd5e1;"><strong>Prestation :</strong> ${reschedule.prestation}</p>
+          <h3 class="details-title"> Informations du client</h3>
+          <div style="background-color: #f5eee9; padding: 12px; border-radius: 6px;">
+            <p style="margin: 0 0 4px 0; color: #3e2c27;"><strong>Nom :</strong> ${reschedule.clientName}</p>
+            <p style="margin: 0 0 4px 0; color: #3e2c27;"><strong>Email :</strong> ${reschedule.clientEmail}</p>
+            <p style="margin: 0; color: #3e2c27;"><strong>Prestation :</strong> ${reschedule.prestation}</p>
           </div>
         </div>
 
         ${reschedule.clientMessage ? `
-          <div style="background: rgba(245, 158, 11, 0.1); border-left: 4px solid #f59e0b; padding: 20px; border-radius: 8px; margin: 24px 0;">
-            <p style="margin: 0 0 8px 0; color: #f59e0b; font-weight: 600;">💬 Message du client :</p>
-            <p style="margin: 0; color: #1e1e1fff; font-style: italic;">"${reschedule.clientMessage}"</p>
+          <div style="background-color: #f5eee9; border-left: 4px solid #e5d8cf; padding: 20px; border-radius: 8px; margin: 24px 0;">
+            <p style="margin: 0 0 8px 0; color: #3e2c27; font-weight: 600;"> Message du client :</p>
+            <p style="margin: 0; color: #3e2c27; font-style: italic;">"${reschedule.clientMessage}"</p>
           </div>
         ` : ''}
 
@@ -1368,37 +1083,37 @@ export class EmailTemplateService {
 
     const content = `
       <div class="content">
-        <div class="greeting" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 20px; border-radius: 12px; margin-bottom: 24px;">
-          ✅ Rendez-vous Reprogrammé !
+        <div class="greeting" style="background-color: #f5eee9; color: #3e2c27; padding: 20px; border-radius: 12px; margin-bottom: 24px;">
+           Rendez-vous Reprogrammé !
         </div>
         
         <div class="message">
           <p>Bonjour <strong>${data.recipientName || 'cher client'}</strong>,</p>
-          <p>🎉 Parfait ! Votre rendez-vous a été reprogrammé avec succès chez ${data.salonName || 'Inkera Studio'}.</p>
+          <p> Parfait ! Votre rendez-vous a été reprogrammé avec succès chez ${data.salonName || 'Inkera Studio'}.</p>
         </div>
 
         <div class="details-card">
-          <div class="details-title" style="color: white;">📅 Votre nouveau rendez-vous</div>
-          <div style="background: rgba(255,255,255,0.1); padding: 16px; border-radius: 8px;">
-            <p style="margin: 0 0 8px 0; color: white;"><strong>📅 Nouvelle date :</strong> ${reschedule.newDate}</p>
-            <p style="margin: 0; color: white;"><strong>👨‍🎨 Tatoueur :</strong> ${reschedule.tatoueurName}</p>
+          <div class="details-title" style="color: #3e2c27;"> Votre nouveau rendez-vous</div>
+          <div style="background-color: #f5eee9; padding: 16px; border-radius: 8px;">
+            <p style="margin: 0 0 8px 0; color: #3e2c27;"><strong> Nouvelle date :</strong> ${reschedule.newDate}</p>
+            <p style="margin: 0; color: #3e2c27;"><strong> Tatoueur :</strong> ${reschedule.tatoueurName}</p>
           </div>
         </div>
 
-        <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); padding: 16px; border-radius: 8px; margin: 24px 0; text-align: center;">
-          <p style="margin: 0; color: #059669; font-size: 16px;">
-            ✅ <strong>Confirmé :</strong> Votre rendez-vous est maintenant confirmé pour le nouveau créneau.
+        <div style="background-color: #f5eee9; border: 1px solid #e5d8cf; padding: 16px; border-radius: 8px; margin: 24px 0; text-align: center;">
+          <p style="margin: 0; color: #3e2c27; font-size: 16px;">
+             <strong>Confirmé :</strong> Votre rendez-vous est maintenant confirmé pour le nouveau créneau.
           </p>
         </div>
 
         <div class="warning-box">
-          <strong>📝 Important :</strong> Notez bien cette nouvelle date dans votre agenda !
+          <strong> Important :</strong> Notez bien cette nouvelle date dans votre agenda !
         </div>
 
         <div class="message">
-          <p>Merci pour votre flexibilité ! Nous avons hâte de vous voir. 🎨</p>
+          <p>Merci pour votre flexibilité ! Nous avons hâte de vous voir. </p>
           <p>Si vous avez des questions, n'hésitez pas à nous contacter.</p>
-          <p><strong>À très bientôt chez ${data.salonName || 'Inkera Studio'} ! ✨</strong></p>
+          <p><strong>À très bientôt chez ${data.salonName || 'Inkera Studio'} ! </strong></p>
         </div>
       </div>
     `;
@@ -1421,7 +1136,7 @@ export class EmailTemplateService {
 
     const content = `
       <div class="content">
-        <div class="greeting">Réponse à votre suivi de cicatrisation 💬</div>
+        <div class="greeting">Réponse à votre suivi de cicatrisation </div>
         
         <div class="message">
           <p>Bonjour <strong>${details.clientName}</strong>,</p>
@@ -1429,9 +1144,9 @@ export class EmailTemplateService {
         </div>
 
         <div class="details-card">
-          <div class="details-title" style="color: white;">💬 Notre réponse</div>
-          <div style="background: rgba(255,255,255,0.1); padding: 20px; border-radius: 8px;">
-            <p style="margin: 0; color: white; font-size: 16px; line-height: 1.6;">${details.response}</p>
+          <div class="details-title" style="color: #3e2c27;"> Notre réponse</div>
+          <div style="background-color: #f5eee9; padding: 20px; border-radius: 8px;">
+            <p style="margin: 0; color: #3e2c27; font-size: 16px; line-height: 1.6;">${details.response}</p>
           </div>
         </div>
 
@@ -1440,8 +1155,8 @@ export class EmailTemplateService {
           <p>Cordialement,<br><strong>L'équipe de ${data.salonName || 'Inkera Studio'}</strong></p>
         </div>
 
-        <div class="warning-box" style="background: rgba(99, 102, 241, 0.1); border-left: 4px solid #6366f1; color: #171717;">
-          <strong>📧 Information :</strong> Cet email est une réponse à votre suivi de cicatrisation. Si vous n'avez pas envoyé de suivi, veuillez nous contacter.
+        <div class="warning-box" style="background-color: #f5eee9; border-left: 4px solid #e5d8cf; color: #3e2c27;">
+          <strong> Information :</strong> Cet email est une réponse à votre suivi de cicatrisation. Si vous n'avez pas envoyé de suivi, veuillez nous contacter.
         </div>
       </div>
     `;
@@ -1457,7 +1172,6 @@ export class EmailTemplateService {
    *! Template de demande de suivi de cicatrisation
    */
   generateCicatrisationFollowUpEmail(data: EmailTemplateData): string {
-    console.log(data);
     const details = data.cicatrisationFollowUpDetails;
     if (!details) {
       throw new Error('cicatrisationFollowUpDetails is required for cicatrisation follow-up email');
@@ -1465,7 +1179,7 @@ export class EmailTemplateService {
 
     const content = `
       <div class="content">
-        <div class="greeting">Suivi de cicatrisation 🩹</div>
+        <div class="greeting">Suivi de cicatrisation </div>
         
         <div class="message">
           <p>Bonjour <strong>${details.clientName}</strong>,</p>
@@ -1474,7 +1188,7 @@ export class EmailTemplateService {
         </div>
 
         <div class="details-card">
-          <div class="details-title">🩹 Suivi de cicatrisation</div>
+          <div class="details-title"> Suivi de cicatrisation</div>
           <p><strong>Pour assurer un suivi optimal de votre cicatrisation, nous aimerions avoir de vos nouvelles :</strong></p>
         </div>
 
@@ -1513,7 +1227,7 @@ export class EmailTemplateService {
 
     const content = `
       <div class="content">
-        <div class="greeting">Votre avis nous intéresse ! 💬</div>
+        <div class="greeting">Votre avis nous intéresse ! </div>
         
         <div class="message">
           <p>Bonjour <strong>${details.clientName}</strong> !</p>
@@ -1521,18 +1235,18 @@ export class EmailTemplateService {
         </div>
 
         <div class="details-card">
-          <div class="details-title">📋 Détails de votre rendez-vous</div>
+          <div class="details-title"> Détails de votre rendez-vous</div>
           <ul class="details-list">
             <li>
-              <span class="detail-label">📅 Date :</span>
+              <span class="detail-label"> Date :</span>
               <span class="detail-value">${details.appointmentDate}</span>
             </li>
             <li>
-              <span class="detail-label">👨‍🎨 Artiste :</span>
+              <span class="detail-label"> Artiste :</span>
               <span class="detail-value">${details.tatoueurName}</span>
             </li>
             <li>
-              <span class="detail-label">🎨 Prestation :</span>
+              <span class="detail-label"> Prestation :</span>
               <span class="detail-value">${details.prestationName}</span>
             </li>
           </ul>
@@ -1544,7 +1258,7 @@ export class EmailTemplateService {
 
         <div style="text-align: center; margin: 32px 0;">
           <a href="${this.sanitizeSiteUrl(details.followupUrl, '/suivi')}" class="cta-button">
-            💬 Laisser mon avis
+             Laisser mon avis
           </a>
         </div>
 
@@ -1553,7 +1267,7 @@ export class EmailTemplateService {
         </div>
 
         <div class="message">
-          <p>Merci pour votre confiance ! 🙏</p>
+          <p>Merci pour votre confiance ! </p>
           <p><strong>L'équipe de ${data.salonName || 'Inkera Studio'}</strong></p>
         </div>
       </div>
@@ -1572,7 +1286,7 @@ export class EmailTemplateService {
   generatePasswordChangeConfirmationEmail(data: EmailTemplateData): string {
     const content = `
       <div class="content">
-        <div class="greeting">Mot de passe modifié 🔐</div>
+        <div class="greeting">Mot de passe modifié </div>
         
         <div class="message">
           <p>Bonjour ${data.recipientName || 'cher utilisateur'} !</p>
@@ -1580,7 +1294,7 @@ export class EmailTemplateService {
         </div>
 
         <div class="details-card">
-          <div class="details-title">🔒 Informations de sécurité</div>
+          <div class="details-title"> Informations de sécurité</div>
           <ul class="details-list">
             <li>
               <span class="detail-label">⏰ Date de modification :</span>
@@ -1593,18 +1307,18 @@ export class EmailTemplateService {
               })}</span>
             </li>
             <li>
-              <span class="detail-label">🔐 Action :</span>
+              <span class="detail-label"> Action :</span>
               <span class="detail-value">Changement de mot de passe</span>
             </li>
             <li>
-              <span class="detail-label">✅ Statut :</span>
+              <span class="detail-label"> Statut :</span>
               <span class="detail-value">Confirmé</span>
             </li>
           </ul>
         </div>
 
         <div class="warning-box">
-          <strong>⚠️ Vous n'êtes pas à l'origine de ce changement ?</strong><br/>
+          <strong> Vous n'êtes pas à l'origine de ce changement ?</strong><br/>
           Contactez immédiatement notre support pour sécuriser votre compte.
         </div>
 
@@ -1619,12 +1333,12 @@ export class EmailTemplateService {
         </div>
 
         <a href="${this.buildFrontendUrl('/connexion')}" class="cta-button">
-          🔑 Se connecter à mon espace
+           Se connecter à mon espace
         </a>
 
         <div class="message">
           <p>Si vous avez des questions, n'hésitez pas à nous contacter.</p>
-          <p><strong>Merci de votre confiance ! 🌟</strong></p>
+          <p><strong>Merci de votre confiance ! </strong></p>
         </div>
       </div>
     `;
@@ -1642,37 +1356,37 @@ export class EmailTemplateService {
   generateRetouchesReminderEmail(data: EmailTemplateData): string {
     const content = `
       <div class="content">
-        <div class="greeting">Comment va votre tatouage ? ✨</div>
+        <div class="greeting">Comment va votre tatouage ? </div>
         
         <div class="message">
           <p>Bonjour ${data.retouchesReminderDetails?.clientName || data.recipientName || 'cher client'} !</p>
           <p>Cela fait maintenant <strong>un mois</strong> depuis votre séance de tatouage chez ${data.retouchesReminderDetails?.salonName || data.salonName || 'notre salon'}.</p>
-          <p>Nous espérons que vous êtes totalement ravi(e) du résultat ! 🎨</p>
+          <p>Nous espérons que vous êtes totalement ravi(e) du résultat ! </p>
         </div>
 
         ${data.retouchesReminderDetails ? `
           <div class="details-card">
-            <div class="details-title">📅 Votre séance de tatouage</div>
+            <div class="details-title"> Votre séance de tatouage</div>
             <ul class="details-list">
               <li>
-                <span class="detail-label">📅 Date :</span>
+                <span class="detail-label"> Date :</span>
                 <span class="detail-value">${data.retouchesReminderDetails.appointmentDate}</span>
               </li>
               <li>
-                <span class="detail-label">👨‍🎨 Artiste :</span>
+                <span class="detail-label"> Artiste :</span>
                 <span class="detail-value">${data.retouchesReminderDetails.tatoueurName}</span>
               </li>
             </ul>
           </div>
         ` : ''}
 
-        <div style="margin: 25px 0; padding: 20px; background: transparent; border: 1px solid #e5e7eb; border-radius: 12px; color: #171717;">
-          <div style="font-family: Arial, Helvetica, sans-serif; font-size: 18px; font-weight: 600; margin-bottom: 15px; color: #171717;">🔧 Retouches gratuites disponibles</div>
-          <div class="message" style="color: #171717; margin: 15px 0;">
+        <div style="margin: 25px 0; padding: 20px; background-color: #f5eee9; border: 1px solid #e5d8cf; border-radius: 12px; color: #3e2c27;">
+          <div class="details-title"> Retouches gratuites disponibles</div>
+          <div class="message" style="color: #3e2c27; margin: 15px 0;">
             <p style="margin-bottom: 12px;">Si vous constatez que votre tatouage a besoin d'une petite retouche ? (zones moins pigmentées, traits à reprendre...)</p>
             
             <p style="margin-bottom: 12px;"><strong>Les retouches peuvent être nécessaires dans les cas suivants :</strong></p>
-            <ul style="margin: 8px 0; padding-left: 20px; color: #171717;">
+            <ul style="margin: 8px 0; padding-left: 20px; color: #3e2c27;">
               <li>Zones où l'encre n'a pas bien tenu</li>
               <li>Traits qui ont légèrement bavé pendant la cicatrisation</li>
               <li>Petites imperfections de cicatrisation</li>
@@ -1682,19 +1396,19 @@ export class EmailTemplateService {
         </div>
 
         <!--
-        <div style="background: rgba(34, 197, 94, 0.1); border-left: 4px solid #22c55e; padding: 20px; border-radius: 8px; margin: 24px 0;">
-          <p style="margin: 0 0 8px 0; color: #22c55e; font-weight: 600;">✅ Service inclus :</p>
-          <p style="margin: 0; color: #1e1e1fff; font-weight: 600;">Les retouches sont entièrement gratuites pendant 3 mois !</p>
+        <div style="background-color: #f5eee9; border-left: 4px solid #e5d8cf; padding: 20px; border-radius: 8px; margin: 24px 0;">
+          <p style="margin: 0 0 8px 0; color: #3e2c27; font-weight: 600;"> Service inclus :</p>
+          <p style="margin: 0; color: #3e2c27; font-weight: 600;">Les retouches sont entièrement gratuites pendant 3 mois !</p>
         </div>
         -->
 
         <div class="message">
           <p>Si vous souhaitez programmer une retouche ou si vous avez des questions concernant votre tatouage, n'hésitez pas à nous contacter.</p>
-          <p>Nous serons ravis de vous accueillir à nouveau pour parfaire votre œuvre d'art ! 🎯</p>
+          <p>Nous serons ravis de vous accueillir à nouveau pour parfaire votre œuvre d'art ! </p>
         </div>
 
         <a href="${this.buildFrontendUrl('/contactez-nous')}" class="cta-button">
-          📞 Nous contacter pour une retouche
+           Nous contacter pour une retouche
         </a>
 
         <!--
@@ -1704,7 +1418,7 @@ export class EmailTemplateService {
         -->
 
         <div class="message">
-          <p><strong>Merci de nous faire confiance pour vos créations artistiques ! ✨</strong></p>
+          <p><strong>Merci de nous faire confiance pour vos créations artistiques ! </strong></p>
           <p><em>${data.retouchesReminderDetails?.salonName || data.salonName || 'Inkera Studio'}</em></p>
         </div>
       </div>
@@ -1728,17 +1442,17 @@ export class EmailTemplateService {
 
     const content = `
       <div class="content">
-        <div class="greeting" style="background: linear-gradient(135deg, #131313 0%, #1a1a1a 100%); color: white; padding: 20px; border-radius: 12px; margin-bottom: 24px;">
-          🎉 Nouvelle Inscription !
+        <div class="greeting" style="background-color: #f5eee9; color: #3e2c27; padding: 20px; border-radius: 12px; margin-bottom: 24px;">
+           Nouvelle Inscription !
         </div>
         
         <div class="message">
           <p>Bonjour <strong>Admin</strong>,</p>
-          <p>Une nouvelle inscription vient d'avoir lieu sur la plateforme Inkera Studio ! 🚀</p>
+          <p>Une nouvelle inscription vient d'avoir lieu sur la plateforme Inkera Studio ! </p>
         </div>
 
         <div class="details-card">
-          <div class="details-title">👤 Informations du nouveau salon</div>
+          <div class="details-title"> Informations du nouveau salon</div>
           <ul class="details-list">
             <li>
               <span class="detail-label">Nom du salon : </span>
@@ -1771,15 +1485,15 @@ export class EmailTemplateService {
           </ul>
         </div>
 
-        <div style="background: #ff9d0046; border: 1px solid #ff55008d; border-radius: 12px; padding: 16px; margin: 24px 0; text-align: center;">
-          <p style="margin: 0; color: #1a1a1a; font-size: 16px; font-weight: 600;">
+        <div style="background-color: #f5eee9; border: 1px solid #e5d8cf; border-radius: 12px; padding: 16px; margin: 24px 0; text-align: center;">
+          <p style="margin: 0; color: #3e2c27; font-size: 16px; font-weight: 600;">
             <strong>Action recommandée :</strong> Surveiller l'activation et l'utilisation du nouveau compte
           </p>
         </div>
 
         <div class="appointment-summary">
-          <div class="details-title">📋 Actions à effectuer</div>
-          <ul style="color: #fff; margin: 15px 0; padding-left: 20px;">
+          <div class="details-title"> Actions à effectuer</div>
+          <ul style="color: #3e2c27; margin: 15px 0; padding-left: 20px;">
             <li>Vérifier que l'email de vérification a été envoyé</li>
             <li>Surveiller l'activation du compte</li>
             <li>Confirmer la création du plan SaaS (${newUser.saasPlan})</li>
@@ -1792,7 +1506,7 @@ export class EmailTemplateService {
         </a>
 
         <div class="warning-box">
-          <strong>📝 Note :</strong> Ce salon devra vérifier son email avant de pouvoir accéder à son espace de gestion.
+          <strong> Note :</strong> Ce salon devra vérifier son email avant de pouvoir accéder à son espace de gestion.
         </div>
       </div>
     `;
@@ -1819,26 +1533,26 @@ export class EmailTemplateService {
 
         ${data.clientCancellationDetails ? `
           <div class="details-card">
-            <div class="details-title">📋 Détails du rendez-vous annulé</div>
+            <div class="details-title"> Détails du rendez-vous annulé</div>
             <ul class="details-list">
               <li>
-                <span class="detail-label">👤 Client :</span>
+                <span class="detail-label"> Client :</span>
                 <span class="detail-value">${data.clientCancellationDetails.clientName}</span>
               </li>
               ${data.clientCancellationDetails.clientEmail ? `
                 <li>
-                  <span class="detail-label">📧 Email :</span>
+                  <span class="detail-label"> Email :</span>
                   <span class="detail-value">${data.clientCancellationDetails.clientEmail}</span>
                 </li>
               ` : ''}
               ${data.clientCancellationDetails.clientPhone ? `
                 <li>
-                  <span class="detail-label">📞 Téléphone :</span>
+                  <span class="detail-label"> Téléphone :</span>
                   <span class="detail-value">${data.clientCancellationDetails.clientPhone}</span>
                 </li>
               ` : ''}
               <li>
-                <span class="detail-label">📅 Date :</span>
+                <span class="detail-label"> Date :</span>
                 <span class="detail-value">${data.clientCancellationDetails.appointmentDate}</span>
               </li>
               <li>
@@ -1846,12 +1560,12 @@ export class EmailTemplateService {
                 <span class="detail-value">${data.clientCancellationDetails.appointmentTime}</span>
               </li>
               <li>
-                <span class="detail-label">🎨 Prestation :</span>
+                <span class="detail-label"> Prestation :</span>
                 <span class="detail-value">${data.clientCancellationDetails.prestation}</span>
               </li>
               ${data.clientCancellationDetails.tatoueurName ? `
                 <li>
-                  <span class="detail-label">👨‍🎨 Artiste :</span>
+                  <span class="detail-label"> Artiste :</span>
                   <span class="detail-value">${data.clientCancellationDetails.tatoueurName}</span>
                 </li>
               ` : ''}
@@ -1860,14 +1574,14 @@ export class EmailTemplateService {
         ` : ''}
 
         ${data.clientCancellationDetails?.cancellationReason ? `
-          <div style="background: rgba(245, 158, 11, 0.1); border-left: 4px solid #f59e0b; padding: 20px; border-radius: 8px; margin: 24px 0;">
-            <p style="margin: 0 0 8px 0; color: #f59e0b; font-weight: 600;">💬 Raison de l'annulation :</p>
-            <p style="margin: 0; color: #1e1e1fff; font-style: italic;">"${data.clientCancellationDetails.cancellationReason}"</p>
+          <div style="background-color: #f5eee9; border-left: 4px solid #e5d8cf; padding: 20px; border-radius: 8px; margin: 24px 0;">
+            <p style="margin: 0 0 8px 0; color: #3e2c27; font-weight: 600;"> Raison de l'annulation :</p>
+            <p style="margin: 0; color: #3e2c27; font-style: italic;">"${data.clientCancellationDetails.cancellationReason}"</p>
           </div>
         ` : ''}
 
-        <div style="background: linear-gradient(135deg, #059669, #047857); color: white; padding: 20px; border-radius: 10px; margin: 20px 0; text-align: center;">
-          <p style="margin: 0; font-weight: 600;">✅ Ce créneau est maintenant disponible</p>
+        <div style="background-color: #f5eee9; color: #3e2c27; padding: 20px; border-radius: 10px; margin: 20px 0; text-align: center;">
+          <p style="margin: 0; font-weight: 600;"> Ce créneau est maintenant disponible</p>
           <p style="margin: 8px 0 0 0; font-size: 14px; opacity: 0.9;">Vous pouvez l'attribuer à un autre client</p>
         </div>
 
@@ -1899,14 +1613,14 @@ export class EmailTemplateService {
 
         ${data.clientCancellationDetails ? `
           <div class="details-card">
-            <div class="details-title">📋 Récapitulatif du rendez-vous annulé</div>
+            <div class="details-title"> Récapitulatif du rendez-vous annulé</div>
             <ul class="details-list">
               <li>
-                <span class="detail-label">🏪 Salon :</span>
+                <span class="detail-label"> Salon :</span>
                 <span class="detail-value">${data.salonName || 'Inkera Studio'}</span>
               </li>
               <li>
-                <span class="detail-label">📅 Date :</span>
+                <span class="detail-label"> Date :</span>
                 <span class="detail-value">${data.clientCancellationDetails.appointmentDate}</span>
               </li>
               <li>
@@ -1914,12 +1628,12 @@ export class EmailTemplateService {
                 <span class="detail-value">${data.clientCancellationDetails.appointmentTime}</span>
               </li>
               <li>
-                <span class="detail-label">🎨 Prestation :</span>
+                <span class="detail-label"> Prestation :</span>
                 <span class="detail-value">${data.clientCancellationDetails.prestation}</span>
               </li>
               ${data.clientCancellationDetails.tatoueurName ? `
                 <li>
-                  <span class="detail-label">👨‍🎨 Artiste :</span>
+                  <span class="detail-label"> Artiste :</span>
                   <span class="detail-value">${data.clientCancellationDetails.tatoueurName}</span>
                 </li>
               ` : ''}
@@ -1927,8 +1641,8 @@ export class EmailTemplateService {
           </div>
         ` : ''}
 
-        <div style="background: linear-gradient(135deg, #131313 0%, #1a1a1a 100%); color: white; padding: 25px; border-radius: 15px; margin: 25px 0; text-align: center;">
-          <p style="margin: 0 0 12px 0; font-size: 18px; font-weight: 600;">💙 Nous restons à votre disposition</p>
+        <div style="background-color: #f5eee9; color: #3e2c27; padding: 25px; border-radius: 15px; margin: 25px 0; text-align: center;">
+          <p style="margin: 0 0 12px 0; font-size: 18px; font-weight: 600;"> Nous restons à votre disposition</p>
           <p style="margin: 0; font-size: 14px; opacity: 0.9; line-height: 1.6;">
             Si vous souhaitez reprendre rendez-vous ou si vous avez des questions,<br>
             n'hésitez pas à nous contacter.
@@ -1936,7 +1650,7 @@ export class EmailTemplateService {
         </div>
 
         <div class="message">
-          <p>Nous espérons vous revoir bientôt chez <strong>${data.salonName || 'Inkera Studio'}</strong> ! ✨</p>
+          <p>Nous espérons vous revoir bientôt chez <strong>${data.salonName || 'Inkera Studio'}</strong> ! </p>
         </div>
       </div>
     `;
@@ -1955,14 +1669,14 @@ export class EmailTemplateService {
     const content = `
       <div class="content">
         <div class="welcome-section">
-          <h2 class="welcome-title">Bienvenue sur Inkera ! 🎨</h2>
+          <h2 class="welcome-title">Bienvenue sur Inkera Studio ! </h2>
         </div>
 
         <br/>
         
         <div class="message-box">
           <p class="welcome-subtitle">Bonjour ${data.recipientName || 'cher client'},</p>
-          <p><strong>Félicitations !</strong> Votre compte client a été créé avec succès sur Inkera.</p>
+          <p><strong>Félicitations !</strong> Votre compte client a été créé avec succès sur Inkera Studio.</p>
           <br/>
           <p>Vous pouvez maintenant prendre rendez-vous facilement avec vos salons de tatouage préférés, suivre l'évolution de vos tatouages et bien plus encore !</p>
           <br/>
@@ -1972,55 +1686,56 @@ export class EmailTemplateService {
         ${data.verificationUrl ? `
           <div style="text-align: center;">
             <a href="${this.sanitizeSiteUrl(data.verificationUrl, '/verifier-email')}" class="cta-button">
-              ✅ Confirmer mon adresse email
+               Confirmer mon adresse email
             </a>
           </div>
         ` : ''}
         
         ${data.verificationToken ? `
           <div class="token-display">
-            Code de vérification : ${data.verificationToken}
+            <p style="font-size:13px;letter-spacing:0;font-weight:400;margin:0 0 10px;">Code de vérification</p>
+            ${data.verificationToken}
           </div>
         ` : ''}
         
         <div class="info-grid">
           <div class="info-item">
-            <div class="info-item-label">🔒 Expiration dans 10min | Lien unique</div>
+            <div class="info-item-label"> Expiration dans 10min | Lien unique</div>
           </div>
         </div>
         
         <div class="details-card">
-          <div class="details-title">✨ Ce que vous pouvez faire maintenant :</div>
-          <ul style="list-style: none; padding: 0; color: #fff;">
-            <li style="padding: 8px 0; display: flex; align-items: center;">
-              <span style="margin-right: 10px;">📅</span>
+          <div class="details-title"> Ce que vous pouvez faire maintenant :</div>
+          <ul style="list-style: none; padding: 0; color: #3e2c27;">
+            <li style="padding: 8px 0;  ">
+              <span style="margin-right: 10px;"></span>
               <span>Prendre rendez-vous dans vos salons préférés</span>
             </li>
-            <li style="padding: 8px 0; display: flex; align-items: center;">
-              <span style="margin-right: 10px;">❤️</span>
+            <li style="padding: 8px 0;  ">
+              <span style="margin-right: 10px;"></span>
               <span>Ajouter vos salons en favoris</span>
             </li>
-            <li style="padding: 8px 0; display: flex; align-items: center;">
-              <span style="margin-right: 10px;">📝</span>
+            <li style="padding: 8px 0;  ">
+              <span style="margin-right: 10px;"></span>
               <span>Suivre vos rendez-vous et tatouages</span>
             </li>
-            <li style="padding: 8px 0; display: flex; align-items: center;">
+            <li style="padding: 8px 0;  ">
               <span style="margin-right: 10px;">⭐</span>
               <span>Laisser des avis sur vos expériences</span>
             </li>
           </ul>
         </div>
         
-        <div style="background: rgba(249, 115, 22, 0.1); border: 1px solid rgba(249, 115, 22, 0.2); border-radius: 12px; padding: 16px; margin: 24px 0; text-align: center;">
-          <p style="font-size: 13px; color: rgba(249, 115, 22, 0.9); margin: 0;">
-            <strong>⚠️ Important :</strong> Ce lien expire dans 10 minutes pour votre sécurité.
+        <div style="background-color: #f5eee9; border: 1px solid #e5d8cf; border-radius: 12px; padding: 16px; margin: 24px 0; text-align: center;">
+          <p style="font-size: 13px; color: #3e2c27; margin: 0;">
+            <strong> Important :</strong> Ce lien expire dans 10 minutes pour votre sécurité.
           </p>
         </div>
 
         <div class="message">
           <p class="welcome-subtitle">Si vous n'avez pas créé de compte, vous pouvez ignorer cet email en toute sécurité.</p>
           <br/>
-          <p><strong>Bienvenue dans la communauté Inkera ! ✨</strong></p>
+          <p><strong>Bienvenue dans la communauté Inkera ! </strong></p>
         </div>
       </div>
     `;

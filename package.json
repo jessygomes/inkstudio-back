@@ -19,6 +19,8 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "test:send-emails": "ts-node -r tsconfig-paths/register scripts/test-send-email-notifications.ts",
+    "preview:emails": "ts-node scripts/preview-emails.ts",
+    "check:email-previews": "node scripts/check-email-previews.cjs",
     "check:email-queue": "ts-node -r tsconfig-paths/register scripts/check-email-queue.ts",
     "reset:failed-emails": "ts-node -r tsconfig-paths/register scripts/reset-failed-emails.ts",
     "audit:stripe-customers": "ts-node -r tsconfig-paths/register scripts/audit-stripe-customers.ts",
