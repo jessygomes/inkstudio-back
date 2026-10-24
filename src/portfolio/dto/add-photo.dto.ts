@@ -2,6 +2,10 @@ import { IsArray, IsEnum, IsOptional, IsString } from 'class-validator';
 import { PieceSize } from '@prisma/client';
 
 export class AddPhotoDto {
+  @IsOptional()
+  @IsString()
+  appointmentPhotoId?: string;
+
   @IsString()
   title: string; // Titre de la photo
 

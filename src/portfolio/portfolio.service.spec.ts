@@ -6,6 +6,7 @@ import { CacheService } from 'src/redis/cache.service';
 import { AddPhotoDto } from './dto/add-photo.dto';
 
 const createPrismaMock = () => ({
+  appointmentPhoto: { findUnique: jest.fn() },
   style: {
     findMany: jest.fn().mockResolvedValue([]),
     upsert: jest.fn().mockImplementation(({ create }) => Promise.resolve(create)),
@@ -64,6 +65,22 @@ describe('PortfolioService', () => {
   });
 
   describe('addPhotoToPortfolio', () => {
+    it('rejects a source photo from another salon before creating a portfolio item', async () => {
+      prisma.appointmentPhoto.findUnique.mockResolvedValue({ url: 'https://source.test/photo.jpg', appointment: { userId: 'other', performerUserId: null } });
+      const result = await service.addPhotoToPortfolio({ userId: 'u1', portfolioBody: buildPhotoDto({ appointmentPhotoId: 'source' }) });
+      expect(result.error).toBe(true);
+      expect(prisma.portfolio.create).not.toHaveBeenCalled();
+    });
+
+    it('uses the stored source URL when adding an appointment photo to the portfolio', async () => {
+      prisma.appointmentPhoto.findUnique.mockResolvedValue({ url: 'https://source.test/photo.jpg', appointment: { userId: 'u1', performerUserId: null } });
+      prisma.user.findUnique.mockResolvedValue({ id: 'u1' });
+      prisma.tatoueur.findFirst.mockResolvedValue({ id: 'tat1' });
+      prisma.portfolio.create.mockResolvedValue({ id: 'p1' });
+      await service.addPhotoToPortfolio({ userId: 'u1', portfolioBody: buildPhotoDto({ appointmentPhotoId: 'source', imageUrl: 'https://other.test/image.jpg' }) });
+      expect(prisma.portfolio.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ imageUrl: 'https://source.test/photo.jpg', appointmentPhotoId: 'source' }) }));
+    });
+
     it('returns error when user not found', async () => {
       prisma.user.findUnique.mockResolvedValue(null);
 

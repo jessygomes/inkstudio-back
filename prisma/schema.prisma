@@ -291,6 +291,7 @@ model Tatoueur {
 
 //! MODEL POUR LES RDV
 model Appointment {
+  photos             AppointmentPhoto[]
   id                 String              @id @default(cuid())
   title              String
   prestation         PrestationType
@@ -622,6 +623,8 @@ model TattooCategory {
 }
 
 model Portfolio {
+  appointmentPhotoId String?
+  appointmentPhoto AppointmentPhoto? @relation(fields: [appointmentPhotoId], references: [id], onDelete: SetNull)
   id          String    @id @default(cuid())
   userId      String
   title       String
@@ -639,6 +642,19 @@ model Portfolio {
   favorites   FavoritePortfolio[] @relation("FavoritedPortfolio")
 
   @@index([userId, createdAt(sort: Desc)], map: "idx_portfolio_userId_createdAt")
+  @@unique([appointmentPhotoId, userId])
+}
+
+model AppointmentPhoto {
+  id            String @id @default(cuid())
+  appointmentId String
+  url           String
+  caption       String?
+  createdAt     DateTime @default(now())
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  portfolios    Portfolio[]
+
+  @@index([appointmentId, createdAt])
 }
 
 //! MODEL POUR LES FAVORIS D'IMAGES DE PORTFOLIO

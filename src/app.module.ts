@@ -42,6 +42,7 @@ import { ArticlesModule } from './articles/articles.module';
 import { MoodboardModule } from './moodboard/moodboard.module';
 import { SalonAnalyticsModule } from './salon-analytics/salon-analytics.module';
 import { SuiviModule } from './suivi/suivi.module';
+import { AppointmentPhotosModule } from './appointment-photos/appointment-photos.module';
 
 @Module({
   imports: [
@@ -83,6 +84,7 @@ import { SuiviModule } from './suivi/suivi.module';
     MessagingModule,
     SalonAnalyticsModule,
     SuiviModule,
+    AppointmentPhotosModule,
   ],
   controllers: [
     AppointmentsController,

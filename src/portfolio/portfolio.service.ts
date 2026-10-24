@@ -239,6 +239,16 @@ export class PortfolioService {
   async addPhotoToPortfolio({portfolioBody, userId}: {portfolioBody: AddPhotoDto, userId: string}) {
     try {
       const { title, imageUrl, description, tatoueurId, pieceSize } = portfolioBody;
+      let sourceUrl = imageUrl;
+      if (portfolioBody.appointmentPhotoId) {
+        const source = await this.prisma.appointmentPhoto.findUnique({
+          where: { id: portfolioBody.appointmentPhotoId }, include: { appointment: true },
+        });
+        if (!source || (source.appointment.userId !== userId && source.appointment.performerUserId !== userId)) {
+          return { error: true, message: 'Photo de rendez-vous introuvable ou non autorisée.' };
+        }
+        sourceUrl = source.url;
+      }
       const normalizedStyles = await this.resolveStyles((portfolioBody as { style?: unknown }).style);
       const normalizedHashtags = this.normalizeHashtags(portfolioBody.hashtags);
       const categoryIds = this.normalizeIds(portfolioBody.categoryIds);
@@ -272,7 +282,8 @@ export class PortfolioService {
         data: {
           userId,
           title,
-          imageUrl,
+          imageUrl: sourceUrl,
+          appointmentPhotoId: portfolioBody.appointmentPhotoId,
           description,
           tatoueurId,
           style: normalizedStyles,
@@ -661,6 +672,10 @@ export class PortfolioService {
           error: true,
           message: 'Non autorisé à modifier cette photo.',
         };
+      }
+
+      if (updateData.appointmentPhotoId !== undefined && updateData.appointmentPhotoId !== existingPhoto.appointmentPhotoId) {
+        return { error: true, message: 'La photo source du rendez-vous ne peut pas être changée depuis le portfolio.' };
       }
 
       if (updateData.tatoueurId) {
