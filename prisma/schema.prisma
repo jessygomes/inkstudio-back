@@ -11,6 +11,12 @@ datasource db {
 }
 
 model User {
+  projectProposalsSent ProjectProposal[] @relation("ProjectProfessional")
+  projectProposalsReceived ProjectProposal[] @relation("ProjectClient")
+  professionalBlocksReceived ProfessionalBlock[] @relation("BlockedProfessional")
+  professionalBlocksSent ProfessionalBlock[] @relation("BlockingClient")
+  professionalReportsReceived ProfessionalReport[] @relation("ReportedProfessional")
+  professionalReportsSent ProfessionalReport[] @relation("ReportingClient")
   id                        String               @id @default(cuid())
   email                     String               @unique
   emailVerified             DateTime?
@@ -185,7 +191,80 @@ model Moodboard {
   images          MoodboardImage[]
   appointments    Appointment[]
 
+  projectStatus   String @default("PRIVATE")
+  projectCity     String?
+  projectCategory String?
+  projectSize     String?
+  projectStyles   String[] @default([])
+  projectHashtags String[] @default([])
+  projectBodyPlacement String?
+  projectMobility String?
+  projectRadiusKm Int?
+  publishedAt DateTime?
+  proposals ProjectProposal[]
+  proposalEmails ProjectProposalEmail[]
+
   @@index([clientProfileId])
+  @@index([projectStatus, publishedAt])
+}
+
+model ProjectProposalEmail {
+  id String @id @default(cuid())
+  moodboardId String
+  threshold Int
+  status String @default("PENDING")
+  attempts Int @default(0)
+  nextAttemptAt DateTime @default(now())
+  claimedAt DateTime?
+  sentAt DateTime?
+  createdAt DateTime @default(now())
+  moodboard Moodboard @relation(fields: [moodboardId], references: [id], onDelete: Cascade)
+
+  @@unique([moodboardId, threshold])
+  @@index([status, nextAttemptAt])
+}
+
+model ProjectProposal {
+  id String @id @default(cuid())
+  moodboardId String
+  professionalId String
+  clientUserId String
+  conversationId String?
+  message String @db.Text
+  status String @default("PENDING")
+  createdAt DateTime @default(now())
+  respondedAt DateTime?
+  moodboard Moodboard @relation(fields: [moodboardId], references: [id], onDelete: Cascade)
+  professional User @relation("ProjectProfessional", fields: [professionalId], references: [id], onDelete: Cascade)
+  client User @relation("ProjectClient", fields: [clientUserId], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  reports ProfessionalReport[]
+  @@unique([moodboardId, professionalId])
+  @@index([clientUserId, createdAt])
+  @@index([conversationId])
+}
+
+model ProfessionalBlock {
+  id String @id @default(cuid())
+  clientUserId String
+  professionalId String
+  createdAt DateTime @default(now())
+  client User @relation("BlockingClient", fields: [clientUserId], references: [id], onDelete: Cascade)
+  professional User @relation("BlockedProfessional", fields: [professionalId], references: [id], onDelete: Cascade)
+  @@unique([clientUserId, professionalId])
+}
+
+model ProfessionalReport {
+  id String @id @default(cuid())
+  clientUserId String
+  professionalId String
+  proposalId String?
+  reason String @db.Text
+  createdAt DateTime @default(now())
+  client User @relation("ReportingClient", fields: [clientUserId], references: [id], onDelete: Cascade)
+  professional User @relation("ReportedProfessional", fields: [professionalId], references: [id], onDelete: Cascade)
+  proposal ProjectProposal? @relation(fields: [proposalId], references: [id], onDelete: SetNull)
+  @@index([createdAt])
 }
 
 //! MODEL POUR LES IMAGES D'UN MOODBOARD
@@ -912,6 +991,8 @@ model PasswordResetToken {
 
 //! MODEL CONVERSATION SIMPLIFIÉE (clients connectés uniquement)
 model Conversation {
+  projectContactPending Boolean @default(false)
+  projectProposals ProjectProposal[]
   id                String              @id @default(cuid())
   
   // Participants (SIMPLIFIÉ - clients connectés uniquement)

@@ -5,6 +5,7 @@ import { MessageNotificationService } from '../notifications/message-notificatio
 import { MessagesGateway } from '../websocket/messages.gateway';
 import { InstagramService } from '../instagram/instagram.service';
 import { assertProfessionalCanCreateClient, assertProfessionalCanMessage } from '../plan-access';
+import { assertContactCanMessage } from '../contact-access';
 import {
   AssignInboxThreadDto, CreateInboxClientDto, InboxMemberPermissionDto, InboxReplyDto,
   ListInboxThreadsDto, SaveInboxReplyDto,
@@ -44,7 +45,7 @@ export class InboxService {
   private readonly threadInclude = {
     conversation: {
       select: {
-        id: true, salonId: true, clientUserId: true, subject: true,
+        id: true, salonId: true, clientUserId: true, subject: true, projectContactPending: true,
         clientUser: { select: { id: true, firstName: true, lastName: true, email: true, image: true } },
       },
     },
@@ -169,7 +170,9 @@ export class InboxService {
   }
 
   async getThread(userId: string, threadId: string) {
-    return this.assertAccess(userId, threadId);
+    const thread = await this.assertAccess(userId, threadId);
+    const contactBlocked = thread.conversation ? !!await this.prisma.professionalBlock.findUnique({ where: { clientUserId_professionalId: { clientUserId: thread.conversation.clientUserId, professionalId: thread.ownerUserId } } }) : false;
+    return { ...thread, contactBlocked };
   }
 
   async getMessages(userId: string, threadId: string, page = 1, limit = 50) {
@@ -455,6 +458,7 @@ export class InboxService {
     if (thread.channel !== InboxChannel.INKERA || !thread.conversationId || !thread.conversation) {
       throw new BadRequestException('Envoi externe indisponible : connecteur non configuré');
     }
+    await assertContactCanMessage(this.prisma, thread.conversation);
     const content = dto.content?.trim();
     if (!content) throw new BadRequestException('Le message ne peut pas être vide');
 

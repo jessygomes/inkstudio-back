@@ -35,6 +35,12 @@ import { SendClientEmailDto } from './dto/send-client-email.dto';
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
 
+  @Get('project-reports')
+  projectReports(@Query('page') page?: string) {
+    const parsed = Number(page || 1);
+    return this.adminService.getProjectReports(Number.isInteger(parsed) && parsed > 0 ? Math.min(parsed, 10000) : 1);
+  }
+
   //! 1️⃣ ROUTES COLLECTION (statiques / filtres)
   //! RÉCUPÉRER LES STATISTIQUES
   @Get('stats')

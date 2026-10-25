@@ -22,6 +22,8 @@ export class LastMessageDto {
 }
 
 export class ConversationResponseDto {
+  projectContactPending?: boolean;
+  contactBlocked?: boolean;
   id: string;
   salonId: string;
   clientUserId: string;

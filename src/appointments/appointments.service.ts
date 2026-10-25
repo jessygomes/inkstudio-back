@@ -3239,13 +3239,14 @@ export class AppointmentsService {
         select: { salonName: true, email: true }
       });
 
-      // Créer une conversation si le client connecté existe (clientUserId)
-      if (existingAppointment.clientUserId) {
+      // Reuse the canonical conversation, including appointments linked through CRM.
+      const conversationClientUserId = existingAppointment.clientUserId || existingAppointment.client?.linkedUserId;
+      if (conversationClientUserId) {
         try {
           await this.conversationsService.createConversation(
             existingAppointment.userId, // salonId
             {
-              clientUserId: existingAppointment.clientUserId,
+              clientUserId: conversationClientUserId,
               appointmentId: appointment.id,
               subject: `Rendez-vous ${appointment.prestation}`,
               firstMessage: `Bonjour ${appointment.client?.firstName}, votre rendez-vous a été confirmé ! N'hésitez pas à nous contacter pour toute question.`,

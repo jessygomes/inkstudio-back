@@ -16,6 +16,7 @@ import { PaginatedConversationsDto } from './dto/paginated-conversations.dto';
 import { UnreadConversationResponseDto } from './dto/unread-conversation-response.dto';
 import { ConversationStatus, InboxChannel, MessageType, Prisma, SaasPlan, SaasPlanStatus } from '@prisma/client';
 import { MessageNotificationService } from '../notifications/message-notification.service';
+import { assertContactCanMessage } from '../contact-access';
 
 @Injectable()
 export class ConversationsService {
@@ -145,25 +146,23 @@ export class ConversationsService {
 
     // La recherche ne dépend plus de appointmentId : un client peut avoir
     // plusieurs RDV, mais une seule conversation Inkera par professionnel.
-    let conversation = await this.prisma.conversation.findFirst({
-      where: { salonId, clientUserId: dto.clientUserId },
-      orderBy: { createdAt: 'asc' },
-      include,
-    });
-
-    const wasCreated = !conversation;
-    if (!conversation) {
-      conversation = await this.prisma.conversation.create({
-        data: {
-          salonId,
-          clientUserId: dto.clientUserId,
-          appointmentId: dto.appointmentId,
-          subject: dto.subject,
-          status: ConversationStatus.ACTIVE,
-        },
-        include,
+    const { conversation, wasCreated } = await this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${salonId} FOR UPDATE`;
+      const existing = await tx.conversation.findFirst({
+        where: { salonId, clientUserId: dto.clientUserId }, orderBy: { createdAt: 'asc' }, include,
       });
-    }
+      if (existing) {
+        const conversation = existing.status === ConversationStatus.ARCHIVED
+          ? await tx.conversation.update({ where: { id: existing.id }, data: { status: ConversationStatus.ACTIVE }, include })
+          : existing;
+        return { conversation, wasCreated: false };
+      }
+      const created = await tx.conversation.create({ data: {
+        salonId, clientUserId: dto.clientUserId, appointmentId: dto.appointmentId,
+        subject: dto.subject, status: ConversationStatus.ACTIVE,
+      }, include });
+      return { conversation: created, wasCreated: true };
+    });
 
     // L'inbox est propriétaire des associations multiples aux RDV.
     const appointmentWasLinked = await this.ensureInboxThread(
@@ -174,6 +173,7 @@ export class ConversationsService {
     // Message initial : à la création du fil ou pour un nouveau RDV seulement.
     // Une relance identique d'une association déjà existante n'envoie rien.
     if (dto.firstMessage && (wasCreated || !dto.appointmentId || appointmentWasLinked)) {
+      await assertContactCanMessage(this.prisma, conversation);
       await this.prisma.message.create({
         data: {
           conversationId: conversation.id,
@@ -198,6 +198,7 @@ export class ConversationsService {
    */
   private async ensureInboxThread(
     conversation: {
+      projectContactPending?: boolean;
       id: string;
       salonId: string;
       appointmentId: string | null;
@@ -213,7 +214,7 @@ export class ConversationsService {
         conversationId: conversation.id,
         lastMessageAt: conversation.lastMessageAt,
       },
-      update: {},
+      update: { archivedAt: null },
     });
 
     if (!appointmentId) {
@@ -579,6 +580,7 @@ export class ConversationsService {
    */
   private async mapToResponseDto(
     conversation: {
+      projectContactPending?: boolean;
       id: string;
       salonId: string;
       clientUserId: string;
@@ -664,6 +666,8 @@ export class ConversationsService {
 
     return {
       id: conversation.id,
+      projectContactPending: conversation.projectContactPending ?? false,
+      contactBlocked: !!await this.prisma.professionalBlock.findUnique({ where: { clientUserId_professionalId: { clientUserId: conversation.clientUserId, professionalId: conversation.salonId } } }),
       salonId: conversation.salonId,
       clientUserId: conversation.clientUserId,
       appointmentId: conversation.appointmentId ?? undefined,

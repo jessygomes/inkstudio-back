@@ -74,7 +74,11 @@ export class MessageNotificationService {
       },
     });
 
-    return result._sum.unreadCount || 0;
+    // Project requests are visible before any conversation exists.
+    const pendingRequests = await this.prisma.projectProposal.count({
+      where: { clientUserId: userId, status: 'PENDING' },
+    });
+    return (result._sum.unreadCount || 0) + pendingRequests;
   }
 
   /**

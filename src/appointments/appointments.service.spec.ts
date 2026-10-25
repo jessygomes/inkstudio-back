@@ -110,6 +110,23 @@ describe('AppointmentsService', () => {
   // TESTS POUR LA FONCTION CREATE
   // ============================================================================
 
+  describe('confirmAppointment conversation reuse', () => {
+    it.each(['client-inkera', null])('uses the canonical conversation service for connected or CRM-linked clients: %s', async clientUserId => {
+      const appointment = {
+        id: 'appointment', userId: 'salon', clientUserId,
+        prestation: 'TATTOO', title: 'Tattoo', start: new Date('2026-11-01T10:00:00Z'), end: new Date('2026-11-01T11:00:00Z'),
+        client: { id: 'crm-client', linkedUserId: 'linked-client', firstName: 'Jean', lastName: 'Dupont', email: 'client@example.test' },
+        tatoueur: { name: 'Artist' },
+      };
+      prisma.appointment.findUnique.mockResolvedValue(appointment);
+      prisma.appointment.update.mockResolvedValue({ ...appointment, status: 'CONFIRMED' });
+      prisma.user.findUnique.mockResolvedValue({ salonName: 'Salon', email: 'salon@example.test' });
+      conversationsService.createConversation.mockResolvedValue({ id: 'existing-conversation' });
+      await expect(service.confirmAppointment('appointment', '')).resolves.toMatchObject({ error: false });
+      expect(conversationsService.createConversation).toHaveBeenCalledWith('salon', expect.objectContaining({ clientUserId: clientUserId || 'linked-client', appointmentId: 'appointment' }));
+    });
+  });
+
   describe('create()', () => {
     const userId = 'salon-123';
     const tatoueurId = 'tatoueur-456';

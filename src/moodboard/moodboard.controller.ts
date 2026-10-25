@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Request,
   UseGuards,
 } from '@nestjs/common';
@@ -39,6 +40,11 @@ export class MoodboardController {
   }
 
   //! VOIR UN MOODBOARD PAR ID ✅ (client propriétaire ou salon avec accès via rdv)
+  @Get('appointment-options')
+  appointmentOptions(@Request() req: RequestWithUser, @Query('email') email: string) {
+    return this.moodboardService.getAppointmentOptions(req.user.userId, email);
+  }
+
   @Get(':id')
   getById(
     @Param('id') id: string,

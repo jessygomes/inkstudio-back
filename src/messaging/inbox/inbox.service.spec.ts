@@ -18,6 +18,7 @@ const thread = {
 
 function createMock() {
   return {
+    professionalBlock: { findUnique: jest.fn().mockResolvedValue(null) },
     user: { findUnique: jest.fn() },
     inboxThread: { findMany: jest.fn(), findUnique: jest.fn(), count: jest.fn(), update: jest.fn() },
     inboxMemberPermission: { findUnique: jest.fn(), upsert: jest.fn() },

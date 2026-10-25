@@ -8,6 +8,16 @@ import { findClosestStyle, styleKey } from 'src/portfolio/style.utils';
 
 @Injectable()
 export class AdminService {
+  async getProjectReports(page: number) {
+    const [data, total] = await Promise.all([
+      this.prisma.professionalReport.findMany({ skip: (page - 1) * 20, take: 20, orderBy: { createdAt: 'desc' }, include: {
+        client: { select: { id: true, email: true, firstName: true, lastName: true } },
+        professional: { select: { id: true, salonName: true, email: true } },
+        proposal: { select: { message: true, moodboard: { select: { name: true } } } },
+      } }), this.prisma.professionalReport.count(),
+    ]);
+    return { data, total, page, totalPages: Math.ceil(total / 20) };
+  }
   constructor(
     private prisma: PrismaService,
     private cacheService: CacheService,

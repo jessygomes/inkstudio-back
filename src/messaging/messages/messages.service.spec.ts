@@ -8,6 +8,7 @@ import { MessageType } from '@prisma/client';
 
 // Mock factory
 const createPrismaMock = () => ({
+  professionalBlock: { findUnique: jest.fn().mockResolvedValue(null) },
   message: {
     create: jest.fn(),
     findUnique: jest.fn(),
