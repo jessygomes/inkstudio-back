@@ -42,6 +42,15 @@ describe('SaasService billing lifecycle', () => {
     expect(prisma.saasPlanDetails.updateMany).not.toHaveBeenCalled();
   });
 
+  it('keeps offered Stripe periods outside native trial expiry and schedules resumption', async () => {
+    const update = jest.spyOn(service, 'updateUserPlan').mockResolvedValue({} as never);
+    const start = new Date('2026-11-12T10:00:00Z'); const end = new Date('2027-02-12T10:00:00Z');
+    await service.markStripeGift('user-1', SaasPlan.PRO, start, end);
+    expect(update).toHaveBeenCalledWith('user-1', SaasPlan.PRO, null, expect.objectContaining({ paymentMethod: 'STRIPE_GIFT', startDate: start, trialEndDate: end, nextPaymentDate: end }));
+    await service.markStripeGift('user-1', SaasPlan.PRO, start, end, false);
+    expect(update).toHaveBeenLastCalledWith('user-1', SaasPlan.PRO, null, expect.objectContaining({ nextPaymentDate: null }));
+  });
+
   it('delegates markSubscriptionPastDue to updateUserPlan with expected options', async () => {
     const nextPaymentDate = new Date('2026-06-01T00:00:00.000Z');
     const pastDueSince = new Date('2026-05-22T12:00:00.000Z');
@@ -58,6 +67,7 @@ describe('SaasService billing lifecycle', () => {
     );
 
     expect(updateSpy).toHaveBeenCalledWith('user-1', SaasPlan.PRO, null, {
+      paymentMethod: 'STRIPE',
       planStatus: SaasPlanStatus.PAST_DUE,
       nextPaymentDate,
       pastDueSince,
@@ -171,9 +181,9 @@ describe('Native trial access expiry', () => {
 });
 
 describe('Invitation expiry', () => {
-  it('returns an expired invitation to Free while retaining its invitation history', async () => {
+  it.each(['INVITATION', 'ADMIN_GIFT'])('returns an expired %s offer to Free while retaining its source', async paymentMethod => {
     const details = { userId: 'u1', currentPlan: SaasPlan.PRO, planStatus: SaasPlanStatus.ACTIVE,
-      paymentMethod: 'INVITATION', endDate: new Date('2020-01-01') };
+      paymentMethod, endDate: new Date('2020-01-01') };
     const expired = { ...details, currentPlan: SaasPlan.FREE, planStatus: SaasPlanStatus.EXPIRED, endDate: null };
     const prisma = {
       user: { findUnique: jest.fn().mockResolvedValue({ stripeSubscriptionId: null }), update: jest.fn().mockResolvedValue({}) },
@@ -181,7 +191,7 @@ describe('Invitation expiry', () => {
       $transaction: jest.fn().mockResolvedValue([{}, expired]),
     };
     const result = await new SaasService(prisma as never).getUserPlanDetails('u1');
-    expect(result).toMatchObject({ currentPlan: 'FREE', planStatus: 'EXPIRED', paymentMethod: 'INVITATION', endDate: null });
+    expect(result).toMatchObject({ currentPlan: 'FREE', planStatus: 'EXPIRED', paymentMethod, endDate: null });
     expect(prisma.user.update).toHaveBeenCalledWith({ where: { id: 'u1' }, data: { saasPlan: 'FREE', saasPlanUntil: null } });
     expect(prisma.saasPlanDetails.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ currentPlan: 'FREE', monthlyPrice: 0, endDate: null }) }));
   });
@@ -190,7 +200,7 @@ describe('Invitation expiry', () => {
     const prisma = { saasPlanDetails: { findMany: jest.fn().mockResolvedValue([]) } };
     const result = await new SaasService(prisma as never).downgradeExpiredInvitationUsers();
     expect(prisma.saasPlanDetails.findMany).toHaveBeenCalledWith({
-      where: { paymentMethod: 'INVITATION', currentPlan: { not: SaasPlan.FREE }, endDate: { lte: expect.any(Date) }, user: { stripeSubscriptionId: null } },
+      where: { paymentMethod: { in: ['INVITATION', 'ADMIN_GIFT'] }, currentPlan: { not: SaasPlan.FREE }, endDate: { lte: expect.any(Date) }, user: { stripeSubscriptionId: null } },
       select: { userId: true },
     });
     expect(result.downgraded).toBe(0);

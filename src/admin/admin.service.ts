@@ -603,9 +603,11 @@ export class AdminService {
           description: true,
           verifiedSalon: true,
           saasPlan: true,
+          saasPlanUntil: true,
+          stripeSubscriptionId: true,
           redeemedInvitation: { select: { id: true, durationMonths: true, redeemedAt: true } },
           saasPlanDetails: {
-            select: { firstPaidPlanAt: true, currentPlan: true, planStatus: true },
+            select: { firstPaidPlanAt: true, currentPlan: true, planStatus: true, startDate: true, endDate: true, trialEndDate: true, paymentMethod: true, monthlyPrice: true, nextPaymentDate: true },
           },
           createdAt: true,
           updatedAt: true,
@@ -658,7 +660,7 @@ export class AdminService {
 
       return {
         error: false,
-        user: this.withMembership(user),
+        user: this.withMembership({ ...user, hasStripeSubscription: !!user.stripeSubscriptionId }),
       };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';

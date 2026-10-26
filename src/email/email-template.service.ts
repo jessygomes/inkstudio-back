@@ -80,6 +80,7 @@ export interface EmailTemplateData {
     billingUrl?: string;
     planName?: string;
     stripeManaged?: boolean;
+    isGift?: boolean;
   };
   
   verificationToken?: string;
@@ -451,7 +452,7 @@ export class EmailTemplateService {
     const content = `
       <div class="content">
         <div class="welcome-section">
-          <h2 class="welcome-title">Votre essai se termine bientôt</h2>
+          <h2 class="welcome-title">${details.isGift ? 'Votre période offerte se termine bientôt' : 'Votre essai se termine bientôt'}</h2>
         </div>
 
         <br/>
@@ -464,7 +465,7 @@ export class EmailTemplateService {
           </p>
           <br/>
           <p>
-            ${details.stripeManaged ? 'Votre abonnement est déjà souscrit. Vérifiez votre moyen de paiement avant le premier prélèvement.' : 'Pour conserver vos fonctionnalités, souscrivez à votre abonnement avant cette date. Sans souscription, votre compte repassera en formule Free à la fin de la période offerte. Aucun prélèvement automatique ne sera effectué sans souscription.'}
+            ${details.isGift ? 'La facturation de votre abonnement Stripe reprendra automatiquement à cette date, au tarif de votre abonnement. Vous pouvez consulter ou résilier votre abonnement depuis vos paramètres.' : details.stripeManaged ? 'Votre abonnement est déjà souscrit. Vérifiez votre moyen de paiement avant le premier prélèvement.' : 'Pour conserver vos fonctionnalités, souscrivez à votre abonnement avant cette date. Sans souscription, votre compte repassera en formule Free à la fin de la période offerte. Aucun prélèvement automatique ne sera effectué sans souscription.'}
           </p>
         </div>
 

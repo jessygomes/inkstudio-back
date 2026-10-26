@@ -10,6 +10,8 @@ import { SaasPlan, Role } from '@prisma/client';
 import { SendClientEmailDto } from './dto/send-client-email.dto';
 import { SubscriptionInvitationsService } from './subscription-invitations.service';
 import { CreateSubscriptionInvitationDto, UpdateInvitationDurationDto } from './dto/subscription-invitation.dto';
+import { AdminSubscriptionsService } from './admin-subscriptions.service';
+import { GrantSubscriptionDto } from './dto/grant-subscription.dto';
 
 /*
   Guide d'ordre des routes (à respecter lors des ajouts)
@@ -35,7 +37,7 @@ import { CreateSubscriptionInvitationDto, UpdateInvitationDurationDto } from './
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('admin')
 export class AdminController {
-  constructor(private readonly adminService: AdminService, private readonly invitations: SubscriptionInvitationsService) {}
+  constructor(private readonly adminService: AdminService, private readonly invitations: SubscriptionInvitationsService, private readonly subscriptions: AdminSubscriptionsService) {}
 
   @Get('invitations')
   listInvitations() { return this.invitations.list(); }
@@ -188,6 +190,16 @@ export class AdminController {
   }
 
   //! RÉCUPÉRER UN UTILISATEUR PAR ID
+  @Patch('users/:id/subscription')
+  grantSubscription(@Param('id') id: string, @Body() body: GrantSubscriptionDto, @Request() req: RequestWithUser) {
+    return this.subscriptions.grant(id, body, req.user.userId);
+  }
+
+  @Post('users/:id/subscription/preview')
+  previewSubscriptionGift(@Param('id') id: string, @Body() body: GrantSubscriptionDto) {
+    return this.subscriptions.preview(id, body);
+  }
+
   @Get('users/:id')
   async getUserById(
     @Param('id') id: string

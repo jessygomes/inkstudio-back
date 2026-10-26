@@ -6,10 +6,12 @@ import { CacheService } from 'src/redis/cache.service';
 import { MailModule } from 'src/email/mail.module';
 import { SubscriptionInvitationsService } from './subscription-invitations.service';
 import { SaasModule } from 'src/saas/saas.module';
+import { AdminSubscriptionsService } from './admin-subscriptions.service';
+import { StripeModule } from 'src/stripe/stripe.module';
 
 @Module({
-  imports: [MailModule, SaasModule],
+  imports: [MailModule, SaasModule, StripeModule],
   controllers: [AdminController],
-  providers: [AdminService, PrismaService, CacheService, SubscriptionInvitationsService],
+  providers: [AdminService, PrismaService, CacheService, SubscriptionInvitationsService, AdminSubscriptionsService],
 })
 export class AdminModule {}

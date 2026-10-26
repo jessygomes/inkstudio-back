@@ -14,6 +14,7 @@ import {
 import { SaasPlan } from '@prisma/client';
 import { Request } from 'express';
 import Stripe from 'stripe';
+import { readStripeAdminGift } from './admin-gift';
 import { RequestWithUser } from 'src/auth/jwt.strategy';
 import {
   StripeService,
@@ -197,6 +198,11 @@ export class StripeController {
       : null;
 
     if (subscription.status === 'trialing') {
+      const gift = readStripeAdminGift(subscription);
+      if (gift) {
+        await this.saasService.markStripeGift(userId, targetPlan, gift.startDate, gift.endDate, !subscription.cancel_at_period_end && !subscription.cancel_at);
+        return;
+      }
       await this.saasService.markSubscriptionTrialing(
         userId,
         targetPlan,
@@ -236,13 +242,14 @@ export class StripeController {
       current_period_end?: number;
     };
 
-    if (!rawSubscription.current_period_end) {
+    const periodEnd = subscription.items.data[0]?.current_period_end ?? rawSubscription.current_period_end;
+    if (!periodEnd) {
       return null;
     }
 
     // Cast défensif: certains champs Stripe existent en runtime mais pas toujours
     // exposés de façon homogène par les typings du SDK.
-    return new Date(rawSubscription.current_period_end * 1000);
+    return new Date(periodEnd * 1000);
   }
 
   // Méthode pour obtenir l'ID de souscription à partir d'une facture Stripe
@@ -764,7 +771,9 @@ export class StripeController {
 
   private async handleSubscriptionTrialWillEnd(event: Stripe.Event) {
     const subscription = event.data.object as Stripe.Subscription;
-    if (subscription.metadata?.inkera_trial_end) return;
+    const gift = readStripeAdminGift(subscription);
+    if (subscription.metadata?.inkera_trial_end && !gift) return;
+    if (gift && (subscription.cancel_at_period_end || subscription.cancel_at)) return;
     const customerId =
       typeof subscription.customer === 'string'
         ? subscription.customer
@@ -793,8 +802,9 @@ export class StripeController {
     await this.mailService.sendTrialEndingSoonReminder(user.email, {
       recipientName,
       salonName: user.salonName,
-      trialEndDate: trialEndDate.toLocaleDateString('fr-FR'),
+      trialEndDate: trialEndDate.toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris' }),
       stripeManaged: true,
+      ...(gift ? { isGift: true } : {}),
     });
 
     this.logger.log(`Rappel de fin d'essai envoyé au salon ${user.id}`);
@@ -896,7 +906,7 @@ export class StripeController {
     });
 
     if (user) {
-      await this.saasService.updateUserPlan(user.id, SaasPlan.FREE, null);
+      await this.saasService.updateUserPlan(user.id, SaasPlan.FREE, null, { paymentMethod: 'STRIPE', trialEndDate: null, nextPaymentDate: null });
 
       await this.prisma.user.update({
         where: { id: user.id },
@@ -942,7 +952,7 @@ export class StripeController {
 
     if (subscription.status === 'canceled') {
       // Stripe considère l'abonnement comme réellement terminé: on coupe l'accès local.
-      await this.saasService.updateUserPlan(user.id, SaasPlan.FREE, null);
+      await this.saasService.updateUserPlan(user.id, SaasPlan.FREE, null, { paymentMethod: 'STRIPE', trialEndDate: null, nextPaymentDate: null });
 
       await this.prisma.user.update({
         where: { id: user.id },

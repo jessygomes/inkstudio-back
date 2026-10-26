@@ -158,8 +158,9 @@ export class MailService {
     trialEndDate: string;
     planName?: string;
     stripeManaged?: boolean;
+    isGift?: boolean;
   }): Promise<MailgunResponse> {
-    const subject = 'Votre essai se termine bientôt';
+    const subject = data.isGift ? 'Votre période offerte se termine bientôt' : 'Votre essai se termine bientôt';
     const html = this.emailTemplateService.generateTrialEndingSoonEmail({
       recipientName: data.recipientName,
       salonName: data.salonName || 'Inkera Studio',
@@ -167,6 +168,7 @@ export class MailService {
         trialEndDate: data.trialEndDate,
         planName: data.planName,
         stripeManaged: data.stripeManaged,
+        isGift: data.isGift,
       },
     });
 

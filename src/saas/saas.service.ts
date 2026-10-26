@@ -5,6 +5,8 @@ import { freePlan, proPlan, businessPlan } from '../../utils/data';
 import { SaasGuardAction } from './saas-limit.decorator';
 
 type UpdatePlanOptions = {
+  paymentMethod?: string | null;
+  startDate?: Date;
   planStatus?: SaasPlanStatus;
   trialEndDate?: Date | null;
   nextPaymentDate?: Date | null;
@@ -215,11 +217,16 @@ export class SaasService {
     // Ces champs sont optionnels: on ne les écrit que lorsqu'ils sont fournis
     // explicitement, afin d'éviter d'écraser des dates déjà stockées.
     const optionalFields: Partial<{
+      paymentMethod: string | null;
+      startDate: Date;
       trialEndDate: Date | null;
       nextPaymentDate: Date | null;
       lastPaymentDate: Date | null;
       pastDueSince: Date | null;
     }> = {};
+
+    if (options && 'paymentMethod' in options) optionalFields.paymentMethod = options.paymentMethod ?? null;
+    if (options?.startDate) optionalFields.startDate = options.startDate;
 
     if (options && 'trialEndDate' in options) {
       optionalFields.trialEndDate = options.trialEndDate ?? null;
@@ -285,6 +292,7 @@ export class SaasService {
     trialEndDate: Date | null,
   ) {
     return await this.updateUserPlan(userId, plan, null, {
+      paymentMethod: 'STRIPE',
       planStatus: SaasPlanStatus.TRIAL,
       trialEndDate,
       nextPaymentDate: trialEndDate,
@@ -302,6 +310,7 @@ export class SaasService {
     paidPlanStartedAt: Date = new Date(),
   ) {
     const details = await this.updateUserPlan(userId, plan, null, {
+      paymentMethod: 'STRIPE',
       planStatus: SaasPlanStatus.ACTIVE,
       trialEndDate: null,
       nextPaymentDate,
@@ -333,9 +342,17 @@ export class SaasService {
     pastDueSince: Date = new Date(),
   ) {
     return await this.updateUserPlan(userId, plan, null, {
+      paymentMethod: 'STRIPE',
       planStatus: SaasPlanStatus.PAST_DUE,
       nextPaymentDate,
       pastDueSince,
+    });
+  }
+
+  async markStripeGift(userId: string, plan: SaasPlan, startDate: Date, endDate: Date, autoResume = true) {
+    return this.updateUserPlan(userId, plan, null, {
+      paymentMethod: 'STRIPE_GIFT', startDate, planStatus: SaasPlanStatus.TRIAL,
+      trialEndDate: endDate, nextPaymentDate: autoResume ? endDate : null, pastDueSince: null,
     });
   }
 
@@ -382,12 +399,12 @@ export class SaasService {
   }
 
   /**
-   * Termine les accès offerts sur invitation, sans souscription Stripe.
+   * Termine les accès offerts sur invitation ou par l'administration, sans Stripe.
    */
   async downgradeExpiredInvitationUsers() {
     const now = new Date();
     const users = await this.prisma.saasPlanDetails.findMany({
-      where: { paymentMethod: 'INVITATION', currentPlan: { not: SaasPlan.FREE },
+      where: { paymentMethod: { in: ['INVITATION', 'ADMIN_GIFT'] }, currentPlan: { not: SaasPlan.FREE },
         endDate: { lte: now }, user: { stripeSubscriptionId: null } },
       select: { userId: true },
     });

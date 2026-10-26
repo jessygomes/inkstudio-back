@@ -7,6 +7,12 @@ import { BACK_OFFICE_PATH } from '../config/back-office';
 describe('Inkera email presentation', () => {
   const service = new EmailTemplateService();
 
+  it('announces automatic billing resumption after an administrative Stripe gift', () => {
+    const html = service.generateTrialEndingSoonEmail({ recipientName: 'Alex', trialEndingSoonDetails: { trialEndDate: '12 février 2027', stripeManaged: true, isGift: true } });
+    expect(html).toContain('reprendra automatiquement');
+    expect(html).not.toContain('avant le premier prélèvement');
+  });
+
   it('links admin notifications to the current back-office users page', () => {
     const previous = process.env.FRONTEND_URL;
     process.env.FRONTEND_URL = 'https://app.example.com';

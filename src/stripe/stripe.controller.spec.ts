@@ -26,6 +26,7 @@ const createStripeServiceMock = () => ({
 const createSaasServiceMock = () => ({
   updateUserPlan: jest.fn(),
   markSubscriptionTrialing: jest.fn(),
+  markStripeGift: jest.fn(),
   markSubscriptionPastDue: jest.fn(),
   markSubscriptionActive: jest.fn(),
 });
@@ -90,6 +91,41 @@ describe('StripeController webhook flows', () => {
     prisma.stripeWebhookEvent.create.mockResolvedValue({ id: 'swe_1' });
 
     jest.clearAllMocks();
+  });
+
+  it('synchronizes an administrative Stripe offer without treating it as a native trial', async () => {
+    const start = Math.floor(new Date('2026-11-12T10:00:00Z').getTime() / 1000);
+    const end = Math.floor(new Date('2027-02-12T10:00:00Z').getTime() / 1000);
+    await (controller as any).syncPlanFromStripeSubscription('user-1', {
+      status: 'trialing', trial_end: end, cancel_at_period_end: false, cancel_at: null,
+      metadata: { inkera_admin_gift: '1', inkera_gift_start: String(start), inkera_gift_end: String(end) },
+      items: { data: [{ price: { id: 'price_business' }, current_period_end: end }] },
+    });
+    expect(saasService.markStripeGift).toHaveBeenCalledWith('user-1', SaasPlan.BUSINESS, new Date(start * 1000), new Date(end * 1000), true);
+    expect(saasService.markSubscriptionTrialing).not.toHaveBeenCalled();
+  });
+
+  it('keeps a customer cancellation in place during an offered Stripe period', async () => {
+    await (controller as any).syncPlanFromStripeSubscription('user-1', {
+      status: 'trialing', trial_end: 1800000000, cancel_at_period_end: true,
+      metadata: { inkera_admin_gift: '1', inkera_gift_start: '1700000000', inkera_gift_end: '1800000000' },
+      items: { data: [{ price: { id: 'price_pro' } }] },
+    });
+    expect(saasService.markStripeGift).toHaveBeenCalledWith('user-1', SaasPlan.PRO, expect.any(Date), expect.any(Date), false);
+  });
+
+  it('resumes the regular paid plan using period dates from current Stripe item fields', async () => {
+    await (controller as any).syncPlanFromStripeSubscription('user-1', {
+      status: 'active', trial_end: 1800000000, metadata: { inkera_admin_gift: '1' },
+      items: { data: [{ price: { id: 'price_pro' }, current_period_end: 1802592000 }] },
+    });
+    expect(saasService.markSubscriptionActive).toHaveBeenCalledWith('user-1', SaasPlan.PRO, new Date(1802592000 * 1000), new Date(1800000000 * 1000));
+  });
+
+  it('clears resumption dates when a subscription is actually canceled', async () => {
+    prisma.user.findFirst.mockResolvedValue(baseUser);
+    await (controller as any).handleSubscriptionUpdated({ data: { object: { id: 'sub_123', customer: 'cus_123', status: 'canceled' } } });
+    expect(saasService.updateUserPlan).toHaveBeenCalledWith(baseUser.id, SaasPlan.FREE, null, expect.objectContaining({ trialEndDate: null, nextPaymentDate: null }));
   });
 
   it('sends trial ending reminder to salon on customer.subscription.trial_will_end', async () => {

@@ -6,6 +6,9 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import Stripe from 'stripe';
+import { createHash, randomUUID } from 'crypto';
+import { invitationEndDate } from 'src/auth/invitation-policy';
+import { readStripeAdminGift, StripeGiftPreview } from './admin-gift';
 import {
   CheckoutPlan,
   STRIPE_API_VERSION,
@@ -70,6 +73,57 @@ export class StripeService {
     this.stripe = new Stripe(stripeSecretKey, {
       apiVersion: STRIPE_API_VERSION,
     });
+  }
+
+  private async loadAdminGiftSubscription(userId: string) {
+    const user = await this.getUserOrThrow(userId);
+    if (!user.stripeSubscriptionId) throw new BadRequestException('Aucun abonnement Stripe rattaché au compte.');
+    const subscription = await this.stripe.subscriptions.retrieve(user.stripeSubscriptionId, { expand: ['latest_invoice'] });
+    return { user, subscription };
+  }
+
+  private buildAdminGiftPreview(user: StripeUserSnapshot, subscription: Stripe.Subscription, duration: number, unit: 'MONTHS' | 'DAYS'): StripeGiftPreview {
+    const item = subscription.items.data[0];
+    const price = item?.price;
+    const existingGift = subscription.status === 'trialing' ? readStripeAdminGift(subscription) : null;
+    const expectedPlan = user.role === 'user_salon' ? 'BUSINESS' : user.role === 'user_tatoueur' ? 'PRO' : null;
+    if (!expectedPlan || this.getCheckoutPlanFromSubscription(subscription) !== expectedPlan) throw new BadRequestException('La formule Stripe ne correspond pas au type de compte.');
+    if ((subscription.status !== 'active' && !existingGift) || subscription.cancel_at_period_end || subscription.cancel_at || subscription.schedule || subscription.pause_collection || subscription.pending_update || subscription.collection_method !== 'charge_automatically') {
+      throw new BadRequestException('L’offre nécessite un abonnement actif, sans résiliation, pause ou changement déjà programmé.');
+    }
+    if (!subscription.latest_invoice || typeof subscription.latest_invoice === 'string' || subscription.latest_invoice.status !== 'paid') throw new BadRequestException('La dernière facture doit être réglée avant de programmer une période offerte.');
+    if (subscription.billing_mode?.type === 'flexible' || subscription.items.data.length !== 1 || !price?.recurring || price.recurring.usage_type !== 'licensed' || price.unit_amount == null || !item.quantity) throw new BadRequestException('Cette configuration Stripe ne permet pas de programmer cette offre automatique.');
+    const periodEnd = existingGift ? Math.floor(existingGift.startDate.getTime() / 1000) : item.current_period_end ?? (subscription as unknown as { current_period_end?: number }).current_period_end;
+    if (!periodEnd || (!existingGift && periodEnd * 1000 <= Date.now())) throw new BadRequestException('La prochaine échéance Stripe est indisponible ou déjà passée.');
+    const startDate = new Date(periodEnd * 1000);
+    const endDate = unit === 'MONTHS' ? invitationEndDate(startDate, duration) : new Date(startDate.getTime() + duration * 86400000);
+    if (endDate.getTime() <= Date.now()) throw new BadRequestException('La fin de la période offerte doit être dans le futur.');
+    if (endDate.getTime() > Date.now() + 730 * 86400000) throw new BadRequestException('La reprise Stripe doit avoir lieu dans les 730 prochains jours. Réduisez la durée offerte.');
+    const amount = price.unit_amount * item.quantity;
+    const confirmation = createHash('sha256').update(JSON.stringify({ userId: user.id, subscriptionId: subscription.id, priceId: price.id, amount, currency: price.currency, interval: price.recurring.interval, intervalCount: price.recurring.interval_count, startDate, endDate, duration, unit, previousTrialEnd: subscription.trial_end })).digest('hex');
+    return { currentPlan: expectedPlan, startDate: startDate.toISOString(), endDate: endDate.toISOString(), amount, currency: price.currency, interval: price.recurring.interval, intervalCount: price.recurring.interval_count, confirmation, requestId: randomUUID() };
+  }
+
+  async previewAdminGift(userId: string, duration: number, unit: 'MONTHS' | 'DAYS') {
+    const { user, subscription } = await this.loadAdminGiftSubscription(userId);
+    return this.buildAdminGiftPreview(user, subscription, duration, unit);
+  }
+
+  async applyAdminGift(userId: string, duration: number, unit: 'MONTHS' | 'DAYS', confirmation: string, requestId: string, adminId: string) {
+    const { user, subscription } = await this.loadAdminGiftSubscription(userId);
+    const existingGift = readStripeAdminGift(subscription);
+    if (existingGift && subscription.status === 'trialing' && subscription.metadata.inkera_gift_request === requestId && subscription.metadata.inkera_gift_confirmation === confirmation) {
+      return { subscription, ...existingGift, currentPlan: this.getCheckoutPlanFromSubscription(subscription)!, autoResume: !subscription.cancel_at_period_end && !subscription.cancel_at };
+    }
+    const preview = this.buildAdminGiftPreview(user, subscription, duration, unit);
+    if (preview.confirmation !== confirmation) throw new BadRequestException('L’abonnement a changé. Vérifiez à nouveau les dates et le tarif avant de confirmer.');
+    const startDate = new Date(preview.startDate);
+    const endDate = new Date(preview.endDate);
+    const updated = await this.stripe.subscriptions.update(subscription.id, {
+      trial_end: Math.floor(endDate.getTime() / 1000), proration_behavior: 'none',
+      metadata: { inkera_admin_gift: '1', inkera_gift_start: String(Math.floor(startDate.getTime() / 1000)), inkera_gift_end: String(Math.floor(endDate.getTime() / 1000)), inkera_gift_request: requestId, inkera_gift_confirmation: confirmation, inkera_gift_admin: adminId },
+    }, { idempotencyKey: `admin-gift:${userId}:${requestId}` });
+    return { subscription: updated, startDate, endDate, currentPlan: preview.currentPlan, autoResume: true };
   }
 
   private assertBusinessEligibility(user: StripeUserSnapshot, plan: CheckoutPlan): void {
