@@ -7,12 +7,18 @@ import {
   IsOptional,
   IsString,
   MinLength,
+  Matches,
 } from 'class-validator';
 import { CHECKOUT_PLANS, CheckoutPlan } from 'src/stripe/stripe.constants';
 
 //! Schema de validation des données pour la création d'un utilisateur
 
 export class CreateUserDto {
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-f0-9]{64}$/, { message: 'Invitation invalide.' })
+  invitationToken?: string;
+
   @IsEmail({}, { message: 'Vous devez fournir une adresse email valide' })
   email: string;
 

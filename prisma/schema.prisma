@@ -111,6 +111,7 @@ model User {
   ProductSalon              ProductSalon[]
 
   saasPlanDetails           SaasPlanDetails?
+  redeemedInvitation       SubscriptionInvitation?
   
   Tatoueur                  Tatoueur[]
   TimeSlot                  TimeSlot[]
@@ -948,6 +949,24 @@ model StripeWebhookEvent {
   createdAt  DateTime @default(now())
 
   @@index([eventType])
+  @@index([createdAt])
+}
+
+model SubscriptionInvitation {
+  id             String   @id @default(cuid())
+  tokenHash      String   @unique
+  email          String
+  role           Role
+  plan           SaasPlan
+  durationMonths Int      @default(12)
+  createdById    String
+  createdAt      DateTime @default(now())
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  redeemedAt     DateTime?
+  redeemedById   String?  @unique
+  redeemedBy     User?    @relation(fields: [redeemedById], references: [id], onDelete: SetNull)
+
   @@index([createdAt])
 }
 

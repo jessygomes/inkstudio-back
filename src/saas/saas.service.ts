@@ -182,6 +182,7 @@ export class SaasService {
       this.prisma.saasPlanDetails.update({
         where: { userId },
         data: {
+          endDate: null,
           planStatus: SaasPlanStatus.EXPIRED,
           currentPlan: SaasPlan.FREE,
           ...freeConfig,
@@ -381,9 +382,20 @@ export class SaasService {
   }
 
   /**
-   * Rétrograde automatiquement en FREE les comptes en TRIAL arrivés à échéance
-   * lorsqu'aucune souscription Stripe active n'est rattachée.
+   * Termine les accès offerts sur invitation, sans souscription Stripe.
    */
+  async downgradeExpiredInvitationUsers() {
+    const now = new Date();
+    const users = await this.prisma.saasPlanDetails.findMany({
+      where: { paymentMethod: 'INVITATION', currentPlan: { not: SaasPlan.FREE },
+        endDate: { lte: now }, user: { stripeSubscriptionId: null } },
+      select: { userId: true },
+    });
+    for (const user of users) await this.expirePlan(user.userId);
+    return { scanned: users.length, downgraded: users.length, checkedAt: now };
+  }
+
+  /** Termine les essais natifs non convertis en abonnement Stripe. */
   async downgradeExpiredTrialUsers() {
     const now = new Date();
 

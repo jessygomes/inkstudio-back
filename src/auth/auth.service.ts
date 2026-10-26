@@ -1,4 +1,4 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, Optional } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import {compare, hash} from 'bcryptjs';
 import { JwtService } from '@nestjs/jwt';
@@ -9,10 +9,12 @@ import { MailService } from 'src/email/mailer.service';
 import { createHash, randomBytes } from 'crypto';
 import { SaasService } from 'src/saas/saas.service';
 import { nativeTrialEndDate } from '../saas/trial-policy';
+import { invitationEndDate, invitationTokenHash } from './invitation-policy';
 import { CreateUserClientDto } from './dto/create-userClient.dto';
 import { CreateTatoueurUserDto } from './dto/create-tatoueur-user.dto';
 import { StripeService } from 'src/stripe/stripe.service';
 import { AgendaMode, SaasPlan, SaasPlanStatus } from '@prisma/client';
+import { CacheService } from 'src/redis/cache.service';
 
 interface AuthenticatedUser {
   id: string;
@@ -78,6 +80,7 @@ export class AuthService {
     private readonly mailService: MailService,
     private readonly saasService: SaasService,
     private readonly stripeService: StripeService,
+    @Optional() private readonly cacheService?: CacheService,
   ) {}
 
   private getTatoueurTrialMonths(): number {
@@ -199,7 +202,7 @@ export class AuthService {
   async register({ registerBody }: { registerBody: CreateUserDto }) {
     try {
       const {
-        email,
+        email: registrationEmail,
         role,
         salonName,
         saasPlan,
@@ -209,7 +212,9 @@ export class AuthService {
         lastName,
         phone,
         website,
+        invitationToken,
       } = registerBody;
+      const email = invitationToken ? registrationEmail.trim().toLowerCase() : registrationEmail;
 
       // Honeypot backend: un humain ne renseigne pas ce champ caché.
       // Si le champ est rempli, on ne crée pas de compte et on renvoie
@@ -234,6 +239,15 @@ export class AuthService {
         };
       }
 
+      const invitation = invitationToken
+        ? await this.prisma.subscriptionInvitation.findUnique({ where: { tokenHash: invitationTokenHash(invitationToken) } })
+        : null;
+      if (invitationToken && (!invitation || invitation.revokedAt || invitation.redeemedAt || invitation.expiresAt <= new Date())) {
+        throw new BadRequestException('Invitation invalide, expirée ou déjà utilisée.');
+      }
+      if (invitation && (invitation.email !== email.trim().toLowerCase() || invitation.role !== role)) {
+        throw new BadRequestException('Cette invitation ne correspond pas à votre email ou au type de compte.');
+      }
       if ((saasPlan === SaasPlan.BUSINESS || checkoutPlan === 'BUSINESS') && role !== 'user_salon') {
         throw new BadRequestException('Le plan Business est réservé aux comptes salon.');
       }
@@ -259,13 +273,14 @@ export class AuthService {
       // Hashage du mot de passe
       const hashedPassword = await this.hashPassword({password});
       const isTatoueurRole = role === 'user_tatoueur';
-      const initialPlan = isTatoueurRole ? SaasPlan.PRO : (saasPlan || SaasPlan.FREE);
-      const trialEndDate = nativeTrialEndDate(role, initialPlan, new Date(), this.getTatoueurTrialMonths());
+      const initialPlan = invitation?.plan ?? (isTatoueurRole ? SaasPlan.PRO : (saasPlan || SaasPlan.FREE));
+      const trialEndDate = invitation ? null : nativeTrialEndDate(role, initialPlan, new Date(), this.getTatoueurTrialMonths());
+      const redeemedAt = new Date();
+      const offeredEndDate = invitation ? invitationEndDate(redeemedAt, invitation.durationMonths) : null;
   
       // Création de l'utilisateur dans la DB
-      const createdUser = await this.prisma.user.create({
-        data: {
-          email,
+      const userData: import('@prisma/client').Prisma.UserCreateInput = {
+          email: invitation ? email.trim().toLowerCase() : email,
           firstName,
           lastName,
           phone,
@@ -273,7 +288,7 @@ export class AuthService {
           role: role as import('@prisma/client').Role,
           ...(role === 'user_salon' ? { salonName } : {}),
           saasPlan: initialPlan,
-          saasPlanUntil: trialEndDate,
+          saasPlanUntil: offeredEndDate ?? trialEndDate,
           ...((role === 'user_salon' || role === 'user_tatoueur')
             ? {
                 saasPlanDetails: {
@@ -285,6 +300,16 @@ export class AuthService {
                       trialEndDate,
                       nextPaymentDate: null,
                     } : {}),
+                    ...(invitation ? {
+                      planStatus: SaasPlanStatus.ACTIVE,
+                      startDate: redeemedAt,
+                      endDate: offeredEndDate,
+                      trialEndDate: null,
+                      nextPaymentDate: null,
+                      monthlyPrice: 0,
+                      yearlyPrice: 0,
+                      paymentMethod: 'INVITATION',
+                    } : {}),
                     agendaMode: role === 'user_salon'
                       ? AgendaMode.PAR_TATOUEUR
                       : AgendaMode.GLOBAL,
@@ -292,8 +317,20 @@ export class AuthService {
                 },
               }
             : {}),
-        },
-      });
+      };
+      const createdUser = invitation
+        ? await this.prisma.$transaction(async tx => {
+            const claimed = await tx.subscriptionInvitation.updateMany({
+              where: { id: invitation.id, redeemedAt: null, revokedAt: null, expiresAt: { gt: new Date() }, durationMonths: invitation.durationMonths },
+              data: { redeemedAt },
+            });
+            if (!claimed.count) throw new BadRequestException('Invitation modifiée ou déjà utilisée. Rechargez la page.');
+            const user = await tx.user.create({ data: userData });
+            await tx.subscriptionInvitation.update({ where: { id: invitation.id }, data: { redeemedById: user.id } });
+            return user;
+          })
+        : await this.prisma.user.create({ data: userData });
+      if (invitation) await this.cacheService?.delPattern('admin:salons:*');
 
       // Envoi d'un mail à l'administrateur pour l'informer de la nouvelle inscription
       await this.mailService.sendAdminNewUserNotification({
@@ -351,7 +388,7 @@ export class AuthService {
       let checkoutError: string | null = null;
 
       // Stripe pour salon et tatoueur si un checkoutPlan est fourni
-      if ((role === 'user_salon' || role === 'user_tatoueur') && checkoutPlan && !trialEndDate) {
+      if ((role === 'user_salon' || role === 'user_tatoueur') && checkoutPlan && !trialEndDate && !invitation) {
         try {
           checkoutUrl = await this.stripeService.createCheckoutSession(
             createdUser.id,
@@ -373,6 +410,7 @@ export class AuthService {
       // // Authentifier directement le nouvel utilisateur
       // return this.authenticateUser({userId: createdUser.id});
       return {
+        ...(offeredEndDate ? { offeredEndDate: offeredEndDate.toISOString() } : {}),
         trialEndDate: trialEndDate?.toISOString() || null,
         message: "Votre compte a été créé avec succès. Veuillez vérifier vos emails pour confirmer votre adresse.",
         checkoutUrl,

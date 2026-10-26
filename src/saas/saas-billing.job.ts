@@ -20,6 +20,7 @@ export class SaasBillingJob {
     await this.reminders.schedule();
     const pastDueResult = await this.saasService.downgradeExpiredPastDueUsers(5);
     const trialResult = await this.saasService.downgradeExpiredTrialUsers();
+    const invitationResult = await this.saasService.downgradeExpiredInvitationUsers();
 
     this.logger.log(
       `Scan billing terminé: past_due(scannés=${pastDueResult.scanned}, downgradés=${pastDueResult.downgraded}) | trial(scannés=${trialResult.scanned}, downgradés=${trialResult.downgraded})`,
@@ -28,6 +29,7 @@ export class SaasBillingJob {
     return {
       pastDue: pastDueResult,
       trial: trialResult,
+      invitations: invitationResult,
     };
   }
 }

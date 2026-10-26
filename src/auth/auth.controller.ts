@@ -11,6 +11,7 @@ import { CreateUserClientDto } from './dto/create-userClient.dto';
 import { CreateTatoueurUserDto } from './dto/create-tatoueur-user.dto';
 import { CachedUser } from 'utils/type';
 import { RegistrationThrottleGuard } from './registration-throttle.guard';
+import { invitationTokenHash } from './invitation-policy';
 // import { GoogleAuthGuard } from './guards/google-auth/google-auth.guard';
 
 
@@ -54,6 +55,16 @@ export class AuthController {
   @UseGuards(RegistrationThrottleGuard)
   async register(@Body() registerBody: CreateUserDto) { // CreateUserDto est un DTO qui permet de valider les données : la fonction sera exécuté uniquement si les données sont valides
     return await this.authService.register({ registerBody });
+  }
+
+  @Get('invitation')
+  async invitation(@Query('token') token: string) {
+    if (!token || !/^[a-f0-9]{64}$/.test(token)) throw new BadRequestException('Invitation invalide.');
+    const invitation = await this.prisma.subscriptionInvitation.findUnique({ where: { tokenHash: invitationTokenHash(token) } });
+    if (!invitation || invitation.revokedAt || invitation.redeemedAt || invitation.expiresAt <= new Date()) {
+      throw new BadRequestException('Invitation invalide, expirée ou déjà utilisée.');
+    }
+    return { email: invitation.email, role: invitation.role, plan: invitation.plan, durationMonths: invitation.durationMonths };
   }
 
   @Post('register_client') // POST /auth/register_client

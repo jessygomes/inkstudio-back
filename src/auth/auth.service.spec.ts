@@ -15,6 +15,12 @@ jest.mock('bcryptjs', () => ({
 }));
 
 const createPrismaMock = () => ({
+  subscriptionInvitation: {
+    findUnique: jest.fn(),
+    updateMany: jest.fn(),
+    update: jest.fn(),
+  },
+  $transaction: jest.fn(),
   user: {
     findUnique: jest.fn(),
     create: jest.fn(),
@@ -249,6 +255,59 @@ describe('AuthService', () => {
   // ============================================================================
 
   describe('register()', () => {
+    const invitedBody = {
+      email: 'invited@example.com', role: 'user_salon' as const, salonName: 'Invited Studio',
+      saasPlan: 'BUSINESS' as const, checkoutPlan: 'BUSINESS' as const,
+      firstName: 'Alex', lastName: 'Test', phone: '', password: 'Password1!', invitationToken: 'a'.repeat(64),
+    };
+    const invitation = {
+      id: 'invite-1', email: invitedBody.email, role: invitedBody.role, plan: 'BUSINESS',
+      durationMonths: 12, redeemedAt: null, revokedAt: null, expiresAt: new Date('2099-01-01'),
+    };
+
+    it.each(['user_salon', 'user_tatoueur'] as const)('grants a 12 month invitation to %s without Stripe or a native trial', async role => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-10-26T12:00:00Z'));
+      try {
+        const plan = role === 'user_salon' ? 'BUSINESS' : 'PRO';
+        prisma.subscriptionInvitation.findUnique.mockResolvedValue({ ...invitation, role, plan });
+        prisma.subscriptionInvitation.updateMany.mockResolvedValue({ count: 1 });
+        prisma.user.findUnique.mockResolvedValue(null);
+        prisma.user.create.mockResolvedValue({ id: 'invited-user', email: invitedBody.email, saasPlan: plan });
+        prisma.$transaction.mockImplementation((callback: (tx: unknown) => unknown) => callback(prisma));
+        const result = await service.register({ registerBody: { ...invitedBody, role, saasPlan: plan, checkoutPlan: plan } });
+        expect(result).toMatchObject({ offeredEndDate: '2027-10-26T12:00:00.000Z', trialEndDate: null, checkoutUrl: null });
+        expect(prisma.user.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+          saasPlan: plan, saasPlanUntil: new Date('2027-10-26T12:00:00Z'),
+          saasPlanDetails: { create: expect.objectContaining({ currentPlan: plan, paymentMethod: 'INVITATION', planStatus: 'ACTIVE', monthlyPrice: 0, trialEndDate: null, nextPaymentDate: null }) },
+        }) });
+        expect(prisma.subscriptionInvitation.update).toHaveBeenCalledWith({ where: { id: 'invite-1' }, data: { redeemedById: 'invited-user' } });
+        expect(stripe.createCheckoutSession).not.toHaveBeenCalled();
+      } finally { jest.useRealTimers(); }
+    });
+
+    it.each([
+      null, { ...invitation, redeemedAt: new Date() }, { ...invitation, revokedAt: new Date() },
+      { ...invitation, expiresAt: new Date('2020-01-01') }, { ...invitation, email: 'another@example.com' },
+      { ...invitation, role: 'user_tatoueur' },
+    ])('rejects an unavailable or mismatched invitation', async record => {
+      prisma.subscriptionInvitation.findUnique.mockResolvedValue(record);
+      const result = await service.register({ registerBody: invitedBody });
+      expect(result).toMatchObject({ error: true });
+      expect(prisma.user.create).not.toHaveBeenCalled();
+      expect(stripe.createCheckoutSession).not.toHaveBeenCalled();
+    });
+
+    it('does not create a second account when another request has already claimed the invitation', async () => {
+      prisma.subscriptionInvitation.findUnique.mockResolvedValue(invitation);
+      prisma.subscriptionInvitation.updateMany.mockResolvedValue({ count: 0 });
+      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.$transaction.mockImplementation((callback: (tx: unknown) => unknown) => callback(prisma));
+      const result = await service.register({ registerBody: invitedBody });
+      expect(result).toMatchObject({ error: true });
+      expect(prisma.user.create).not.toHaveBeenCalled();
+      expect(stripe.createCheckoutSession).not.toHaveBeenCalled();
+    });
+
     it.each([
       ['user_salon', 'BUSINESS', '2026-04-01T10:00:00.000Z'],
       ['user_tatoueur', 'PRO', '2026-04-30T10:00:00.000Z'],

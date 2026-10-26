@@ -169,3 +169,30 @@ describe('Native trial access expiry', () => {
     expect(result.hasStripeSubscription).toBe(subscribed);
   });
 });
+
+describe('Invitation expiry', () => {
+  it('returns an expired invitation to Free while retaining its invitation history', async () => {
+    const details = { userId: 'u1', currentPlan: SaasPlan.PRO, planStatus: SaasPlanStatus.ACTIVE,
+      paymentMethod: 'INVITATION', endDate: new Date('2020-01-01') };
+    const expired = { ...details, currentPlan: SaasPlan.FREE, planStatus: SaasPlanStatus.EXPIRED, endDate: null };
+    const prisma = {
+      user: { findUnique: jest.fn().mockResolvedValue({ stripeSubscriptionId: null }), update: jest.fn().mockResolvedValue({}) },
+      saasPlanDetails: { findUnique: jest.fn().mockResolvedValue(details), update: jest.fn().mockResolvedValue(expired) },
+      $transaction: jest.fn().mockResolvedValue([{}, expired]),
+    };
+    const result = await new SaasService(prisma as never).getUserPlanDetails('u1');
+    expect(result).toMatchObject({ currentPlan: 'FREE', planStatus: 'EXPIRED', paymentMethod: 'INVITATION', endDate: null });
+    expect(prisma.user.update).toHaveBeenCalledWith({ where: { id: 'u1' }, data: { saasPlan: 'FREE', saasPlanUntil: null } });
+    expect(prisma.saasPlanDetails.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ currentPlan: 'FREE', monthlyPrice: 0, endDate: null }) }));
+  });
+
+  it('limits the scheduled expiry scan to invitations without a Stripe subscription', async () => {
+    const prisma = { saasPlanDetails: { findMany: jest.fn().mockResolvedValue([]) } };
+    const result = await new SaasService(prisma as never).downgradeExpiredInvitationUsers();
+    expect(prisma.saasPlanDetails.findMany).toHaveBeenCalledWith({
+      where: { paymentMethod: 'INVITATION', currentPlan: { not: SaasPlan.FREE }, endDate: { lte: expect.any(Date) }, user: { stripeSubscriptionId: null } },
+      select: { userId: true },
+    });
+    expect(result.downgraded).toBe(0);
+  });
+});

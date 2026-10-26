@@ -344,6 +344,7 @@ export class AdminService {
           verifiedSalon: true,
           SalonVerificationDocument: true,
           saasPlan: true,
+          redeemedInvitation: { select: { id: true, durationMonths: true, redeemedAt: true } },
           saasPlanDetails: {
             select: { firstPaidPlanAt: true, currentPlan: true, planStatus: true },
           },
@@ -602,6 +603,7 @@ export class AdminService {
           description: true,
           verifiedSalon: true,
           saasPlan: true,
+          redeemedInvitation: { select: { id: true, durationMonths: true, redeemedAt: true } },
           saasPlanDetails: {
             select: { firstPaidPlanAt: true, currentPlan: true, planStatus: true },
           },

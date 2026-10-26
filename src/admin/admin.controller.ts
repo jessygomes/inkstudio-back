@@ -8,6 +8,8 @@ import { Roles } from 'src/auth/roles.decorator';
 import { RolesGuard } from 'src/auth/roles.guard';
 import { SaasPlan, Role } from '@prisma/client';
 import { SendClientEmailDto } from './dto/send-client-email.dto';
+import { SubscriptionInvitationsService } from './subscription-invitations.service';
+import { CreateSubscriptionInvitationDto, UpdateInvitationDurationDto } from './dto/subscription-invitation.dto';
 
 /*
   Guide d'ordre des routes (à respecter lors des ajouts)
@@ -33,7 +35,23 @@ import { SendClientEmailDto } from './dto/send-client-email.dto';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('admin')
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(private readonly adminService: AdminService, private readonly invitations: SubscriptionInvitationsService) {}
+
+  @Get('invitations')
+  listInvitations() { return this.invitations.list(); }
+
+  @Post('invitations')
+  createInvitation(@Body() body: CreateSubscriptionInvitationDto, @Request() req: RequestWithUser) {
+    return this.invitations.create(body, req.user.userId);
+  }
+
+  @Patch('invitations/:id')
+  updateInvitation(@Param('id') id: string, @Body() body: UpdateInvitationDurationDto) {
+    return this.invitations.updateDuration(id, body.durationMonths);
+  }
+
+  @Delete('invitations/:id')
+  revokeInvitation(@Param('id') id: string) { return this.invitations.revoke(id); }
 
   @Get('project-reports')
   projectReports(@Query('page') page?: string) {
