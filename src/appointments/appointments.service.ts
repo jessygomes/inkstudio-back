@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { AgendaMode, AppointmentStatus, DrawingCardStatus, Prisma, PrestationType as PrismaPrestationType, SaasPlan } from '@prisma/client';
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { ResidenciesService } from 'src/residencies/residencies.service';
 import { PrismaService } from 'src/database/prisma.service';
 import { CreateAppointmentDto, PrestationType } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
@@ -25,8 +26,21 @@ export class AppointmentsService {
     private readonly saasService: SaasService,
     private readonly videoCallService: VideoCallService,
     private cacheService: CacheService,
-    private readonly conversationsService: ConversationsService
+    private readonly conversationsService: ConversationsService,
+    @Optional() private readonly residencies?: ResidenciesService
   ) {}
+
+  private persistAppointment(args: Prisma.AppointmentCreateArgs, actorId: string | null, publicBooking: boolean): Promise<any> {
+    return this.residencies ? this.residencies.persistAppointment(args, actorId, publicBooking) : this.prisma.appointment.create(args);
+  }
+
+  private persistAppointmentUpdate(args: Prisma.AppointmentUpdateArgs, actorId: string, venueSalonId?: string, clientBooking = false): Promise<any> {
+    return this.residencies ? this.residencies.updateAppointment(args, actorId, venueSalonId, clientBooking) : this.prisma.appointment.update(args);
+  }
+
+  async assertAppointmentAccess(id: string, actorId: string, manage = false) {
+    if (this.residencies) await this.residencies.assertAppointmentAccess(id, actorId, manage);
+  }
 
   private resolveAppointmentAgendaMode({
     role,
@@ -86,6 +100,7 @@ export class AppointmentsService {
 
   // Fonction pour construire la condition WHERE pour filtrer les rendez-vous visibles par un utilisateur donné
   private async buildAppointmentVisibilityWhere(userId: string): Promise<Prisma.AppointmentWhereInput> {
+    if (this.residencies) return this.residencies.visibleAppointmentsWhere(userId);
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -381,7 +396,9 @@ export class AppointmentsService {
       where.id = { not: excludedAppointmentId };
     }
 
-    if (agendaMode === AgendaMode.PAR_TATOUEUR) {
+    if (performerUserId) {
+      delete where.userId; where.OR = [{ userId: performerUserId }, { performerUserId }];
+    } else if (agendaMode === AgendaMode.PAR_TATOUEUR) {
       if (performerUserId) {
         where.performerUserId = performerUserId;
       } else if (tatoueurId) {
@@ -499,7 +516,7 @@ export class AppointmentsService {
         selectedTatoueur,
       });
 
-      if (salonCreationPermissionError) {
+      if (!this.residencies && salonCreationPermissionError) {
         return {
           error: true,
           code: 'SALON_BOOKING_NOT_ALLOWED',
@@ -706,8 +723,9 @@ export class AppointmentsService {
 
       if (prestation === PrestationType.PROJET || prestation === PrestationType.TATTOO || prestation === PrestationType.PIERCING || prestation === PrestationType.RETOUCHE) {
         // Créer le rendez-vous
-        const newAppointment = await this.prisma.appointment.create({
+        const newAppointment = await (this.persistAppointment({
           data: {
+            venueSalonId: rdvBody.venueSalonId,
             userId,
             title: appointmentTitle,
             prestation,
@@ -739,7 +757,7 @@ export class AppointmentsService {
               },
             }
           }
-        });
+        }, userId, false));
         // Gérer les détails spécifiques selon le type de prestation
         if (prestation === PrestationType.PIERCING) {
           // Pour les piercings, récupérer le prix automatiquement si possible
@@ -831,6 +849,7 @@ export class AppointmentsService {
             {
               recipientName: `${client.firstName} ${client.lastName}`,
               appointmentDetails: {
+                venue: [newAppointment.venueName, newAppointment.venueAddress, newAppointment.venuePostalCode, newAppointment.venueCity].filter(Boolean).join(', '),
                 date: newAppointment.start.toLocaleDateString('fr-FR', { 
                   weekday: 'long', 
                   year: 'numeric', 
@@ -894,8 +913,9 @@ export class AppointmentsService {
       }
 
       // Créer le rendez-vous
-      const newAppointment = await this.prisma.appointment.create({
+      const newAppointment = await (this.persistAppointment({
         data: {
+            venueSalonId: rdvBody.venueSalonId,
           userId,
           title: appointmentTitle,
           prestation,
@@ -916,7 +936,7 @@ export class AppointmentsService {
             }
           }
         }
-      });
+      }, userId, false));
 
       // Récupérer les informations du salon pour le nom
       const salon = await this.prisma.user.findUnique({
@@ -930,6 +950,7 @@ export class AppointmentsService {
           {
             recipientName: `${client.firstName} ${client.lastName}`,
             appointmentDetails: {
+                venue: [newAppointment.venueName, newAppointment.venueAddress, newAppointment.venuePostalCode, newAppointment.venueCity].filter(Boolean).join(', '),
               date: newAppointment.start.toLocaleDateString('fr-FR', { 
                 weekday: 'long', 
                 year: 'numeric', 
@@ -1111,7 +1132,7 @@ export class AppointmentsService {
         agendaMode: salonConfig.saasPlanDetails?.agendaMode,
       });
 
-      const selectedTatoueur = tatoueurId ? await this.resolveTatoueurSelection(tatoueurId) : {
+      const selectedTatoueur = (tatoueurId || salonConfig.role === 'user_tatoueur') ? await this.resolveTatoueurSelection(tatoueurId || userId) : {
         artist: null,
         tatoueurId: null as string | null,
         performerUserId: null as string | null,
@@ -1136,8 +1157,7 @@ export class AppointmentsService {
 
         if (
           selectedTatoueur.performerUserId
-          && selectedTatoueur.isLinkedToSalon
-          && selectedTatoueur.linkedSalonId === userId
+          && (this.residencies ? selectedTatoueur.performerUserId !== userId : selectedTatoueur.isLinkedToSalon && selectedTatoueur.linkedSalonId === userId)
         ) {
           return {
             error: true,
@@ -1336,8 +1356,9 @@ export class AppointmentsService {
       }
 
       if (prestation === PrestationType.PROJET || prestation === PrestationType.TATTOO || prestation === PrestationType.PIERCING || prestation === PrestationType.RETOUCHE) {
-        const newAppointment = await this.prisma.appointment.create({
+        const newAppointment = await (this.persistAppointment({
           data: {
+            venueSalonId: rdvBody.venueSalonId,
             userId,
             title: appointmentTitle,
             prestation,
@@ -1353,7 +1374,7 @@ export class AppointmentsService {
             visio: visio || false,
             visioRoom: generatedVisioRoom
           } as any,
-        });
+        }, null, true));
       
         // Gérer les détails spécifiques selon le type de prestation
         if (prestation === PrestationType.PIERCING) {
@@ -1460,6 +1481,7 @@ export class AppointmentsService {
             {
               recipientName: `${client.firstName} ${client.lastName}`,
               appointmentDetails: {
+                venue: [newAppointment.venueName, newAppointment.venueAddress, newAppointment.venuePostalCode, newAppointment.venueCity].filter(Boolean).join(', '),
                 date: newAppointment.start.toLocaleDateString('fr-FR', { 
                   weekday: 'long', 
                   year: 'numeric', 
@@ -1491,6 +1513,7 @@ export class AppointmentsService {
             {
               recipientName: `${client.firstName} ${client.lastName}`,
               appointmentDetails: {
+                venue: [newAppointment.venueName, newAppointment.venueAddress, newAppointment.venuePostalCode, newAppointment.venueCity].filter(Boolean).join(', '),
                 date: newAppointment.start.toLocaleDateString('fr-FR', { 
                   weekday: 'long', 
                   year: 'numeric', 
@@ -1520,6 +1543,7 @@ export class AppointmentsService {
             {
               recipientName: `${client.firstName} ${client.lastName}`,
               appointmentDetails: {
+                venue: [newAppointment.venueName, newAppointment.venueAddress, newAppointment.venuePostalCode, newAppointment.venueCity].filter(Boolean).join(', '),
                 date: newAppointment.start.toLocaleDateString('fr-FR', { 
                   weekday: 'long', 
                   year: 'numeric', 
@@ -1592,8 +1616,9 @@ export class AppointmentsService {
       }
 
       // Créer le rendez-vous
-      const newAppointment = await this.prisma.appointment.create({
+      const newAppointment = await (this.persistAppointment({
         data: {
+            venueSalonId: rdvBody.venueSalonId,
           userId,
           title: appointmentTitle,
           prestation,
@@ -1623,7 +1648,7 @@ export class AppointmentsService {
             },
           },
         },
-      });
+      }, null, true));
 
       // Gestion des emails selon le statut
       if (salonConfig.addConfirmationEnabled) {
@@ -1633,6 +1658,7 @@ export class AppointmentsService {
           {
             recipientName: `${client.firstName} ${client.lastName}`,
             appointmentDetails: {
+                venue: [newAppointment.venueName, newAppointment.venueAddress, newAppointment.venuePostalCode, newAppointment.venueCity].filter(Boolean).join(', '),
               date: newAppointment.start.toLocaleDateString('fr-FR', { 
                 weekday: 'long', 
                 year: 'numeric', 
@@ -1664,6 +1690,7 @@ export class AppointmentsService {
           {
             recipientName: `${client.firstName} ${client.lastName}`,
             appointmentDetails: {
+                venue: [newAppointment.venueName, newAppointment.venueAddress, newAppointment.venuePostalCode, newAppointment.venueCity].filter(Boolean).join(', '),
               date: newAppointment.start.toLocaleDateString('fr-FR', { 
                 weekday: 'long', 
                 year: 'numeric', 
@@ -1693,6 +1720,7 @@ export class AppointmentsService {
           {
             recipientName: `${client.firstName} ${client.lastName}`,
             appointmentDetails: {
+                venue: [newAppointment.venueName, newAppointment.venueAddress, newAppointment.venuePostalCode, newAppointment.venueCity].filter(Boolean).join(', '),
               date: newAppointment.start.toLocaleDateString('fr-FR', { 
                 weekday: 'long', 
                 year: 'numeric', 
@@ -1826,6 +1854,7 @@ export class AppointmentsService {
         this.prisma.appointment.findMany({
           where: whereClause,
           select: {
+            venueSalonId: true, venueName: true, venueAddress: true, venueCity: true, venuePostalCode: true,
             id: true,
             title: true,
             prestation: true,
@@ -1934,6 +1963,7 @@ export class AppointmentsService {
       ]);
 
       const formattedAppointments = appointments.map(appointment => ({
+        venueSalonId: appointment.venueSalonId, venueName: appointment.venueName, venueAddress: appointment.venueAddress, venueCity: appointment.venueCity, venuePostalCode: appointment.venuePostalCode,
         id: appointment.id,
         title: appointment.title,
         prestation: appointment.prestation,
@@ -1954,10 +1984,11 @@ export class AppointmentsService {
           firstName: appointment.user.firstName,
           lastName: appointment.user.lastName,
           image: appointment.user.image,
-          city: appointment.user.city,
-          postalCode: appointment.user.postalCode,
+          city: appointment.venueCity ?? appointment.user.city,
+          postalCode: appointment.venuePostalCode ?? appointment.user.postalCode,
           phone: appointment.user.phone,
-          address: appointment.user.address,
+          address: appointment.venueAddress ?? appointment.user.address,
+          venueName: appointment.venueName,
           instagram: appointment.user.instagram,
           website: appointment.user.website
         },
@@ -2716,7 +2747,7 @@ export class AppointmentsService {
   // ! MODIFIER UN RDV
 
   //! ------------------------------------------------------------------------------
-  async updateAppointment(id: string, rdvBody: UpdateAppointmentDto) {
+  async updateAppointment(id: string, rdvBody: UpdateAppointmentDto, actorId?: string) {
     try {
       const { title, prestation, start, end, tatoueurId, skin, drawingCardId } = rdvBody;
       const tattooDetail: Partial<UpdateAppointmentDto['tattooDetail']> = rdvBody.tattooDetail || {};
@@ -2824,7 +2855,7 @@ export class AppointmentsService {
       }
 
       // Mettre à jour le rendez-vous
-      const updatedAppointment = await this.prisma.appointment.update({
+      const updatedAppointment = await (this.persistAppointmentUpdate({
         where: {
           id,
         },
@@ -2850,7 +2881,7 @@ export class AppointmentsService {
             },
           },
         },
-      });
+      }, actorId || existingAppointment.userId, rdvBody.venueSalonId));
 
       // Mettre à jour les détails du tatouage s'ils existent
       if (tattooDetail) {
@@ -2900,6 +2931,7 @@ export class AppointmentsService {
           {
             recipientName: `${existingAppointment.client.firstName} ${existingAppointment.client.lastName}`,
             appointmentDetails: {
+                venue: [updatedAppointment.venueName, updatedAppointment.venueAddress, updatedAppointment.venuePostalCode, updatedAppointment.venueCity].filter(Boolean).join(', '),
               date: updatedAppointment.start.toLocaleDateString('fr-FR', { 
                 weekday: 'long', 
                 year: 'numeric', 
@@ -3046,7 +3078,7 @@ export class AppointmentsService {
           : existingAppointment.status;
 
       // Mettre à jour le rendez-vous (dates, heure et tatoueur)
-      const updatedAppointment = await this.prisma.appointment.update({
+      const updatedAppointment = await (this.persistAppointmentUpdate({
         where: { id: appointmentId },
         data: {
           start: new Date(start),
@@ -3058,7 +3090,7 @@ export class AppointmentsService {
           client: true,
           tatoueur: true,
         },
-      });
+      }, userId, undefined, true));
 
       // Envoyer un email de confirmation au client
       if (updatedAppointment.client) {
@@ -3068,6 +3100,7 @@ export class AppointmentsService {
             {
               recipientName: `${updatedAppointment.client.firstName} ${updatedAppointment.client.lastName}`,
               appointmentDetails: {
+                venue: [updatedAppointment.venueName, updatedAppointment.venueAddress, updatedAppointment.venuePostalCode, updatedAppointment.venueCity].filter(Boolean).join(', '),
                 date: updatedAppointment.start.toLocaleDateString('fr-FR', {
                   weekday: 'long',
                   year: 'numeric',
@@ -3265,6 +3298,7 @@ export class AppointmentsService {
           {
             recipientName: `${appointment.client.firstName} ${appointment.client.lastName}`,
             appointmentDetails: {
+                venue: [appointment.venueName, appointment.venueAddress, appointment.venuePostalCode, appointment.venueCity].filter(Boolean).join(', '),
               date: appointment.start.toLocaleDateString('fr-FR', { 
                 weekday: 'long', 
                 year: 'numeric', 
@@ -3402,6 +3436,7 @@ export class AppointmentsService {
       {
         recipientName: `${appointment.client.firstName} ${appointment.client.lastName}`,
         appointmentDetails: {
+                venue: [appointment.venueName, appointment.venueAddress, appointment.venuePostalCode, appointment.venueCity].filter(Boolean).join(', '),
           date: appointment.start.toLocaleDateString('fr-FR', { 
             weekday: 'long', 
             year: 'numeric', 

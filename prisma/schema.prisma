@@ -90,6 +90,12 @@ model User {
   salonId                   String?
   salon                     User?                @relation("SalonTatoueurs", fields: [salonId], references: [id])
   linkedTatoueurs           User[]               @relation("SalonTatoueurs")
+  salonResidencies          SalonResidency[]     @relation("ResidencySalon")
+  artistResidencies         SalonResidency[]     @relation("ResidencyArtist")
+  currentResidencyId         String?
+  currentResidencyUntil      DateTime?
+  currentResidency           SalonResidency? @relation("SelectedResidency", fields: [currentResidencyId], references: [id], onDelete: SetNull)
+  venueAppointments         Appointment[]        @relation("AppointmentVenue")
 
   appointments              Appointment[]
   appointmentsAsPerformer    Appointment[]        @relation("AppointmentPerformer")
@@ -383,6 +389,12 @@ model Appointment {
   userId             String              // Salon qui reçoit le RDV
   tatoueurId         String?
   performerUserId    String?
+  venueSalonId       String?
+  venueName          String?
+  venueAddress       String?
+  venueCity          String?
+  venuePostalCode    String?
+  venueSalon         User? @relation("AppointmentVenue", fields: [venueSalonId], references: [id], onDelete: SetNull)
   clientId           String?             // Client existant dans la fiche salon (table Client)
   clientUserId       String?             // NOUVEAU: Client connecté (table User avec role="client")
   skin               String?
@@ -421,6 +433,7 @@ model Appointment {
 
   @@index([userId])
   @@index([performerUserId])
+  @@index([venueSalonId, start])
   @@index([clientUserId])
   @@index([status])
   @@index([start])
@@ -1175,6 +1188,7 @@ model SalonTatoueurTeamRequest {
   salonId        String
   tatoueurUserId String
   message        String?
+  initiatedById  String?
   status         TeamRequestStatus @default(PENDING)
   respondedAt    DateTime?
   createdAt      DateTime          @default(now())
@@ -1186,7 +1200,34 @@ model SalonTatoueurTeamRequest {
   @@index([salonId])
   @@index([tatoueurUserId])
   @@index([status])
-  @@unique([salonId, tatoueurUserId, status])
+  @@index([salonId, tatoueurUserId, status])
+}
+
+model SalonResidency {
+  id                       String   @id @default(cuid())
+  salonId                  String
+  artistId                 String
+  joinedAt                 DateTime @default(now())
+  endedAt                  DateTime?
+  salonAllowsArtistCreate  Boolean  @default(false)
+  salonAllowsArtistManage  Boolean  @default(false)
+  salonAllowsPublicBooking Boolean  @default(false)
+  artistAllowsSalonView    Boolean  @default(false)
+  artistAllowsSalonCreate  Boolean  @default(false)
+  artistAllowsSalonManage  Boolean  @default(false)
+  artistAllowsPublicBooking Boolean @default(false)
+  presence                 Json?
+  schedule                 Json     @default("[]")
+  pendingSchedule          Json?
+  salonApproved            Boolean  @default(false)
+  artistApproved           Boolean  @default(false)
+  updatedAt                DateTime @updatedAt
+  salon                    User     @relation("ResidencySalon", fields: [salonId], references: [id], onDelete: Cascade)
+  artist                   User     @relation("ResidencyArtist", fields: [artistId], references: [id], onDelete: Cascade)
+  selectedBy               User[]   @relation("SelectedResidency")
+
+  @@unique([salonId, artistId])
+  @@index([artistId, endedAt])
 }
 
 enum Role {

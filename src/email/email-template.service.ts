@@ -9,6 +9,7 @@ export interface EmailTemplateData {
   colorProfile?: string;
   colorProfileBis?: string;
   appointmentDetails?: {
+    venue?: string;
     date: string;
     time: string;
     duration?: string;
@@ -211,6 +212,8 @@ export class EmailTemplateService {
   /**
    *! Template pour confirmation de rendez-vous (client)
    */
+  private escapeVenue(value: string) { return value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!); }
+
   generateAppointmentConfirmationEmail(data: EmailTemplateData): string {
     const content = `
       <div class="content">
@@ -221,6 +224,7 @@ export class EmailTemplateService {
           <p>Nous avons hâte de donner vie à votre projet artistique !</p>
         </div>
 
+        ${data.appointmentDetails?.venue ? `<p style="padding: 12px; background: #f6f3f0; border-radius: 8px;"><strong>Lieu du rendez-vous :</strong> ${this.escapeVenue(data.appointmentDetails.venue)}</p>` : ''}
         ${data.appointmentDetails ? `
           <div class="details-card">
             <div class="details-title"> Détails de votre rendez-vous</div>
@@ -308,6 +312,7 @@ export class EmailTemplateService {
           <p>Un nouveau rendez-vous vient d'être confirmé dans votre salon <strong>${data.salonName || 'Inkera Studio'}</strong>.</p>
         </div>
 
+        ${data.appointmentDetails?.venue ? `<p style="padding: 12px; background: #f6f3f0; border-radius: 8px;"><strong>Lieu du rendez-vous :</strong> ${this.escapeVenue(data.appointmentDetails.venue)}</p>` : ''}
         ${data.appointmentDetails ? `
           <div class="details-card">
             <div class="details-title"> Résumé du rendez-vous</div>
@@ -608,6 +613,7 @@ export class EmailTemplateService {
           <p>Voici les nouveaux détails :</p>
         </div>
 
+        ${data.appointmentDetails?.venue ? `<p style="padding: 12px; background: #f6f3f0; border-radius: 8px;"><strong>Lieu du rendez-vous :</strong> ${this.escapeVenue(data.appointmentDetails.venue)}</p>` : ''}
         ${data.appointmentDetails ? `
           <div class="details-card">
             <div class="details-title"> Nouveaux détails du rendez-vous</div>
@@ -676,6 +682,7 @@ export class EmailTemplateService {
           <p>Nous vous confirmons que votre rendez-vous a été <strong>annulé</strong> comme demandé.</p>
         </div>
 
+        ${data.appointmentDetails?.venue ? `<p style="padding: 12px; background: #f6f3f0; border-radius: 8px;"><strong>Lieu du rendez-vous :</strong> ${this.escapeVenue(data.appointmentDetails.venue)}</p>` : ''}
         ${data.appointmentDetails ? `
           <div class="details-card">
             <div class="details-title"> Rendez-vous annulé</div>
@@ -842,6 +849,7 @@ export class EmailTemplateService {
           <p>Un nouveau rendez-vous nécessite votre confirmation dans votre salon <strong>${data.salonName || 'Inkera Studio'}</strong>.</p>
         </div>
 
+        ${data.appointmentDetails?.venue ? `<p style="padding: 12px; background: #f6f3f0; border-radius: 8px;"><strong>Lieu du rendez-vous :</strong> ${this.escapeVenue(data.appointmentDetails.venue)}</p>` : ''}
         ${data.appointmentDetails ? `
           <div class="details-card">
             <div class="details-title"> Détails du rendez-vous</div>
@@ -910,6 +918,7 @@ export class EmailTemplateService {
           <p>Nous avons hâte de vous voir ! </p>
         </div>
 
+        ${data.appointmentDetails?.venue ? `<p style="padding: 12px; background: #f6f3f0; border-radius: 8px;"><strong>Lieu du rendez-vous :</strong> ${this.escapeVenue(data.appointmentDetails.venue)}</p>` : ''}
         ${data.appointmentDetails ? `
           <div class="details-card">
             <div class="details-title"> Détails de votre rendez-vous</div>

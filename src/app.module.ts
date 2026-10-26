@@ -1,3 +1,4 @@
+import { ResidenciesModule } from './residencies/residencies.module';
 import { Module } from '@nestjs/common';
 import { UserModule } from './user/user.module';
 import { PrismaService } from './database/prisma.service';
@@ -46,6 +47,7 @@ import { AppointmentPhotosModule } from './appointment-photos/appointment-photos
 
 @Module({
   imports: [
+    ResidenciesModule,
     UserModule,
     AuthModule,
     ConfigModule.forRoot({ isGlobal: true }),

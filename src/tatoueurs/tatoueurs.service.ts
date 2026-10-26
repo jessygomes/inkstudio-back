@@ -1,15 +1,17 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CreateTatoueurDto } from './dto/create-tatoueur.dto';
 import { CacheService } from 'src/redis/cache.service';
 import { Role, TeamRequestStatus } from '@prisma/client';
 import { CreateTeamRequestDto } from './dto/create-team-request.dto';
+import { ResidenciesService } from 'src/residencies/residencies.service';
 
 @Injectable()
 export class TatoueursService {
   constructor(
     private readonly prisma: PrismaService,
-    private cacheService: CacheService
+    private cacheService: CacheService,
+    @Optional() private readonly residencies?: ResidenciesService
   ) {}
 
   private normalizeStyles(styleInput: unknown): string[] {
@@ -104,6 +106,7 @@ export class TatoueursService {
           phone: true,
           instagram: true,
           salonId: true,
+          artistResidencies: { where: { salonId: salonUserId, endedAt: null }, select: { id: true } },
           receivedTeamRequests: {
             where: {
               salonId: salonUserId,
@@ -126,7 +129,7 @@ export class TatoueursService {
         image: user.image,
         phone: user.phone,
         instagram: user.instagram,
-        isAlreadyInTeam: user.salonId === salonUserId,
+        isAlreadyInTeam: this.residencies ? (user as any).artistResidencies?.length > 0 : user.salonId === salonUserId,
         hasPendingRequestFromThisSalon: user.receivedTeamRequests.length > 0,
       }));
 
@@ -183,7 +186,7 @@ export class TatoueursService {
         };
       }
 
-      if (tatoueurUser.salonId === salonUserId) {
+      if (this.residencies ? await this.prisma.salonResidency.findFirst({ where: { artistId: tatoueurUserId, salonId: salonUserId, endedAt: null } }) : tatoueurUser.salonId === salonUserId) {
         return {
           error: true,
           message: 'Ce tatoueur fait déjà partie de votre équipe.',
@@ -210,6 +213,7 @@ export class TatoueursService {
         data: {
           salonId: salonUserId,
           tatoueurUserId,
+          initiatedById: salonUserId,
           message,
           status: TeamRequestStatus.PENDING,
         },
@@ -307,6 +311,7 @@ export class TatoueursService {
       const requests = await this.prisma.salonTatoueurTeamRequest.findMany({
         where: {
           tatoueurUserId,
+          ...(this.residencies ? { OR: [{ initiatedById: null }, { initiatedById: { not: tatoueurUserId } }] } : {}),
           status: TeamRequestStatus.PENDING,
         },
         orderBy: { createdAt: 'desc' },
@@ -354,6 +359,8 @@ export class TatoueursService {
     tatoueurUserId: string;
     tatoueurRole?: string;
   }) {
+    if (this.residencies)
+      return { error: false, salons: await this.residencies.publicSalons(tatoueurUserId) };
     try {
       if (tatoueurRole !== 'user_tatoueur') {
         return {
@@ -532,6 +539,11 @@ export class TatoueursService {
     allowSalonAgendaAccess?: boolean;
     allowSalonCreateAppointments?: boolean;
   }) {
+    if (this.residencies)
+      return this.residencies.respondRequest(requestId, tatoueurUserId, action, {
+        artistAllowsSalonView: allowSalonAgendaAccess,
+        artistAllowsSalonCreate: allowSalonCreateAppointments,
+      });
     try {
       if (tatoueurRole !== Role.user_tatoueur) {
         return {
@@ -660,6 +672,11 @@ export class TatoueursService {
     tatoueurUserId: string;
     tatoueurRole?: string;
   }) {
+    if (this.residencies)
+      return {
+        error: true,
+        message: 'Gérez les autorisations séparément depuis vos rattachements aux salons.',
+      };
     try {
       if (tatoueurRole !== 'user_tatoueur') {
         return {
@@ -724,6 +741,11 @@ export class TatoueursService {
     tatoueurRole?: string;
     enabled: boolean;
   }) {
+    if (this.residencies)
+      return {
+        error: true,
+        message: 'Gérez les autorisations séparément depuis vos rattachements aux salons.',
+      };
     try {
       // Seul un user_tatoueur peut modifier ses permissions
       if (tatoueurRole !== 'user_tatoueur') {
@@ -823,6 +845,11 @@ export class TatoueursService {
     tatoueurRole?: string;
     enabled: boolean;
   }) {
+    if (this.residencies)
+      return {
+        error: true,
+        message: 'Gérez les autorisations séparément depuis vos rattachements aux salons.',
+      };
     try {
       // Seul un user_tatoueur peut modifier ses permissions
       if (tatoueurRole !== 'user_tatoueur') {
@@ -925,6 +952,29 @@ export class TatoueursService {
 
   //! VOIR TOUS LES TATOUEURS PAR USER ID
   async getTatoueurByUserId(userId: string) {
+    if (this.residencies) {
+      const [internal, members] = await Promise.all([
+        this.prisma.tatoueur.findMany({ where: { userId } }),
+        this.residencies.salonArtists(userId),
+      ]);
+      return [
+        ...internal.map((t) => ({ ...t, isLinkedUser: false, isReadOnly: false })),
+        ...members.map((r) => ({
+          id: 'linked_' + r.artist.id,
+          linkedUserId: r.artist.id,
+          profileUserId: r.artist.id,
+          name: r.artist.salonName || [r.artist.firstName, r.artist.lastName].filter(Boolean).join(' '),
+          img: r.artist.profileImage || r.artist.image,
+          isLinkedUser: true,
+          isReadOnly: true,
+          rdvBookingEnabled: r.artistAllowsSalonCreate,
+          appointmentBookingEnabled: r.salonAllowsPublicBooking,
+          hours: null,
+          style: r.artist.style,
+          skills: r.artist.prestations,
+        })),
+      ];
+    }
     try {
       const cacheKey = `tatoueurs:user:${userId}:v2-salon-name`;
 
@@ -1032,6 +1082,32 @@ export class TatoueursService {
 
     //! VOIR TOUS LES TATOUEURS QUI PEUVENT PRENDRE DES RDV PAR USER ID
   async getTatoueurByUserIdForAppointment(userId: string) {
+    if (this.residencies) {
+      const [internal, members] = await Promise.all([
+        this.prisma.tatoueur.findMany({ where: { userId, rdvBookingEnabled: true } }),
+        this.residencies.salonArtists(userId),
+      ]);
+      return [
+        ...internal.map((t) => ({ ...t, isLinkedUser: false, isReadOnly: false })),
+        ...members
+          .filter((r) => r.artistAllowsSalonCreate)
+          .map((r) => ({
+            id: 'linked_' + r.artist.id,
+            linkedUserId: r.artist.id,
+            profileUserId: r.artist.id,
+            name:
+              r.artist.salonName || [r.artist.firstName, r.artist.lastName].filter(Boolean).join(' '),
+            img: r.artist.profileImage || r.artist.image,
+            isLinkedUser: true,
+            isReadOnly: true,
+            rdvBookingEnabled: r.artistAllowsSalonCreate,
+            appointmentBookingEnabled: r.salonAllowsPublicBooking,
+            hours: null,
+            style: r.artist.style,
+            skills: r.artist.prestations,
+          })),
+      ];
+    }
     try {
       const cacheKey = `tatoueurs:user:${userId}:appointment-enabled:v2-salon-name`;
 
@@ -1152,6 +1228,16 @@ export class TatoueursService {
     tatoueurUserId: string;
     appointmentBookingEnabled: boolean;
   }) {
+    if (this.residencies) {
+      const r = await this.prisma.salonResidency.findFirst({
+        where: { salonId: salonUserId, artistId: tatoueurUserId, endedAt: null },
+      });
+      if (!r) return { error: true, message: 'Rattachement introuvable.' };
+      await this.residencies.updatePermissions(r.id, salonUserId, {
+        salonAllowsPublicBooking: appointmentBookingEnabled,
+      });
+      return { error: false, message: 'Autorisation mise à jour.' };
+    }
     try {
       if (salonRole !== 'user_salon' && salonRole !== 'user') {
         return {
@@ -1240,6 +1326,13 @@ export class TatoueursService {
     salonRole?: string;
     tatoueurUserId: string;
   }) {
+    if (this.residencies) {
+      const r = await this.prisma.salonResidency.findFirst({
+        where: { salonId: salonUserId, artistId: tatoueurUserId, endedAt: null },
+      });
+      if (!r) return { error: true, message: 'Rattachement introuvable.' };
+      return this.residencies.leave(r.id, salonUserId);
+    }
     try {
       if (salonRole !== 'user_salon' && salonRole !== 'user') {
         return {
@@ -1310,6 +1403,8 @@ export class TatoueursService {
     tatoueurUserId: string;
     tatoueurRole?: string;
   }) {
+    if (this.residencies)
+      return { error: true, message: 'Choisissez le salon à quitter depuis vos rattachements.' };
     try {
       if (tatoueurRole !== 'user_tatoueur') {
         return {

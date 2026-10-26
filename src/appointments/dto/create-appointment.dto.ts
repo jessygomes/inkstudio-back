@@ -18,7 +18,11 @@ export enum PrestationType {
   PROJET = 'PROJET',
 }
 
-export class CreateAppointmentDto {  
+export class CreateAppointmentDto {
+  @IsOptional()
+  @IsString()
+  venueSalonId?: string;
+
   @ApiPropertyOptional({ description: 'ID du salon (admin/tatoueur)' })
   @IsOptional()
   @IsString()

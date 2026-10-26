@@ -1,6 +1,7 @@
 import { AgendaMode, SaasPlan } from '@prisma/client';
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
+import { ResidenciesService } from 'src/residencies/residencies.service';
 import { CacheService } from 'src/redis/cache.service';
 import { MailService } from 'src/email/mailer.service';
 import { CachedUser, LinkedSalon, LinkedTatoueurUser, SlugUser } from 'utils/type';
@@ -14,7 +15,8 @@ export class UserService {
   // Injecter le service Prisma dans le service User
   constructor(private prisma: PrismaService, 
     private cacheService: CacheService,
-    private readonly mailService: MailService) {}
+    private readonly mailService: MailService,
+    @Optional() private readonly residencies?: ResidenciesService) {}
 
   private escapeHtml(value: string): string {
     return value
@@ -598,6 +600,8 @@ export class UserService {
    *! Enrichit un profil user_tatoueur avec les salons liés historiques + salon courant.
    */
   private async enrichTatoueurSlugUser(found: SlugUser): Promise<Record<string, any>> {
+    if (this.residencies)
+      return { ...found, Tatoueur: [], linkedSalons: await this.residencies.publicSalons(found.id) };
     // Pour un profil tatoueur lié, on ne renvoie pas une liste de tatoueurs,
     // mais la liste des salons auxquels ce tatoueur est ou a été rattaché.
     const tatoueurUser = await this.prisma.user.findUnique({
@@ -695,7 +699,9 @@ export class UserService {
    *! Transforme un user_tatoueur lié en forme compatible avec la liste Tatoueur du front.
    */
   private mapLinkedTatoueurUser(user: LinkedTatoueurUser) {
-    const displayName = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || 'Tatoueur';
+    const displayName = user.salonName?.trim()
+      || `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim()
+      || 'Tatoueur';
 
     return {
       id: `linked_${user.id}`,
@@ -723,6 +729,32 @@ export class UserService {
    *! Enrichit un salon avec les tatoueurs internes + les tatoueurs liés via user_tatoueur.
    */
   private async enrichSalonSlugUser(found: SlugUser): Promise<Record<string, any>> {
+    if (this.residencies) {
+      const members = await this.residencies.salonArtists(found.id);
+      return {
+        ...found,
+        linkedSalons: [],
+        Tatoueur: [
+          ...(found.Tatoueur || []).filter((t: any) => !t.isLinkedUser),
+          ...members.map((r) => ({
+            ...this.mapLinkedTatoueurUser({
+              ...r.artist,
+              appointmentBookingEnabled:
+                r.salonAllowsPublicBooking &&
+                r.artistAllowsPublicBooking &&
+                r.presence !== null,
+            } as any),
+            bookingHref:
+              '/salon/' +
+              this.toSlug(r.artist.salonName || '') +
+              '/' +
+              this.buildLocationSlug(r.artist.city, r.artist.postalCode) +
+              '/reserver?venueSalonId=' +
+              encodeURIComponent(found.id),
+          })),
+        ],
+      };
+    }
     // Ici on complète le salon avec les tatoueurs "liés" (profils user_tatoueur)
     // en plus des tatoueurs internes déjà présents dans found.Tatoueur.
     const linkedTatoueurUsersResult = await this.prisma.user.findMany({
@@ -803,7 +835,7 @@ export class UserService {
       try {
         const cachedUser = await this.cacheService.get(cacheKey);
         if (cachedUser) {
-          return cachedUser;
+          return this.residencies ? this.enrichSlugUser(cachedUser as SlugUser) : cachedUser;
         }
       } catch (cacheError) {
         console.warn('Erreur cache Redis pour getUserBySlugAndLocation:', cacheError);

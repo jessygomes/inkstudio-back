@@ -4,6 +4,7 @@ import { AppointmentsService } from './appointments.service';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from 'src/auth/optional-jwt-auth.guard';
 import { SaasLimitGuard } from 'src/saas/saas-limit.guard';
 import { SaasLimit } from 'src/saas/saas-limit.decorator';
 import { SendCustomEmailDto } from './dto/send-custom-email.dto';
@@ -134,6 +135,7 @@ export class AppointmentsController {
   @ApiQuery({ name: 'end', required: true, example: '2026-01-31' })
   @ApiResponse({ status: 200, description: 'Liste des RDV sur la plage. En mode public: start/end uniquement.' })
   @ApiResponse({ status: 403, description: 'Accès interdit.' })
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('salon/:id/range')
   async getAppointmentsBySalonRange(
     @Request() req: { user?: { userId?: string } },
@@ -282,24 +284,28 @@ export class AppointmentsController {
   }
 
   //! VOIR UN SEUL RDV ✅
+  @UseGuards(JwtAuthGuard)
   @Get(':id')
-  async getOneAppointment(@Param('id') appointmentId: string) {
+  async getOneAppointment(@Request() req: RequestWithUser, @Param('id') appointmentId: string) {
+    await this.appointmentsService.assertAppointmentAccess(appointmentId, req.user.userId, false);
     return await this.appointmentsService.getOneAppointment(appointmentId);
   }
 
   //! SUPPRIMER UN RDV ✅
   @UseGuards(JwtAuthGuard)
   @Delete('delete/:id')
-  async deleteAppointment(@Param('id') appointmentId: string) {
+  async deleteAppointment(@Request() req: RequestWithUser, @Param('id') appointmentId: string) {
+    await this.appointmentsService.assertAppointmentAccess(appointmentId, req.user.userId, true);
     return await this.appointmentsService.deleteAppointment(appointmentId);
   }
 
   //! MODIFIER UN RDV ✅
   @UseGuards(JwtAuthGuard)
   @Patch('update/:id')
-  async updateAppointment(@Param('id') appointmentId: string, @Body() rdvBody: UpdateAppointmentDto) {
+  async updateAppointment(@Request() req: RequestWithUser, @Param('id') appointmentId: string, @Body() rdvBody: UpdateAppointmentDto) {
+    await this.appointmentsService.assertAppointmentAccess(appointmentId, req.user.userId, true);
     console.log('Updating appointment with ID:', appointmentId, 'and body:', rdvBody);
-    return await this.appointmentsService.updateAppointment(appointmentId, rdvBody);
+    return await this.appointmentsService.updateAppointment(appointmentId, rdvBody, req.user.userId);
   }
 
   //! MODIFIER UN RDV PAR LE CLIENT ✅
@@ -317,21 +323,24 @@ export class AppointmentsController {
   //! CONFIRMER UN RDV ✅
   @UseGuards(JwtAuthGuard)
   @Patch('confirm/:id')
-  async confirmAppointment(@Param('id') appointmentId: string, @Body() message: { message: string }) {
+  async confirmAppointment(@Request() req: RequestWithUser, @Param('id') appointmentId: string, @Body() message: { message: string }) {
+    await this.appointmentsService.assertAppointmentAccess(appointmentId, req.user.userId, true);
     return await this.appointmentsService.confirmAppointment(appointmentId, message.message);
   }
 
   //! COMPLETER UN RDV ✅
   @UseGuards(JwtAuthGuard)
   @Patch('change-status/:id')
-  async changeAppointmentStatus(@Param('id') appointmentId: string, @Body() statusBody: { status: 'COMPLETED' | 'NO_SHOW' } | 'COMPLETED' | 'NO_SHOW') {
+  async changeAppointmentStatus(@Request() req: RequestWithUser, @Param('id') appointmentId: string, @Body() statusBody: { status: 'COMPLETED' | 'NO_SHOW' } | 'COMPLETED' | 'NO_SHOW') {
+    await this.appointmentsService.assertAppointmentAccess(appointmentId, req.user.userId, true);
     return await this.appointmentsService.changeAppointmentStatus(appointmentId, statusBody);
   }
 
   //! ANNULER UN RDV ✅
   @UseGuards(JwtAuthGuard)
   @Patch('cancel/:id')
-  async cancelAppointment(@Param('id') appointmentId: string, @Body() message: { message: string }) {
+  async cancelAppointment(@Request() req: RequestWithUser, @Param('id') appointmentId: string, @Body() message: { message: string }) {
+    await this.appointmentsService.assertAppointmentAccess(appointmentId, req.user.userId, true);
     return await this.appointmentsService.cancelAppointment(appointmentId, message.message);
   }
 
@@ -339,7 +348,7 @@ export class AppointmentsController {
   @UseGuards(JwtAuthGuard)
   @Patch('client-cancel/:id')
   async cancelAppointmentByClient(
-    @Request() req: RequestWithUser, 
+    @Request() req: RequestWithUser,
     @Param('id') appointmentId: string,
     @Body() body: { reason?: string }
   ) {
@@ -350,23 +359,26 @@ export class AppointmentsController {
   //! RDV PAYE ✅
   @UseGuards(JwtAuthGuard)
   @Patch('payed/:id')
-  async markAppointmentAsPaid(@Param('id') appointmentId: string, @Body() body: { isPayed: boolean }) {
+  async markAppointmentAsPaid(@Request() req: RequestWithUser, @Param('id') appointmentId: string, @Body() body: { isPayed: boolean }) {
+    await this.appointmentsService.assertAppointmentAccess(appointmentId, req.user.userId, true);
     return await this.appointmentsService.markAppointmentAsPaid(appointmentId, body.isPayed);
   }
 
   //! VOIR TOUS LES RDV D'UN TATOUEUR ✅
   @Get('tatoueur/:id')
   async getAppointmentsByTatoueurId(@Param('id') tatoueurId: string) {
-    return await this.appointmentsService.getTatoueurAppointments(tatoueurId);
+    const appointments = await this.appointmentsService.getTatoueurAppointments(tatoueurId);
+    return Array.isArray(appointments) ? appointments.filter(a => ['PENDING', 'CONFIRMED'].includes(a.status)).map(a => ({ start: a.start, end: a.end })) : appointments;
   }
 
   //! ENVOYER UN EMAIL PERSONNALISÉ À UN CLIENT ✅
   @UseGuards(JwtAuthGuard)
   @Post('send-custom-email/:appointmentId')
-  async sendCustomEmail(
+  async sendCustomEmail(@Request() req: RequestWithUser,
     @Param('appointmentId') appointmentId: string,
     @Body() emailData: SendCustomEmailDto
   ) {
+    await this.appointmentsService.assertAppointmentAccess(appointmentId, req.user.userId, true);
     const { subject, message } = emailData;
     return await this.appointmentsService.sendCustomEmail(appointmentId, subject, message);
   }

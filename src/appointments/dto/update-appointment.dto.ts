@@ -25,6 +25,10 @@ export enum AppointmentStatus {
 }
 
 export class UpdateAppointmentDto {
+  @IsOptional()
+  @IsString()
+  venueSalonId?: string;
+
   @IsString()
   @IsNotEmpty()
   userId: string;
