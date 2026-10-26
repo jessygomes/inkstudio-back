@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, SalonResidency } from '@prisma/client';
+import { Prisma, SalonResidency, SaasPlan } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma.service';
 import { CacheService } from 'src/redis/cache.service';
 import { minutes, parisDate, parisTime } from './presence';
@@ -17,6 +17,7 @@ import {
   samePriorityOverlap,
   venueOnDate,
 } from './location-presence';
+import { businessBillingFields, canBookLinkedArtist, hasActiveBusiness } from './booking-access';
 import { ResidencyPermissionsDto } from './dto';
 
 const salonFields = {
@@ -134,19 +135,20 @@ export class ResidenciesService {
     const [members, artist] = await Promise.all([
       this.prisma.salonResidency.findMany({
         where: { artistId, ...live },
-        include: { salon: { select: salonFields } },
+        include: { salon: { select: { ...salonFields, ...businessBillingFields, addConfirmationEnabled: true } } },
         orderBy: { joinedAt: 'asc' },
       }),
       this.prisma.user.findUnique({
         where: { id: artistId },
-        select: { currentResidencyId: true, currentResidencyUntil: true },
+        select: { currentResidencyId: true, currentResidencyUntil: true, saasPlan: true },
       }),
     ]);
     return members
       .map((r) => {
         const state = this.presenceState(r, members, artist || {});
         return {
-          ...r.salon,
+          ...Object.fromEntries(Object.entries(r.salon).filter(([key]) => !["saasPlanUntil", "saasPlanDetails"].includes(key))),
+          id: r.salon.id, salonName: r.salon.salonName, city: r.salon.city, postalCode: r.salon.postalCode,
           adress: r.salon.address,
           residencyId: r.id,
           linkedAt: r.joinedAt,
@@ -155,10 +157,11 @@ export class ResidenciesService {
           currentSalonMode: state.currentSalonMode,
           currentSalonUntil: state.currentSalonUntil,
           nextPresenceAt: state.nextPresenceAt,
+          addConfirmationEnabled: r.salon.addConfirmationEnabled,
           publicBookingEnabled:
             r.salonAllowsPublicBooking &&
             r.artistAllowsPublicBooking &&
-            !!state.presence,
+            !!state.presence && canBookLinkedArtist(artist || {}, r.salon),
         };
       })
       .sort(
@@ -173,6 +176,7 @@ export class ResidenciesService {
     return this.prisma.salonResidency.findMany({
       where: { salonId, ...live },
       include: {
+        salon: { select: businessBillingFields },
         artist: {
           select: {
             ...salonFields,
@@ -548,6 +552,7 @@ export class ResidenciesService {
       where: { id: actorId },
       select: { role: true, saasPlan: true },
     });
+    if (user?.role === 'user_tatoueur' && user.saasPlan === SaasPlan.FREE) return { id: { in: [] } };
     if (user?.role === 'user_tatoueur')
       return { OR: [{ userId: actorId }, { performerUserId: actorId }] };
     if (user?.role !== 'user_salon' || user.saasPlan === 'FREE')
@@ -578,6 +583,8 @@ export class ResidenciesService {
       },
     });
     if (!appointment) throw new NotFoundException('Rendez-vous introuvable.');
+    const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { role: true, saasPlan: true } });
+    if (actor?.role === 'user_tatoueur' && actor.saasPlan === SaasPlan.FREE) throw new ForbiddenException('Le plan FREE ne donne pas accès à la gestion des rendez-vous.');
     if (!manage && appointment.clientUserId === actorId) return;
     const artistId = appointment.performerUserId;
     if (!artistId) {
@@ -602,6 +609,14 @@ export class ResidenciesService {
     throw new ForbiddenException(
       'Ce rattachement ne vous autorise pas à consulter ou modifier ce rendez-vous.',
     );
+  }
+
+  async businessSponsor(artistId: string, salonId: string | undefined, publicBooking = true, tx: Tx = this.prisma) {
+    if (!salonId) throw new ForbiddenException('Ce compte FREE peut recevoir des rendez-vous uniquement dans un salon Business relié.');
+    const member = await tx.salonResidency.findFirst({ where: { artistId, salonId, ...live }, include: { salon: { select: { ...businessBillingFields, id: true, salonName: true, email: true, addConfirmationEnabled: true } } } });
+    if (!member || !hasActiveBusiness(member.salon)) throw new ForbiddenException('Le salon choisi doit disposer d’un abonnement Business actif pour recevoir les rendez-vous de ce tatoueur FREE.');
+    if (publicBooking ? !member.salonAllowsPublicBooking || !member.artistAllowsPublicBooking : !member.artistAllowsSalonCreate) throw new ForbiddenException('Les autorisations nécessaires pour ce rendez-vous ne sont pas activées.');
+    return member.salon;
   }
 
   async venueSnapshot(
@@ -763,6 +778,10 @@ export class ResidenciesService {
               : member.artistAllowsSalonCreate)
     )
       return [];
+    const billingArtist = await this.prisma.user.findUnique({ where: { id: artistId }, select: { saasPlan: true } });
+    if (billingArtist?.saasPlan === SaasPlan.FREE) {
+      try { await this.businessSponsor(artistId, salonId, publicBooking); } catch (error) { if (error instanceof ForbiddenException) return []; throw error; }
+    }
     const members = await this.prisma.salonResidency.findMany({
       where: { artistId, ...live },
     });
@@ -903,6 +922,11 @@ export class ResidenciesService {
     return this.prisma.$transaction(
       async (tx) => {
         await this.lockArtist(tx, artistId);
+        const artist = await tx.user.findUnique({ where: { id: artistId }, select: { saasPlan: true } });
+        if (artist?.saasPlan === SaasPlan.FREE) {
+          const sponsor = await this.businessSponsor(artistId, data.venueSalonId || (data.userId !== artistId ? data.userId : undefined), publicBooking, tx);
+          if (data.userId !== sponsor.id || (!publicBooking && actorId !== sponsor.id)) throw new ForbiddenException('Ce rendez-vous doit être géré par le salon Business choisi.');
+        }
         const start = new Date(data.start as string);
         const end = new Date(data.end as string);
         const snapshot = await this.venueSnapshot(

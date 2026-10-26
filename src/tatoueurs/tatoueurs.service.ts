@@ -4,6 +4,7 @@ import { CreateTatoueurDto } from './dto/create-tatoueur.dto';
 import { CacheService } from 'src/redis/cache.service';
 import { Role, TeamRequestStatus } from '@prisma/client';
 import { CreateTeamRequestDto } from './dto/create-team-request.dto';
+import { canBookLinkedArtist } from 'src/residencies/booking-access';
 import { ResidenciesService } from 'src/residencies/residencies.service';
 
 @Injectable()
@@ -967,7 +968,7 @@ export class TatoueursService {
           img: r.artist.profileImage || r.artist.image,
           isLinkedUser: true,
           isReadOnly: true,
-          rdvBookingEnabled: r.artistAllowsSalonCreate,
+          rdvBookingEnabled: r.artistAllowsSalonCreate && canBookLinkedArtist(r.artist, r.salon),
           appointmentBookingEnabled: r.salonAllowsPublicBooking,
           hours: null,
           style: r.artist.style,
@@ -1090,7 +1091,7 @@ export class TatoueursService {
       return [
         ...internal.map((t) => ({ ...t, isLinkedUser: false, isReadOnly: false })),
         ...members
-          .filter((r) => r.artistAllowsSalonCreate)
+          .filter((r) => r.artistAllowsSalonCreate && canBookLinkedArtist(r.artist, r.salon))
           .map((r) => ({
             id: 'linked_' + r.artist.id,
             linkedUserId: r.artist.id,
@@ -1100,7 +1101,7 @@ export class TatoueursService {
             img: r.artist.profileImage || r.artist.image,
             isLinkedUser: true,
             isReadOnly: true,
-            rdvBookingEnabled: r.artistAllowsSalonCreate,
+            rdvBookingEnabled: r.artistAllowsSalonCreate && canBookLinkedArtist(r.artist, r.salon),
             appointmentBookingEnabled: r.salonAllowsPublicBooking,
             hours: null,
             style: r.artist.style,

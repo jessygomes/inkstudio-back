@@ -1,6 +1,7 @@
 import { AgendaMode, SaasPlan } from '@prisma/client';
 import { ForbiddenException, Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
+import { canBookLinkedArtist } from 'src/residencies/booking-access';
 import { ResidenciesService } from 'src/residencies/residencies.service';
 import { CacheService } from 'src/redis/cache.service';
 import { MailService } from 'src/email/mailer.service';
@@ -742,7 +743,7 @@ export class UserService {
               appointmentBookingEnabled:
                 r.salonAllowsPublicBooking &&
                 r.artistAllowsPublicBooking &&
-                r.presence !== null,
+                r.presence !== null && canBookLinkedArtist(r.artist, r.salon),
             } as any),
             bookingHref:
               '/salon/' +

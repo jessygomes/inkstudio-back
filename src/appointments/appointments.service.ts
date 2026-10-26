@@ -1090,7 +1090,7 @@ export class AppointmentsService {
             },
           });
 
-      const salonConfig = await this.prisma.user.findUnique({
+      let salonConfig = await this.prisma.user.findUnique({
         where: { id: userId },
         select: {
           role: true,
@@ -1117,14 +1117,15 @@ export class AppointmentsService {
         };
       }
 
-      if (
-        (salonConfig.role === 'user_salon' || salonConfig.role === 'user_tatoueur')
-        && salonConfig.saasPlan === SaasPlan.FREE
-      ) {
-        return {
-          error: true,
-          message: 'Ce profil est en plan FREE et ne peut pas recevoir de nouveaux rendez-vous.',
-        };
+      const bookingProfileId = userId;
+      let sponsor: Awaited<ReturnType<ResidenciesService['businessSponsor']>> | null = null;
+      if (salonConfig.saasPlan === SaasPlan.FREE && salonConfig.role === 'user_tatoueur' && this.residencies) {
+        sponsor = await this.residencies.businessSponsor(userId, rdvBody.venueSalonId);
+      }
+      if ((salonConfig.role === 'user_salon' || salonConfig.role === 'user_tatoueur') && salonConfig.saasPlan === SaasPlan.FREE && !sponsor) {
+        return { error: true, message: salonConfig.role === 'user_tatoueur'
+          ? 'Le plan FREE permet de recevoir des rendez-vous uniquement dans un salon Business relié et autorisé.'
+          : 'Ce profil est en plan FREE et ne peut pas recevoir de nouveaux rendez-vous.' };
       }
 
       const agendaMode = this.resolveAppointmentAgendaMode({
@@ -1145,7 +1146,7 @@ export class AppointmentsService {
       };
 
       let artist: { id: string; name: string } | null = null;
-      if (tatoueurId) {
+      if (tatoueurId || salonConfig.role === 'user_tatoueur') {
         artist = selectedTatoueur.artist;
 
         if (!artist) {
@@ -1168,6 +1169,13 @@ export class AppointmentsService {
         }
       }
 
+      // Sponsorship changes management ownership, never the performing artist.
+      // Keep the artist's offerings and pricing, but use the salon's confirmation and notification settings.
+      if (sponsor) {
+        userId = sponsor.id;
+        salonConfig = { ...salonConfig, email: sponsor.email, salonName: sponsor.salonName, addConfirmationEnabled: sponsor.addConfirmationEnabled };
+      }
+
       const flashOwnerScope = await this.prisma.user.findUnique({
         where: { id: userId },
         select: {
@@ -1184,7 +1192,7 @@ export class AppointmentsService {
         ? (flashOwnerScope.linkedTatoueurs ?? []).map((tatoueurUser) => tatoueurUser.id)
         : [];
 
-      const flashOwnerIds = Array.from(new Set([userId, ...linkedTatoueurUserIds]));
+      const flashOwnerIds = Array.from(new Set([bookingProfileId, userId, ...linkedTatoueurUserIds]));
 
       const selectedFlash = flashId
         ? await this.prisma.flash.findFirst({
@@ -1398,7 +1406,7 @@ export class AppointmentsService {
               const piercingPriceConfig = await this.prisma.piercingServicePrice.findUnique({
                 where: {
                   id: piercingServiceId,
-                  userId,
+                  userId: bookingProfileId,
                   isActive: true,
                 },
                 select: {

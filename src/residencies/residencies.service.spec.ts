@@ -69,6 +69,32 @@ describe('Salon residencies', () => {
     service = new ResidenciesService(db, { delPattern: jest.fn() } as any);
   });
   afterEach(() => jest.useRealTimers());
+  it('preserves an artist’s historical appointments while hiding them in FREE and revealing them in PRO', async () => {
+    db.appointment.findUnique.mockResolvedValue({ userId: 'paris', performerUserId: 'artist', venueSalonId: 'paris' });
+    db.user.findUnique.mockResolvedValue({ role: 'user_tatoueur', saasPlan: 'FREE' });
+    expect(await service.visibleAppointmentsWhere('artist')).toEqual({ id: { in: [] } });
+    await expect(service.assertAppointmentAccess('a1','artist',false)).rejects.toThrow(ForbiddenException);
+    db.user.findUnique.mockResolvedValue({ role: 'user_tatoueur', saasPlan: 'PRO' });
+    expect(await service.visibleAppointmentsWhere('artist')).toEqual({ OR: [{userId:'artist'}, {performerUserId:'artist'}] });
+    await expect(service.assertAppointmentAccess('a1','artist',false)).resolves.toBeUndefined();
+    expect(db.appointment.update).not.toHaveBeenCalled();
+  });
+  it('rechecks Business sponsorship and salon ownership when saving a FREE artist appointment', async () => {
+    db.user.findUnique.mockResolvedValue({saasPlan:'FREE'});
+    db.salonResidency.findFirst.mockResolvedValue({...member, salon:{ id:'paris', role:'user_salon', saasPlan:'BUSINESS' }});
+    const data = { userId:'paris', performerUserId:'artist', venueSalonId:'paris', start:new Date('2026-11-02T09:00Z'), end:new Date('2026-11-02T10:00Z') };
+    await expect(service.persistAppointment({data} as any,null,true)).resolves.toMatchObject({userId:'paris',performerUserId:'artist'});
+    await expect(service.persistAppointment({data:{...data,userId:'artist'}} as any,null,true)).rejects.toThrow(ForbiddenException);
+    db.salonResidency.findFirst.mockResolvedValue({...member, salon:{ id:'paris', role:'user_salon', saasPlan:'PRO' }});
+    await expect(service.persistAppointment({data} as any,null,true)).rejects.toThrow(ForbiddenException);
+  });
+  it('cannot sponsor a FREE artist at an unrelated salon or without both public permissions', async () => {
+    db.salonResidency.findFirst.mockResolvedValue(null);
+    await expect(service.businessSponsor('artist','paris')).rejects.toThrow(ForbiddenException);
+    await expect(service.businessSponsor('artist',undefined)).rejects.toThrow(ForbiddenException);
+    db.salonResidency.findFirst.mockResolvedValue({...member, artistAllowsPublicBooking:false, salon:{ id:'paris', role:'user_salon', saasPlan:'BUSINESS' }});
+    await expect(service.businessSponsor('artist','paris')).rejects.toThrow(ForbiddenException);
+  });
   it('allows legacy salons to be configured one at a time when another has no presence yet', async () => {
     db.salonResidency.findMany.mockResolvedValue([{ ...member, id: 'legacy', salonId: 'legacy', presence: null }]);
     const legacyBooking = { venueSalonId: 'legacy', start: new Date('2026-11-03T09:00Z'), end: new Date('2026-11-03T10:00Z') };
