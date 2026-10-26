@@ -2,9 +2,23 @@ import { EmailTemplateService } from './email-template.service';
 import { emailPreviewData, emailPreviewTemplates } from './email-preview.data';
 import { renderInkeraEmail } from './email-layout';
 import { renderMessageEmail } from './message-email';
+import { BACK_OFFICE_PATH } from '../config/back-office';
 
 describe('Inkera email presentation', () => {
   const service = new EmailTemplateService();
+
+  it('links admin notifications to the current back-office users page', () => {
+    const previous = process.env.FRONTEND_URL;
+    process.env.FRONTEND_URL = 'https://app.example.com';
+    try {
+      const html = service.generateAdminNewUserNotificationEmail(emailPreviewData);
+      expect(html).toContain(`https://app.example.com${BACK_OFFICE_PATH}/users`);
+      expect(html).not.toContain('/admin/users');
+    } finally {
+      if (previous === undefined) delete process.env.FRONTEND_URL;
+      else process.env.FRONTEND_URL = previous;
+    }
+  });
 
   it.each(Object.entries(emailPreviewTemplates))(
     '%s renders with the shared layout and meaningful content',

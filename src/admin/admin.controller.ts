@@ -47,7 +47,7 @@ export class AdminController {
 
   @Patch('invitations/:id')
   updateInvitation(@Param('id') id: string, @Body() body: UpdateInvitationDurationDto) {
-    return this.invitations.updateDuration(id, body.durationMonths);
+    return this.invitations.update(id, body);
   }
 
   @Delete('invitations/:id')

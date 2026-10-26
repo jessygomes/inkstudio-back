@@ -15,6 +15,7 @@ jest.mock('bcryptjs', () => ({
 }));
 
 const createPrismaMock = () => ({
+  subscriptionInvitationRedemption: { create: jest.fn() },
   subscriptionInvitation: {
     findUnique: jest.fn(),
     updateMany: jest.fn(),
@@ -262,7 +263,7 @@ describe('AuthService', () => {
     };
     const invitation = {
       id: 'invite-1', email: invitedBody.email, role: invitedBody.role, plan: 'BUSINESS',
-      durationMonths: 12, redeemedAt: null, revokedAt: null, expiresAt: new Date('2099-01-01'),
+      durationMonths: 12, maxUses: 1, useCount: 0, revokedAt: null, expiresAt: new Date('2099-01-01'),
     };
 
     it.each(['user_salon', 'user_tatoueur'] as const)('grants a 12 month invitation to %s without Stripe or a native trial', async role => {
@@ -280,13 +281,14 @@ describe('AuthService', () => {
           saasPlan: plan, saasPlanUntil: new Date('2027-10-26T12:00:00Z'),
           saasPlanDetails: { create: expect.objectContaining({ currentPlan: plan, paymentMethod: 'INVITATION', planStatus: 'ACTIVE', monthlyPrice: 0, trialEndDate: null, nextPaymentDate: null }) },
         }) });
-        expect(prisma.subscriptionInvitation.update).toHaveBeenCalledWith({ where: { id: 'invite-1' }, data: { redeemedById: 'invited-user' } });
+        expect(prisma.subscriptionInvitationRedemption.create).toHaveBeenCalledWith({ data: { invitationId: 'invite-1', userId: 'invited-user', redeemedAt: expect.any(Date), durationMonths: 12, plan } });
+        expect(prisma.subscriptionInvitation.updateMany).toHaveBeenCalledWith({ where: expect.objectContaining({ useCount: { lt: 1 }, maxUses: 1, revokedAt: null }), data: { useCount: { increment: 1 } } });
         expect(stripe.createCheckoutSession).not.toHaveBeenCalled();
       } finally { jest.useRealTimers(); }
     });
 
     it.each([
-      null, { ...invitation, redeemedAt: new Date() }, { ...invitation, revokedAt: new Date() },
+      null, { ...invitation, useCount: 1 }, { ...invitation, revokedAt: new Date() },
       { ...invitation, expiresAt: new Date('2020-01-01') }, { ...invitation, email: 'another@example.com' },
       { ...invitation, role: 'user_tatoueur' },
     ])('rejects an unavailable or mismatched invitation', async record => {
@@ -306,6 +308,56 @@ describe('AuthService', () => {
       expect(result).toMatchObject({ error: true });
       expect(prisma.user.create).not.toHaveBeenCalled();
       expect(stripe.createCheckoutSession).not.toHaveBeenCalled();
+    });
+
+    it('accepts different emails on a shared link and refuses the sixth signup with a quota of five', async () => {
+      const shared = { ...invitation, email: null, maxUses: 5, useCount: 0 };
+      prisma.subscriptionInvitation.findUnique.mockImplementation(async () => ({ ...shared }));
+      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.$transaction.mockImplementation((callback: (tx: unknown) => unknown) => callback(prisma));
+      prisma.subscriptionInvitation.updateMany.mockImplementation(async (query: { where: { useCount: { lt: number } } }) => {
+        if (shared.useCount >= query.where.useCount.lt) return { count: 0 };
+        shared.useCount++;
+        return { count: 1 };
+      });
+      prisma.user.create.mockImplementation(async ({ data }: { data: { email: string } }) => ({ id: data.email, email: data.email }));
+      for (let index = 0; index < 5; index++) {
+        const result = await service.register({ registerBody: { ...invitedBody, email: `person${index}@example.com` } });
+        expect(result).toMatchObject({ checkoutUrl: null });
+        expect(result).not.toHaveProperty('error');
+      }
+      const rejected = await service.register({ registerBody: { ...invitedBody, email: 'sixth@example.com' } });
+      expect(rejected).toMatchObject({ error: true });
+      expect(prisma.user.create).toHaveBeenCalledTimes(5);
+      expect(prisma.subscriptionInvitationRedemption.create).toHaveBeenCalledTimes(5);
+      expect(stripe.createCheckoutSession).not.toHaveBeenCalled();
+    });
+
+    it.each(['user_salon', 'user_tatoueur'] as const)('allows a flexible invitation to create a %s with its corresponding offered plan', async role => {
+      const plan = role === 'user_salon' ? 'BUSINESS' : 'PRO';
+      prisma.subscriptionInvitation.findUnique.mockResolvedValue({ ...invitation, role: null, plan: null, email: null, maxUses: 5 });
+      prisma.subscriptionInvitation.updateMany.mockResolvedValue({ count: 1 });
+      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.user.create.mockResolvedValue({ id: 'flexible-user', email: invitedBody.email });
+      prisma.$transaction.mockImplementation((callback: (tx: unknown) => unknown) => callback(prisma));
+      const result = await service.register({ registerBody: { ...invitedBody, role, saasPlan: plan, checkoutPlan: plan } });
+      expect(result).not.toHaveProperty('error');
+      expect(prisma.user.create).toHaveBeenCalledWith({ data: expect.objectContaining({ role, saasPlan: plan }) });
+      expect(prisma.subscriptionInvitationRedemption.create).toHaveBeenCalledWith({ data: expect.objectContaining({ plan }) });
+      expect(stripe.createCheckoutSession).not.toHaveBeenCalled();
+    });
+
+    it('enforces the last available place even when simultaneous requests read the same counter', async () => {
+      const shared = { ...invitation, email: null, maxUses: 5, useCount: 4 };
+      prisma.subscriptionInvitation.findUnique.mockResolvedValue({ ...shared });
+      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.$transaction.mockImplementation((callback: (tx: unknown) => unknown) => callback(prisma));
+      prisma.subscriptionInvitation.updateMany.mockImplementation(async () => shared.useCount++ === 4 ? { count: 1 } : { count: 0 });
+      prisma.user.create.mockResolvedValue({ id: 'last-user', email: 'last@example.com' });
+      const results = await Promise.all(['first@example.com', 'second@example.com'].map(email => service.register({ registerBody: { ...invitedBody, email } })));
+      expect(results.filter(result => 'error' in result && result.error)).toHaveLength(1);
+      expect(prisma.user.create).toHaveBeenCalledTimes(1);
+      expect(prisma.subscriptionInvitationRedemption.create).toHaveBeenCalledTimes(1);
     });
 
     it.each([

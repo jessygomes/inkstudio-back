@@ -61,8 +61,8 @@ export class AuthController {
   async invitation(@Query('token') token: string) {
     if (!token || !/^[a-f0-9]{64}$/.test(token)) throw new BadRequestException('Invitation invalide.');
     const invitation = await this.prisma.subscriptionInvitation.findUnique({ where: { tokenHash: invitationTokenHash(token) } });
-    if (!invitation || invitation.revokedAt || invitation.redeemedAt || invitation.expiresAt <= new Date()) {
-      throw new BadRequestException('Invitation invalide, expirée ou déjà utilisée.');
+    if (!invitation || invitation.revokedAt || invitation.useCount >= invitation.maxUses || invitation.expiresAt <= new Date()) {
+      throw new BadRequestException('Invitation invalide, expirée ou quota atteint.');
     }
     return { email: invitation.email, role: invitation.role, plan: invitation.plan, durationMonths: invitation.durationMonths };
   }

@@ -111,7 +111,7 @@ model User {
   ProductSalon              ProductSalon[]
 
   saasPlanDetails           SaasPlanDetails?
-  redeemedInvitation       SubscriptionInvitation?
+  redeemedInvitation       SubscriptionInvitationRedemption?
   
   Tatoueur                  Tatoueur[]
   TimeSlot                  TimeSlot[]
@@ -955,19 +955,32 @@ model StripeWebhookEvent {
 model SubscriptionInvitation {
   id             String   @id @default(cuid())
   tokenHash      String   @unique
-  email          String
-  role           Role
-  plan           SaasPlan
+  email          String?
+  role           Role?
+  plan           SaasPlan?
   durationMonths Int      @default(12)
   createdById    String
   createdAt      DateTime @default(now())
   expiresAt      DateTime
   revokedAt      DateTime?
-  redeemedAt     DateTime?
-  redeemedById   String?  @unique
-  redeemedBy     User?    @relation(fields: [redeemedById], references: [id], onDelete: SetNull)
+  maxUses        Int      @default(1)
+  useCount       Int      @default(0)
+  redemptions    SubscriptionInvitationRedemption[]
 
   @@index([createdAt])
+}
+
+model SubscriptionInvitationRedemption {
+  id             String   @id @default(cuid())
+  invitationId   String
+  userId         String?  @unique
+  redeemedAt     DateTime @default(now())
+  durationMonths Int
+  plan           SaasPlan
+  invitation     SubscriptionInvitation @relation(fields: [invitationId], references: [id])
+  user           User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([invitationId])
 }
 
 //! MODEL POUR LES DOCUMENTS DE VÉRIFICATION DE SALON

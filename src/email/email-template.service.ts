@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { renderInkeraEmail } from './email-layout';
+import { BACK_OFFICE_PATH } from '../config/back-office';
 
 export interface EmailTemplateData {
   recipientName?: string;
@@ -1501,7 +1502,7 @@ export class EmailTemplateService {
           </ul>
         </div>
 
-        <a href="${this.buildFrontendUrl('/admin/users')}" class="cta-button">
+        <a href="${this.buildFrontendUrl(`${BACK_OFFICE_PATH}/users`)}" class="cta-button">
           Voir dans l'admin
         </a>
 

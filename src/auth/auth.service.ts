@@ -242,10 +242,10 @@ export class AuthService {
       const invitation = invitationToken
         ? await this.prisma.subscriptionInvitation.findUnique({ where: { tokenHash: invitationTokenHash(invitationToken) } })
         : null;
-      if (invitationToken && (!invitation || invitation.revokedAt || invitation.redeemedAt || invitation.expiresAt <= new Date())) {
-        throw new BadRequestException('Invitation invalide, expirée ou déjà utilisée.');
+      if (invitationToken && (!invitation || invitation.revokedAt || invitation.useCount >= invitation.maxUses || invitation.expiresAt <= new Date())) {
+        throw new BadRequestException('Invitation invalide, expirée ou quota atteint.');
       }
-      if (invitation && (invitation.email !== email.trim().toLowerCase() || invitation.role !== role)) {
+      if (invitation && ((invitation.email && invitation.email !== email.trim().toLowerCase()) || (invitation.role && invitation.role !== role))) {
         throw new BadRequestException('Cette invitation ne correspond pas à votre email ou au type de compte.');
       }
       if ((saasPlan === SaasPlan.BUSINESS || checkoutPlan === 'BUSINESS') && role !== 'user_salon') {
@@ -273,7 +273,9 @@ export class AuthService {
       // Hashage du mot de passe
       const hashedPassword = await this.hashPassword({password});
       const isTatoueurRole = role === 'user_tatoueur';
-      const initialPlan = invitation?.plan ?? (isTatoueurRole ? SaasPlan.PRO : (saasPlan || SaasPlan.FREE));
+      const initialPlan = invitation
+        ? invitation.plan ?? (isTatoueurRole ? SaasPlan.PRO : SaasPlan.BUSINESS)
+        : (isTatoueurRole ? SaasPlan.PRO : (saasPlan || SaasPlan.FREE));
       const trialEndDate = invitation ? null : nativeTrialEndDate(role, initialPlan, new Date(), this.getTatoueurTrialMonths());
       const redeemedAt = new Date();
       const offeredEndDate = invitation ? invitationEndDate(redeemedAt, invitation.durationMonths) : null;
@@ -321,12 +323,12 @@ export class AuthService {
       const createdUser = invitation
         ? await this.prisma.$transaction(async tx => {
             const claimed = await tx.subscriptionInvitation.updateMany({
-              where: { id: invitation.id, redeemedAt: null, revokedAt: null, expiresAt: { gt: new Date() }, durationMonths: invitation.durationMonths },
-              data: { redeemedAt },
+              where: { id: invitation.id, useCount: { lt: invitation.maxUses }, maxUses: invitation.maxUses, revokedAt: null, expiresAt: { gt: new Date() }, durationMonths: invitation.durationMonths },
+              data: { useCount: { increment: 1 } },
             });
-            if (!claimed.count) throw new BadRequestException('Invitation modifiée ou déjà utilisée. Rechargez la page.');
+            if (!claimed.count) throw new BadRequestException('Invitation modifiée ou quota atteint. Rechargez la page.');
             const user = await tx.user.create({ data: userData });
-            await tx.subscriptionInvitation.update({ where: { id: invitation.id }, data: { redeemedById: user.id } });
+            await tx.subscriptionInvitationRedemption.create({ data: { invitationId: invitation.id, userId: user.id, redeemedAt, durationMonths: invitation.durationMonths, plan: initialPlan } });
             return user;
           })
         : await this.prisma.user.create({ data: userData });
