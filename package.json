@@ -23,6 +23,7 @@
     "check:email-previews": "node scripts/check-email-previews.cjs",
     "check:email-queue": "ts-node -r tsconfig-paths/register scripts/check-email-queue.ts",
     "reset:failed-emails": "ts-node -r tsconfig-paths/register scripts/reset-failed-emails.ts",
+    "audit:cities": "ts-node -r tsconfig-paths/register scripts/audit-cities.ts",
     "audit:stripe-customers": "ts-node -r tsconfig-paths/register scripts/audit-stripe-customers.ts",
     "audit:stripe-customers:apply": "ts-node -r tsconfig-paths/register scripts/audit-stripe-customers.ts --apply"
   },

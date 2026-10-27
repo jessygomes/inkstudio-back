@@ -5,6 +5,8 @@ export class GetUsersDto {
   @IsOptional() @IsString() query?: string;
   @IsOptional() @IsString() city?: string;
   @IsOptional() @IsString() style?: string;
+  @IsOptional() @IsString() region?: string;
+  @IsOptional() @IsString() department?: string;
 
   @IsOptional()
   @Transform(({ value }) => parseInt(value, 10))

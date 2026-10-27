@@ -159,6 +159,21 @@ describe('UserService', () => {
   });
 
   describe('getUsers', () => {
+    it('combines geography with public eligibility, city and style before pagination', async () => {
+      cache.get.mockResolvedValue(null);
+      prisma.tatoueur.findMany.mockResolvedValue([{ style: ['FINE LINE'] }]);
+      prisma.user.findMany.mockResolvedValueOnce([]);
+      prisma.$transaction.mockResolvedValue([1, [buildUser()]]);
+      await service.getUsers('Atelier', 'Paris', 'fineline', 1, 20, '11', '75');
+      const where = prisma.user.count.mock.calls[0][0].where;
+      expect(where.city).toMatchObject({ contains: 'Paris' });
+      expect(where.AND).toHaveLength(2);
+      expect(where.AND[1].postalCode.in).toContain('75001');
+      expect(where.AND[1].postalCode.in).not.toContain('69001');
+      expect(where.salonName).toEqual({ not: null, notIn: [''] });
+      expect(prisma.user.findMany).toHaveBeenCalledWith(expect.objectContaining({ where, take: 20 }));
+    });
+
     it('requires a public identity before counting and paginating directory results', async () => {
       cache.get.mockResolvedValue(null);
       prisma.$transaction.mockResolvedValue([1, [buildUser()]]);

@@ -1,6 +1,7 @@
 import { AgendaMode, SaasPlan } from '@prisma/client';
 import { styleKey } from '../portfolio/style.utils';
 import { publicProfessionalProfileWhere } from './public-profile.utils';
+import { searchGeographyWhere } from './search-geography';
 import { ForbiddenException, Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { canBookLinkedArtist } from 'src/residencies/booking-access';
@@ -187,7 +188,9 @@ export class UserService {
     city?: string,
     style?: string,
     page: number = 1,
-    limit: number = 20
+    limit: number = 20,
+    region?: string,
+    department?: string
   ) {
     try {
       // Sanitize pagination
@@ -196,10 +199,12 @@ export class UserService {
       const skip = (currentPage - 1) * perPage;
 
       // Créer une clé de cache basée sur les paramètres
-      const cacheKey = `users:list:public-directory-v6:${JSON.stringify({
+      const cacheKey = `users:list:geography-v7:${JSON.stringify({
         query: query?.trim() || null,
         city: city?.trim() || null,
         style: style?.trim() || null,
+        region: region?.trim() || null,
+        department: department?.trim() || null,
         page: currentPage,
         limit: perPage
       })}`;
@@ -264,6 +269,8 @@ export class UserService {
           ],
         }];
       }
+      const geographicFilter = searchGeographyWhere(region, department);
+      if (geographicFilter) where.AND = [...(where.AND || []), geographicFilter];
       if (where && Object.keys(where).length === 0) where = undefined;
 
       // Count + Data en transaction
