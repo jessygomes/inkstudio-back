@@ -3715,10 +3715,14 @@ async cancelAppointmentByClient(appointmentId: string, clientUserId: string, rea
     }
 
     try {
+      const completedAt = status === 'COMPLETED'
+        ? (await this.prisma.appointment.findUnique({ where: { id }, select: { completedAt: true } }))?.completedAt ?? new Date()
+        : undefined;
       const appointment = await this.prisma.appointment.update({
         where: { id },
         data: {
           status,
+          completedAt,
           visio: false,
           visioRoom: null,
         },
@@ -3767,7 +3771,7 @@ async cancelAppointmentByClient(appointmentId: string, clientUserId: string, rea
         // Système de suivi automatique selon le type de prestation
         // Les délais sont calculés à partir du moment où le RDV est marqué COMPLETED
         try {
-          const completedTime = new Date(); // Moment actuel = quand le RDV est marqué terminé
+          const completedTime = appointment.completedAt || new Date(); // Moment actuel = quand le RDV est marqué terminé
           
           // 1. Programmer le suivi de cicatrisation pour TATTOO et PIERCING
           await this.followupSchedulerService.scheduleFollowupFromCompletion(appointment.id, completedTime);

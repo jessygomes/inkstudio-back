@@ -6,7 +6,11 @@ import { ReminderDeliveryService } from './reminder-delivery.service';
 export class FollowupProcessor {
   constructor(private readonly delivery: ReminderDeliveryService) {}
   @Process('sendFollowupEmail')
-  async handle(job: Job<{ appointmentId: string }>) { await this.delivery.deliver(job.data.appointmentId, 'FOLLOW_UP'); }
+  async handle(job: Job<{ appointmentId: string }>) {
+    await this.delivery.deliver(job.data.appointmentId, 'FOLLOW_UP');
+  }
   @Process('sendRetouchesReminderEmail')
-  async handleRetouches(job: Job<{ appointmentId: string }>) { await this.delivery.deliver(job.data.appointmentId, 'RETOUCH'); }
+  async handleRetouches(job: Job<{ appointmentId: string }>) {
+    await this.delivery.deliver(job.data.appointmentId, 'RETOUCH');
+  }
 }

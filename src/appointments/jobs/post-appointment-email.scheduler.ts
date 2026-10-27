@@ -21,7 +21,7 @@ export class PostAppointmentEmailScheduler implements OnModuleInit {
       this.jobName,
       {},
       {
-        repeat: { every: 15 * 60 * 1000 }, // every day at 09:00
+        repeat: { every: 15 * 60 * 1000 }, // Reconcile pending reminders every 15 minutes
         removeOnComplete: true,
         removeOnFail: false,
         attempts: 3,
@@ -29,6 +29,6 @@ export class PostAppointmentEmailScheduler implements OnModuleInit {
       },
     );
 
-    this.logger.log('Scheduled daily post-appointment emails at 09:00');
+    this.logger.log('Scheduled pending appointment reminders every 15 minutes');
   }
 }
