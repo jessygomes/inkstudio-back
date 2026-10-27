@@ -1,5 +1,6 @@
 import { AgendaMode, SaasPlan } from '@prisma/client';
 import { styleKey } from '../portfolio/style.utils';
+import { publicProfessionalProfileWhere } from './public-profile.utils';
 import { ForbiddenException, Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { canBookLinkedArtist } from 'src/residencies/booking-access';
@@ -186,16 +187,16 @@ export class UserService {
     city?: string,
     style?: string,
     page: number = 1,
-    limit: number = 1
+    limit: number = 20
   ) {
     try {
       // Sanitize pagination
       const currentPage = Math.max(1, Number(page) || 1);
-      const perPage = Math.min(50, Math.max(1, Number(limit) || 12));
+      const perPage = Math.min(50, Math.max(1, Number(limit) || 20));
       const skip = (currentPage - 1) * perPage;
 
       // Créer une clé de cache basée sur les paramètres
-      const cacheKey = `users:list:styles-v2:${JSON.stringify({
+      const cacheKey = `users:list:public-directory-v6:${JSON.stringify({
         query: query?.trim() || null,
         city: city?.trim() || null,
         style: style?.trim() || null,
@@ -215,24 +216,30 @@ export class UserService {
         return cachedResult;
       }
 
-      const normalizedStyleFilter =
-        typeof style === 'string' && style.trim() !== ''
-          ? style.trim().toUpperCase()
-          : '';
+      const selectedStyles = typeof style === 'string'
+        ? style.split(',').map((value) => value.trim()).filter(Boolean)
+        : [];
+      const selectedStyleKeys = new Set(selectedStyles.map(styleKey));
 
       // Build where
-      let where: Record<string, any> | undefined = {};
+      let where: Record<string, any> | undefined = publicProfessionalProfileWhere();
       if (query && query.trim() !== "") {
         where.OR = [
           { salonName: { contains: query, mode: "insensitive" as const } },
           { Tatoueur: { some: { name: { contains: query, mode: "insensitive" as const } } } },
         ];
       }
-      if (city && city.trim() !== "") {
-        // Combine avec OR précédent => AND global, c'est ce qu'on veut
-        where.city = { contains: city, mode: "insensitive" as const };
+      const selectedCities = typeof city === 'string'
+        ? [...new Set(city.split(',').map((value) => value.trim()).filter(Boolean))]
+        : [];
+      if (selectedCities.length === 1) {
+        where.city = { ...where.city, contains: selectedCities[0], mode: 'insensitive' as const };
+      } else if (selectedCities.length > 1) {
+        where.AND = [{ OR: selectedCities.map((value) => ({
+          city: { contains: value, mode: 'insensitive' as const },
+        })) }];
       }
-      if (normalizedStyleFilter) {
+      if (selectedStyles.length) {
         // Match the exact stored spellings behind the normalized dropdown value.
         const [artistRows, accountRows] = await Promise.all([
           this.prisma.tatoueur.findMany({ select: { style: true } }),
@@ -241,17 +248,16 @@ export class UserService {
             select: { style: true },
           }),
         ]);
-        const selectedKey = styleKey(normalizedStyleFilter);
         const aliases = Array.from(new Set(
           [...artistRows, ...accountRows].flatMap((row) =>
             Array.isArray(row.style)
               ? row.style.filter((value): value is string =>
-                  typeof value === 'string' && styleKey(value) === selectedKey)
+                  typeof value === 'string' && selectedStyleKeys.has(styleKey(value)))
               : [],
           ),
         ));
-        const matchingStyles = aliases.length ? aliases : [style!.trim()];
-        where.AND = [{
+        const matchingStyles = aliases.length ? aliases : selectedStyles;
+        where.AND = [...(where.AND || []), {
           OR: [
             { style: { hasSome: matchingStyles } },
             { Tatoueur: { some: { style: { hasSome: matchingStyles } } } },
@@ -269,6 +275,7 @@ export class UserService {
             id: true,
             email: true,
             salonName: true,
+            role: true,
             image: true,
             profileImage: true,
             firstName: true,
@@ -477,11 +484,8 @@ export class UserService {
    */
   private async getSlugUserCandidates(): Promise<SlugUserCandidate[]> {
     return this.prisma.user.findMany({
-      where: {
-        salonName: { not: null },
-        city: { not: null },
-        postalCode: { not: null },
-      },
+      where: publicProfessionalProfileWhere(),
+
       select: {
         id: true,
         role: true,

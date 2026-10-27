@@ -159,6 +159,100 @@ describe('UserService', () => {
   });
 
   describe('getUsers', () => {
+    it('requires a public identity before counting and paginating directory results', async () => {
+      cache.get.mockResolvedValue(null);
+      prisma.$transaction.mockResolvedValue([1, [buildUser()]]);
+      await service.getUsers('Atelier', 'Paris');
+      const where = prisma.user.count.mock.calls[0][0].where;
+      for (const field of ['salonName', 'city', 'postalCode']) {
+        expect(where[field]).toMatchObject({ not: null, notIn: [''] });
+      }
+      expect(where.role.in).toEqual(['user', 'user_salon', 'user_tatoueur']);
+      expect(prisma.user.findMany).toHaveBeenCalledWith(expect.objectContaining({ where, take: 20 }));
+    });
+
+    it('lists professional accounts immediately with twenty profiles per page', async () => {
+      cache.get.mockResolvedValue(null);
+      prisma.$transaction.mockResolvedValue([25, [buildUser()]]);
+
+      const result = await service.getUsers();
+
+      expect(prisma.user.count).toHaveBeenCalledWith({ where: {
+        role: { in: ['user', 'user_salon', 'user_tatoueur'] },
+        salonName: { not: null, notIn: [''] },
+        city: { not: null, notIn: [''] },
+        postalCode: { not: null, notIn: [''] },
+      } });
+      expect(prisma.user.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ role: { in: ['user', 'user_salon', 'user_tatoueur'] } }),
+        skip: 0,
+        take: 20,
+      }));
+      expect(result.pagination).toMatchObject({ limit: 20, totalPages: 2, hasNextPage: true });
+    });
+
+    it('matches any selected city while retaining the name and style conditions', async () => {
+      cache.get.mockResolvedValue(null);
+      prisma.tatoueur.findMany.mockResolvedValue([{ style: ['FLORAL'] }]);
+      prisma.user.findMany.mockResolvedValueOnce([{ style: ['FINE LINE'] }]);
+      prisma.$transaction.mockResolvedValue([2, [buildUser(), buildUser({ id: 'user-2', city: 'Lyon' })]]);
+
+      const result = await service.getUsers('Atelier', 'Paris, Lyon', 'Floral,fineline');
+
+      const where = prisma.user.count.mock.calls[0][0].where;
+      expect(where.OR).toEqual(expect.arrayContaining([
+        { salonName: { contains: 'Atelier', mode: 'insensitive' } },
+      ]));
+      expect(where.AND).toEqual([
+        { OR: [
+          { city: { contains: 'Paris', mode: 'insensitive' } },
+          { city: { contains: 'Lyon', mode: 'insensitive' } },
+        ] },
+        { OR: [
+          { style: { hasSome: ['FLORAL', 'FINE LINE'] } },
+          { Tatoueur: { some: { style: { hasSome: ['FLORAL', 'FINE LINE'] } } } },
+        ] },
+      ]);
+      expect(result.users).toHaveLength(2);
+    });
+
+    it('ignores empty and repeated city selections', async () => {
+      cache.get.mockResolvedValue(null);
+      prisma.$transaction.mockResolvedValue([1, [buildUser()]]);
+      await service.getUsers(undefined, ' Paris, , Paris, ');
+      expect(prisma.user.count.mock.calls[0][0].where).toMatchObject({
+        city: { contains: 'Paris', mode: 'insensitive' },
+      });
+    });
+
+    it('matches any selected style across accounts and artists', async () => {
+      cache.get.mockResolvedValue(null);
+      prisma.tatoueur.findMany.mockResolvedValue([{ style: ['FINE LINE', 'JAPONAIS'] }]);
+      prisma.user.findMany.mockResolvedValueOnce([{ style: ['fineline', 'FLORAL'] }]);
+      prisma.$transaction.mockResolvedValue([2, [buildUser(), buildUser({ id: 'user-2' })]]);
+
+      const result = await service.getUsers(undefined, 'Paris', 'Fine-Line, floral');
+
+      const where = prisma.user.count.mock.calls[0][0].where;
+      expect(where.city).toMatchObject({ contains: 'Paris', mode: 'insensitive' });
+      expect(where.AND).toEqual([{ OR: [
+        { style: { hasSome: ['FINE LINE', 'fineline', 'FLORAL'] } },
+        { Tatoueur: { some: { style: { hasSome: ['FINE LINE', 'fineline', 'FLORAL'] } } } },
+      ] }]);
+      expect(result.users).toHaveLength(2);
+    });
+
+    it('ignores empty entries in a comma-separated style selection', async () => {
+      cache.get.mockResolvedValue(null);
+      prisma.tatoueur.findMany.mockResolvedValue([]);
+      prisma.user.findMany.mockResolvedValueOnce([{ style: ['FLORAL'] }]);
+      prisma.$transaction.mockResolvedValue([1, [buildUser()]]);
+      await service.getUsers(undefined, undefined, ' , floral, , ');
+      expect(prisma.user.count.mock.calls[0][0].where.AND[0].OR[0]).toEqual({
+        style: { hasSome: ['FLORAL'] },
+      });
+    });
+
     it('matches account and artist style variants while preserving query and city filters', async () => {
       cache.get.mockResolvedValue(null);
       prisma.tatoueur.findMany.mockResolvedValue([{ style: ['FINE LINE', 'JAPONAIS'] }]);
@@ -168,7 +262,7 @@ describe('UserService', () => {
       const result = await service.getUsers('Atelier', 'Paris', 'fine_line', 2, 12);
 
       const where = prisma.user.count.mock.calls[0][0].where;
-      expect(where.city).toEqual({ contains: 'Paris', mode: 'insensitive' });
+      expect(where.city).toMatchObject({ contains: 'Paris', mode: 'insensitive' });
       expect(where.OR).toEqual(expect.arrayContaining([
         { salonName: { contains: 'Atelier', mode: 'insensitive' } },
       ]));

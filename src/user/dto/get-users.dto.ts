@@ -14,5 +14,5 @@ export class GetUsersDto {
   @IsOptional()
   @Transform(({ value }) => parseInt(value, 10))
   @IsInt() @Min(1) @Max(50)
-  limit: number = 12;
+  limit: number = 20;
 }
