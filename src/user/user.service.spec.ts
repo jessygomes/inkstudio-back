@@ -159,6 +159,21 @@ describe('UserService', () => {
   });
 
   describe('getUsers', () => {
+    it.each([
+      ['salon', ['user', 'user_salon']],
+      ['artist', ['user_tatoueur']],
+    ] as const)('filters %s accounts while preserving public eligibility and geography', async (type, roles) => {
+      cache.get.mockResolvedValue(null);
+      prisma.$transaction.mockResolvedValue([1, [buildUser()]]);
+      await service.getUsers(undefined, 'Paris', undefined, 1, 20, '11', '75', type);
+      const where = prisma.user.count.mock.calls[0][0].where;
+      expect(where.role.in).toEqual(roles);
+      expect(where.salonName).toEqual({ not: null, notIn: [''] });
+      expect(where.city).toMatchObject({ contains: 'Paris' });
+      expect(where.AND[0].postalCode.in).toContain('75001');
+      expect(prisma.user.findMany).toHaveBeenCalledWith(expect.objectContaining({ where, take: 20 }));
+    });
+
     it('combines geography with public eligibility, city and style before pagination', async () => {
       cache.get.mockResolvedValue(null);
       prisma.tatoueur.findMany.mockResolvedValue([{ style: ['FINE LINE'] }]);
@@ -448,6 +463,22 @@ describe('UserService', () => {
   });
 
   describe('getDistinctCities', () => {
+    it('uses only public professionals and merges case and whitespace duplicates', async () => {
+      prisma.user.findMany.mockResolvedValue([
+        { city: 'Paris' }, { city: ' paris ' }, { city: 'PARIS' },
+        { city: 'Lyon' }, { city: '' }, { city: '   ' }, { city: null },
+      ]);
+      expect(await service.getDistinctCities()).toEqual(['Lyon', 'Paris']);
+      expect(prisma.user.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: {
+          role: { in: ['user', 'user_salon', 'user_tatoueur'] },
+          salonName: { not: null, notIn: [''] },
+          city: { not: null, notIn: [''] },
+          postalCode: { not: null, notIn: [''] },
+        },
+      }));
+    });
+
     it('should return unique cities sorted', async () => {
       const mockCities = [
         { city: 'Lyon' },
@@ -484,7 +515,8 @@ describe('UserService', () => {
 
       const result = await service.getDistinctCities();
 
-      expect(result[0]).toBe('Paris');
+      expect(result).toContain('Paris');
+      expect(result).not.toContain('  Paris  ');
     });
   });
 

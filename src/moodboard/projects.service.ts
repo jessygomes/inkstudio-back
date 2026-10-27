@@ -189,7 +189,7 @@ export class ProjectsService {
           },
           proposals: {
             where: { professionalId: userId },
-            select: { id: true, status: true, conversationId: true },
+            select: { id: true, status: true, message: true, conversationId: true },
           },
         },
       }),

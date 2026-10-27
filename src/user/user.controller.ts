@@ -192,8 +192,8 @@ export class UserController {
   //! GET ALL USERS
   @Get()
   async getUsers(@Query() dto: GetUsersDto) {
-    const { query, city, style, page, limit, region, department } = dto;
-    return this.userService.getUsers(query, city, style, page, limit, region, department);
+    const { query, city, style, page, limit, region, department, profileType } = dto;
+    return this.userService.getUsers(query, city, style, page, limit, region, department, profileType);
   }
 
   //! 3️⃣ ROUTES AVEC PARAMÈTRES COMPLEXES

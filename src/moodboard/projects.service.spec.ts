@@ -100,6 +100,14 @@ describe('Shared moodboard projects', () => {
     );
   });
 
+  it('returns the professional own proposal message while keeping pending conversations hidden', async () => {
+    prisma.moodboard.findMany.mockResolvedValue([{ id: 'board', proposals: [{ id: 'proposal', status: 'PENDING', message: 'My original proposal', conversationId: 'private' }] }]);
+    const result = await service.explore('pro', { page: 1, scope: 'proposals' });
+    const query = prisma.moodboard.findMany.mock.calls[0][0];
+    expect(query.select.proposals.where).toEqual({ professionalId: 'pro' });
+    expect(query.select.proposals.select.message).toBe(true);
+    expect(result.data[0].proposals[0]).toEqual({ id: 'proposal', status: 'PENDING', message: 'My original proposal', conversationId: null });
+  });
   it('includes previously contacted projects without restricting them to OPEN', async () => {
     await service.explore('pro', { page: 1, scope: 'proposals' });
     const query = prisma.moodboard.findMany.mock.calls[0][0];

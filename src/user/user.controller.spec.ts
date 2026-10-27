@@ -40,6 +40,10 @@ describe('UserController', () => {
     service = module.get<UserService>(UserService);
   });
 
+  it('forwards the profile type to directory search', async () => {
+    await controller.getUsers({ query: 'Atelier', page: 1, limit: 20, profileType: 'artist' });
+    expect(service.getUsers).toHaveBeenCalledWith('Atelier', undefined, undefined, 1, 20, undefined, undefined, 'artist');
+  });
   it('should be defined', () => {
     expect(controller).toBeDefined();
   });

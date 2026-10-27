@@ -1,5 +1,5 @@
 import { Transform } from "class-transformer";
-import { IsInt, IsOptional, IsString, Max, Min } from "class-validator";
+import { IsInt, IsOptional, IsString, IsIn, Max, Min } from "class-validator";
 
 export class GetUsersDto {
   @IsOptional() @IsString() query?: string;
@@ -7,6 +7,7 @@ export class GetUsersDto {
   @IsOptional() @IsString() style?: string;
   @IsOptional() @IsString() region?: string;
   @IsOptional() @IsString() department?: string;
+  @IsOptional() @IsIn(['salon', 'artist']) profileType?: 'salon' | 'artist';
 
   @IsOptional()
   @Transform(({ value }) => parseInt(value, 10))

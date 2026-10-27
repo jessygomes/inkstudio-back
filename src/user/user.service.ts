@@ -190,7 +190,8 @@ export class UserService {
     page: number = 1,
     limit: number = 20,
     region?: string,
-    department?: string
+    department?: string,
+    profileType?: 'salon' | 'artist'
   ) {
     try {
       // Sanitize pagination
@@ -199,12 +200,13 @@ export class UserService {
       const skip = (currentPage - 1) * perPage;
 
       // Créer une clé de cache basée sur les paramètres
-      const cacheKey = `users:list:geography-v7:${JSON.stringify({
+      const cacheKey = `users:list:profile-types-v8:${JSON.stringify({
         query: query?.trim() || null,
         city: city?.trim() || null,
         style: style?.trim() || null,
         region: region?.trim() || null,
         department: department?.trim() || null,
+        profileType: profileType || null,
         page: currentPage,
         limit: perPage
       })}`;
@@ -228,6 +230,8 @@ export class UserService {
 
       // Build where
       let where: Record<string, any> | undefined = publicProfessionalProfileWhere();
+      if (profileType === 'salon') where.role = { in: ['user', 'user_salon'] };
+      else if (profileType === 'artist') where.role = { in: ['user_tatoueur'] };
       if (query && query.trim() !== "") {
         where.OR = [
           { salonName: { contains: query, mode: "insensitive" as const } },
@@ -409,18 +413,22 @@ export class UserService {
   //! -------------------------------------------------
   //! RECUPERER LES VILLES
   //! -------------------------------------------------
-  async getDistinctCities() {
-  const rows = await this.prisma.user.findMany({
-    distinct: ["city"],
-    where: { city: { not: null } },
-    select: { city: true },
-    orderBy: { city: "asc" },
-  });
-  return rows
-    .map(r => r.city?.trim())
-    .filter(Boolean);
+  async getDistinctCities(): Promise<string[]> {
+    const rows = await this.prisma.user.findMany({
+      distinct: ['city'],
+      where: publicProfessionalProfileWhere(),
+      select: { city: true },
+      orderBy: { city: 'asc' },
+    });
+    const cities = new Map<string, string>();
+    for (const row of rows) {
+      const city = row.city?.trim().replace(/\s+/g, ' ');
+      if (!city) continue;
+      const key = city.toLocaleLowerCase('fr-FR');
+      if (!cities.has(key)) cities.set(key, city);
+    }
+    return [...cities.values()].sort((a, b) => a.localeCompare(b, 'fr', { sensitivity: 'base' }));
   }
-
   //! -------------------------------------------------
   //! RECUPERER LES STYLES
   //! -------------------------------------------------
