@@ -1,4 +1,5 @@
 import { AgendaMode, SaasPlan } from '@prisma/client';
+import { styleKey } from '../portfolio/style.utils';
 import { ForbiddenException, Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { canBookLinkedArtist } from 'src/residencies/booking-access';
@@ -194,7 +195,7 @@ export class UserService {
       const skip = (currentPage - 1) * perPage;
 
       // Créer une clé de cache basée sur les paramètres
-      const cacheKey = `users:list:${JSON.stringify({
+      const cacheKey = `users:list:styles-v2:${JSON.stringify({
         query: query?.trim() || null,
         city: city?.trim() || null,
         style: style?.trim() || null,
@@ -232,11 +233,30 @@ export class UserService {
         where.city = { contains: city, mode: "insensitive" as const };
       }
       if (normalizedStyleFilter) {
-        where.Tatoueur = {
-          some: {
-            style: { has: normalizedStyleFilter }
-          }
-        };
+        // Match the exact stored spellings behind the normalized dropdown value.
+        const [artistRows, accountRows] = await Promise.all([
+          this.prisma.tatoueur.findMany({ select: { style: true } }),
+          this.prisma.user.findMany({
+            where: { role: { in: ['user', 'user_salon', 'user_tatoueur'] } },
+            select: { style: true },
+          }),
+        ]);
+        const selectedKey = styleKey(normalizedStyleFilter);
+        const aliases = Array.from(new Set(
+          [...artistRows, ...accountRows].flatMap((row) =>
+            Array.isArray(row.style)
+              ? row.style.filter((value): value is string =>
+                  typeof value === 'string' && styleKey(value) === selectedKey)
+              : [],
+          ),
+        ));
+        const matchingStyles = aliases.length ? aliases : [style!.trim()];
+        where.AND = [{
+          OR: [
+            { style: { hasSome: matchingStyles } },
+            { Tatoueur: { some: { style: { hasSome: matchingStyles } } } },
+          ],
+        }];
       }
       if (where && Object.keys(where).length === 0) where = undefined;
 

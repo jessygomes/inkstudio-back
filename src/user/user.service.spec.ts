@@ -159,6 +159,54 @@ describe('UserService', () => {
   });
 
   describe('getUsers', () => {
+    it('matches account and artist style variants while preserving query and city filters', async () => {
+      cache.get.mockResolvedValue(null);
+      prisma.tatoueur.findMany.mockResolvedValue([{ style: ['FINE LINE', 'JAPONAIS'] }]);
+      prisma.user.findMany.mockResolvedValueOnce([{ style: ['fineline', 'Fine-Line'] }]);
+      prisma.$transaction.mockResolvedValue([1, [buildUser()]]);
+
+      const result = await service.getUsers('Atelier', 'Paris', 'fine_line', 2, 12);
+
+      const where = prisma.user.count.mock.calls[0][0].where;
+      expect(where.city).toEqual({ contains: 'Paris', mode: 'insensitive' });
+      expect(where.OR).toEqual(expect.arrayContaining([
+        { salonName: { contains: 'Atelier', mode: 'insensitive' } },
+      ]));
+      expect(where.AND).toEqual([{ OR: [
+        { style: { hasSome: ['FINE LINE', 'fineline', 'Fine-Line'] } },
+        { Tatoueur: { some: { style: { hasSome: ['FINE LINE', 'fineline', 'Fine-Line'] } } } },
+      ] }]);
+      expect(prisma.user.findMany.mock.calls[1][0]).toMatchObject({ skip: 12, take: 12, where });
+      expect(result.pagination.currentPage).toBe(2);
+    });
+
+    it('finds a style defined only on the professional account', async () => {
+      cache.get.mockResolvedValue(null);
+      prisma.tatoueur.findMany.mockResolvedValue([]);
+      prisma.user.findMany.mockResolvedValueOnce([{ style: ['Réalisme'] }]);
+      prisma.$transaction.mockResolvedValue([1, [buildUser()]]);
+
+      await service.getUsers(undefined, undefined, 'realisme');
+
+      expect(prisma.user.count.mock.calls[0][0].where.AND[0].OR[0]).toEqual({
+        style: { hasSome: ['Réalisme'] },
+      });
+    });
+
+    it('retains a restrictive style filter when no stored spelling matches', async () => {
+      cache.get.mockResolvedValue(null);
+      prisma.tatoueur.findMany.mockResolvedValue([{ style: ['FLORAL'] }]);
+      prisma.user.findMany.mockResolvedValueOnce([]);
+      prisma.$transaction.mockResolvedValue([0, []]);
+
+      const result = await service.getUsers(undefined, undefined, 'JAPONAIS');
+
+      expect(prisma.user.count.mock.calls[0][0].where.AND[0].OR[0]).toEqual({
+        style: { hasSome: ['JAPONAIS'] },
+      });
+      expect(result.users).toEqual([]);
+    });
+
     it('should return users from cache when available', async () => {
       const mockUsers = [
         buildUser(),
