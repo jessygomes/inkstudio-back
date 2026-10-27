@@ -1,3 +1,4 @@
+import { PublicProfile } from '../user/public-profile-access';
 import { Body, Controller, Delete, Get, Param, Post, Put, Query, Request, UseGuards } from '@nestjs/common';
 import { PortfolioService } from './portfolio.service';
 import { AddPhotoDto } from './dto/add-photo.dto';
@@ -69,6 +70,7 @@ export class PortfolioController {
   }
 
   //! VOIR TOUTES LES PHOTOS D'UN PORTFOLIO
+  @PublicProfile()
   @Get(':userId')
   async getPortfolioPhotos(
     @Param('userId') userId: string,
@@ -79,6 +81,7 @@ export class PortfolioController {
     @Query('hashtag') hashtag?: string,
     @Query('category') category?: string,
     @Query('pieceSize') pieceSize?: string,
+    @Request() req?: RequestWithUser,
   ) {
     const pageNumber = page ? Number.parseInt(page, 10) : 1;
     const limitNumber = limit ? Number.parseInt(limit, 10) : undefined;
@@ -87,7 +90,7 @@ export class PortfolioController {
       hashtag,
       category,
       pieceSize,
-    });
+    }, req?.user?.userId !== userId && req?.user?.role !== 'admin');
   }
 
   //! MODIFIER UNE PHOTO DU PORTFOLIO

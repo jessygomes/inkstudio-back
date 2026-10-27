@@ -1,3 +1,4 @@
+import { PublicProfile } from '../user/public-profile-access';
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Request, UseGuards } from '@nestjs/common';
 import { FlashService } from './flash.service';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
@@ -16,17 +17,20 @@ export class FlashController {
     return this.flashService.createFlash(createFlashDto, userId);
   }
 
+  @PublicProfile()
   @Get(':userId')
-  async getAvailableFlashsByUser(@Param('userId') userId: string, @Query('page') page?: string) {
+  async getAvailableFlashsByUser(@Param('userId') userId: string, @Query('page') page?: string, @Request() req?: RequestWithUser) {
     const pageNumber = page ? Number.parseInt(page, 10) : 1;
-    return this.flashService.getAvailableFlashsByUser(userId, pageNumber);
+    return this.flashService.getAvailableFlashsByUser(userId, pageNumber, req?.user?.userId !== userId && req?.user?.role !== 'admin');
   }
 
+  @PublicProfile()
   @Get(':userId/all')
   async getAllFlashsByUser(
     @Param('userId') userId: string,
     @Query('page') page?: string,
     @Query('isAvailable') isAvailable?: string,
+    @Request() req?: RequestWithUser,
   ) {
     const pageNumber = page ? Number.parseInt(page, 10) : 1;
     const normalizedAvailability =
@@ -36,6 +40,7 @@ export class FlashController {
       userId,
       pageNumber,
       normalizedAvailability,
+      req?.user?.userId !== userId && req?.user?.role !== 'admin',
     );
   }
 

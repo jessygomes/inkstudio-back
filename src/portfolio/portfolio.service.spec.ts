@@ -267,15 +267,34 @@ describe('PortfolioService', () => {
     });
   });
 
+  describe('public linked galleries', () => {
+    it('checks visibility in the database even when a salon gallery is cached', async () => {
+      cache.get.mockResolvedValue({ photos: [{ id: 'hidden-photo' }] });
+      prisma.user.findUnique.mockResolvedValue({ role: 'user_salon', linkedTatoueurs: [{ id: 'hidden-artist', salonName: 'Artist' }] });
+      prisma.portfolio.count.mockResolvedValue(0);
+      prisma.portfolio.findMany.mockResolvedValue([]);
+      const result = await service.getPortfolioPhotos('salon', undefined, 1, 12, {}, true);
+      expect(result.photos).toEqual([]);
+      expect(prisma.portfolio.count).toHaveBeenCalledWith({ where: { userId: { in: ['salon', 'hidden-artist'] }, user: { publicVisibility: { not: 'HIDDEN' } } } });
+    });
+    it('uses the linked independent nickname in public photo attribution', async () => {
+      cache.get.mockResolvedValue(null);
+      prisma.user.findUnique.mockResolvedValue({ role: 'user_salon', linkedTatoueurs: [{ id: 'artist', salonName: 'Jean Dupont', nickname: 'Blue Ink' }] });
+      prisma.portfolio.count.mockResolvedValue(1);
+      prisma.portfolio.findMany.mockResolvedValue([{ id: 'photo', userId: 'artist', tatoueurId: null }]);
+      const result = await service.getPortfolioPhotos('salon', undefined, 1, 12, {}, true);
+      expect(result.photos[0]).toMatchObject({ tatoueur: { name: 'Blue Ink' } });
+    });
+  });
+
   describe('getInspirationPortfolioPhotos', () => {
-    it('returns cached inspiration photos when present', async () => {
-      const cached = { photos: [{ id: 'p1' }], pagination: { page: 1 } };
-      cache.get.mockResolvedValue(cached);
-
+    it('does not expose stale inspiration photos after a profile is hidden', async () => {
+      cache.get.mockResolvedValue({ photos: [{ id: 'hidden-photo' }] });
+      prisma.portfolio.count.mockResolvedValue(0);
+      prisma.portfolio.findMany.mockResolvedValue([]);
       const result = await service.getInspirationPortfolioPhotos({});
-
-      expect(result).toEqual(cached);
-      expect(prisma.portfolio.count).not.toHaveBeenCalled();
+      expect(result.photos).toEqual([]);
+      expect(prisma.portfolio.count).toHaveBeenCalledWith({ where: { user: { isInspirationSalon: true, publicVisibility: { not: 'HIDDEN' } } } });
     });
 
     it('fetches inspiration photos, caches them, and returns list', async () => {
@@ -291,7 +310,7 @@ describe('PortfolioService', () => {
       expect(result.photos).toHaveLength(2);
       expect(prisma.portfolio.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { user: { isInspirationSalon: true } },
+          where: { user: { isInspirationSalon: true, publicVisibility: { not: 'HIDDEN' } } },
           skip: 0,
           take: 12,
         }),
@@ -318,7 +337,7 @@ describe('PortfolioService', () => {
       expect(prisma.portfolio.count).toHaveBeenCalledWith({
         where: {
           user: {
-            isInspirationSalon: true,
+            isInspirationSalon: true, publicVisibility: { not: 'HIDDEN' },
             city: {
               contains: 'Paris',
               mode: 'insensitive',
@@ -365,7 +384,7 @@ describe('PortfolioService', () => {
 
       expect(prisma.portfolio.count).toHaveBeenCalledWith({
         where: {
-          user: { isInspirationSalon: true },
+          user: { isInspirationSalon: true, publicVisibility: { not: 'HIDDEN' } },
           hashtags: { hasSome: ['rose', 'floral'] },
           categories: { some: { slug: { in: ['walk-ins'] } } },
           pieceSize: { in: ['SMALL'] },

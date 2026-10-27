@@ -1,3 +1,4 @@
+import { Transform } from 'class-transformer';
 import { SaasPlan } from '@prisma/client';
 import {
   IsEmail,
@@ -7,6 +8,7 @@ import {
   IsOptional,
   IsString,
   MinLength,
+  MaxLength,
   Matches,
 } from 'class-validator';
 import { CHECKOUT_PLANS, CheckoutPlan } from 'src/stripe/stripe.constants';
@@ -33,12 +35,23 @@ export class CreateUserDto {
   @IsString({ message: 'Vous devez fournir un nom de salon' })
   salonName?: string;
 
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  nickname?: string;
+
   @IsString({ message: 'Vous devez fournir un prénom' })
   @IsNotEmpty({ message: 'Le prénom est requis' })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   firstName: string;
 
   @IsString({ message: 'Vous devez fournir un nom de famille' })
   @IsNotEmpty({ message: 'Le nom de famille est requis' })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   lastName: string;
 
   @IsString()

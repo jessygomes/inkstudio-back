@@ -1,3 +1,4 @@
+import { PublicProfile } from '../user/public-profile-access';
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Request, UseGuards } from '@nestjs/common';
 import { ProductSalonService } from './product-salon.service';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -17,6 +18,7 @@ export class ProductSalonController {
   }
 
   //! RÉCUPÉRER TOUS LES PRODUITS
+  @PublicProfile()
   @Get(':userId')
   async getAllProducts(@Param('userId') userId: string, @Query('page') page?: string) {
     const pageNumber = page ? Number.parseInt(page, 10) : 1;

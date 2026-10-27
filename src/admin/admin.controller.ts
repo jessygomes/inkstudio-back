@@ -2,6 +2,7 @@ import { Controller, Get, Query, UseGuards, Request, Param, Delete, Post, Body, 
 import { CreateTattooCategoryDto, UpdateTattooCategoryDto } from './dto/tattoo-category.dto';
 import { StyleNameDto } from './dto/style.dto';
 import { AdminService } from './admin.service';
+import { UpdatePublicVisibilityDto } from './dto/update-public-visibility.dto';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { RequestWithUser } from 'src/auth/jwt.strategy';
 import { Roles } from 'src/auth/roles.decorator';
@@ -205,6 +206,11 @@ export class AdminController {
     @Param('id') id: string
   ) {
     return await this.adminService.getUserById(id);
+  }
+
+  @Patch('users/:id/public-visibility')
+  updatePublicVisibility(@Param('id') id: string, @Body() body: UpdatePublicVisibilityDto) {
+    return this.adminService.updatePublicVisibility(id, body.publicVisibility);
   }
 
   //! SUPPRIMER UN UTILISATEUR ET SES DONNÉES ASSOCIÉES

@@ -1,6 +1,6 @@
 import { AgendaMode, SaasPlan } from '@prisma/client';
 import { styleKey } from '../portfolio/style.utils';
-import { publicProfessionalProfileWhere } from './public-profile.utils';
+import { publicDisplayName, withPublicName, publicProfessionalProfileWhere } from './public-profile.utils';
 import { searchGeographyWhere } from './search-geography';
 import { ForbiddenException, Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
@@ -47,7 +47,7 @@ export class UserService {
           id: true,
           role: true,
           email: true,
-          salonName: true,
+          salonName: true, nickname: true, publicVisibility: true,
           firstName: true,
           lastName: true,
         },
@@ -211,18 +211,7 @@ export class UserService {
         limit: perPage
       })}`;
 
-      // 1. Vérifier dans Redis
-      const cachedResult = await this.cacheService.get<{
-        error: boolean;
-        users: any[];
-        pagination: any;
-        filters: any;
-      }>(cacheKey);
-      
-      if (cachedResult) {
-        return cachedResult;
-      }
-
+      // Read public visibility live so hiding takes effect without relying on Redis.
       const selectedStyles = typeof style === 'string'
         ? style.split(',').map((value) => value.trim()).filter(Boolean)
         : [];
@@ -234,6 +223,7 @@ export class UserService {
       else if (profileType === 'artist') where.role = { in: ['user_tatoueur'] };
       if (query && query.trim() !== "") {
         where.OR = [
+          { nickname: { contains: query, mode: "insensitive" } },
           { salonName: { contains: query, mode: "insensitive" as const } },
           { Tatoueur: { some: { name: { contains: query, mode: "insensitive" as const } } } },
         ];
@@ -285,7 +275,7 @@ export class UserService {
           select: {
             id: true,
             email: true,
-            salonName: true,
+            salonName: true, nickname: true, publicVisibility: true,
             role: true,
             image: true,
             profileImage: true,
@@ -332,7 +322,7 @@ export class UserService {
 
       const result = {
         error: false,
-        users,
+        users: users.map(withPublicName),
         pagination: {
           currentPage,
           limit: perPage,
@@ -367,15 +357,18 @@ export class UserService {
     // Recherche insensible à la casse sur plusieurs champs
     const users = await this.prisma.user.findMany({
       where: {
+        ...publicProfessionalProfileWhere(),
         OR: [
+          { nickname: { contains: query, mode: "insensitive" } },
           { salonName: { contains: query, mode: "insensitive" } },
           { Tatoueur: { some: { name: { contains: query, mode: "insensitive" as const } } } },
         ],
       },
       select: {
         id: true,
+        role: true,
         email: true,
-        salonName: true,
+        salonName: true, nickname: true, publicVisibility: true,
         image: true,
         profileImage: true,
         firstName: true,
@@ -407,7 +400,7 @@ export class UserService {
         website: true,
       },
     });
-    return users;
+    return users.map(withPublicName);
   }
 
   //! -------------------------------------------------
@@ -499,12 +492,12 @@ export class UserService {
    */
   private async getSlugUserCandidates(): Promise<SlugUserCandidate[]> {
     return this.prisma.user.findMany({
-      where: publicProfessionalProfileWhere(),
+      where: publicProfessionalProfileWhere(false),
 
       select: {
         id: true,
         role: true,
-        salonName: true,
+        salonName: true, nickname: true, publicVisibility: true,
         city: true,
         postalCode: true,
       },
@@ -525,7 +518,7 @@ export class UserService {
         email: true,
         role: true,
         verifiedSalon: true,
-        salonName: true,
+        salonName: true, nickname: true, publicVisibility: true,
         description: true,
         image: true,
         profileImage: true,
@@ -651,7 +644,7 @@ export class UserService {
         salon: {
           select: {
             id: true,
-            salonName: true,
+            salonName: true, nickname: true, publicVisibility: true,
             profileImage: true,
             address: true,
             city: true,
@@ -678,7 +671,7 @@ export class UserService {
         salon: {
           select: {
             id: true,
-            salonName: true,
+            salonName: true, nickname: true, publicVisibility: true,
             profileImage: true,
             address: true,
             city: true,
@@ -699,7 +692,7 @@ export class UserService {
   // vers le même salon au fil du temps.
     for (const item of acceptedRequests) {
       const salon = item.salon;
-      if (!salonsMap.has(salon.id)) {
+      if (salon.publicVisibility !== 'HIDDEN' && !salonsMap.has(salon.id)) {
         salonsMap.set(
           salon.id,
           this.buildLinkedSalon(
@@ -711,7 +704,7 @@ export class UserService {
       }
     }
 
-    if (tatoueurUser?.salon && !salonsMap.has(tatoueurUser.salon.id)) {
+    if (tatoueurUser?.salon && tatoueurUser.salon.publicVisibility !== 'HIDDEN' && !salonsMap.has(tatoueurUser.salon.id)) {
       salonsMap.set(
         tatoueurUser.salon.id,
         this.buildLinkedSalon(tatoueurUser.salon, true, null),
@@ -739,9 +732,7 @@ export class UserService {
    *! Transforme un user_tatoueur lié en forme compatible avec la liste Tatoueur du front.
    */
   private mapLinkedTatoueurUser(user: LinkedTatoueurUser) {
-    const displayName = user.salonName?.trim()
-      || `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim()
-      || 'Tatoueur';
+    const displayName = publicDisplayName({ ...user, role: 'user_tatoueur' });
 
     return {
       id: `linked_${user.id}`,
@@ -776,7 +767,7 @@ export class UserService {
         linkedSalons: [],
         Tatoueur: [
           ...(found.Tatoueur || []).filter((t: any) => !t.isLinkedUser),
-          ...members.map((r) => ({
+          ...members.filter((r) => r.artist.publicVisibility !== 'HIDDEN').map((r) => ({
             ...this.mapLinkedTatoueurUser({
               ...r.artist,
               appointmentBookingEnabled:
@@ -801,10 +792,11 @@ export class UserService {
       where: {
         salonId: found.id,
         role: 'user_tatoueur',
+        publicVisibility: { not: 'HIDDEN' },
       },
       select: {
         id: true,
-        salonName: true,
+        salonName: true, nickname: true, publicVisibility: true,
         city: true,
         postalCode: true,
         firstName: true,
@@ -852,6 +844,7 @@ export class UserService {
    * Route l'enrichissement selon le type de profil retourné par le matching de slug.
    */
   private async enrichSlugUser(found: SlugUser): Promise<Record<string, any>> {
+    found = withPublicName(found);
     if (found.role === 'user_tatoueur') {
       return this.enrichTatoueurSlugUser(found);
     }
@@ -863,65 +856,13 @@ export class UserService {
   //! GET USER BY SLUG + LOCALISATION
   //! -------------------------------------------------
   async getUserBySlugAndLocation({ nameSlug, locSlug }: { nameSlug: string; locSlug: string }): Promise<Record<string, any> | null> {
-    try {
-      const cacheKey = `user:slug:${nameSlug}:${locSlug}`;
-
-      // Vue d'ensemble de cette méthode:
-      // 1) lire le cache
-      // 2) trouver rapidement l'ID du bon profil via un jeu minimal de candidats
-      // 3) charger le profil complet correspondant
-      // 4) enrichir selon le rôle (salon ou user_tatoueur)
-      // 5) stocker le résultat final en cache
-      try {
-        const cachedUser = await this.cacheService.get(cacheKey);
-        if (cachedUser) {
-          return this.residencies ? this.enrichSlugUser(cachedUser as SlugUser) : cachedUser;
-        }
-      } catch (cacheError) {
-        console.warn('Erreur cache Redis pour getUserBySlugAndLocation:', cacheError);
-      }
-
-      // 2. On ne charge que des candidats légers pour faire le matching par slug.
-      const candidates = await this.getSlugUserCandidates();
-      const foundCandidate = this.findUserBySlugs(candidates, nameSlug, locSlug);
-
-      // Aucun match => on mettra null en cache pour éviter de refaire la recherche.
-      if (!foundCandidate) {
-        try {
-          const ttl = 2 * 60 * 60;
-          await this.cacheService.set(cacheKey, null, ttl);
-        } catch (cacheError) {
-          console.warn('Erreur sauvegarde cache Redis pour getUserBySlugAndLocation:', cacheError);
-        }
-
-        return null;
-      }
-
-      // 3. Maintenant seulement, on charge le vrai profil complet correspondant.
-      const found = await this.getSlugUserProfileById(foundCandidate.id);
-
-      if (!found) {
-        return null;
-      }
-
-      // 4. On enrichit ensuite la forme finale selon le rôle.
-      // - user_tatoueur: on remonte les salons liés
-      // - salon: on fusionne tatoueurs internes et profils liés
-      const enrichedFound = await this.enrichSlugUser(found);
-
-      // 5. Le résultat enrichi est mis en cache pour les prochains accès.
-      try {
-        const ttl = 2 * 60 * 60;
-        await this.cacheService.set(cacheKey, enrichedFound, ttl);
-      } catch (cacheError) {
-        console.warn('Erreur sauvegarde cache Redis pour getUserBySlugAndLocation:', cacheError);
-      }
-
-      return enrichedFound;
-    } catch (error) {
-      console.error('Erreur dans getUserBySlugAndLocation:', error);
-      throw error;
-    }
+    // Profile visibility and linked profiles are always resolved live, including when Redis is unavailable.
+    const candidates = await this.getSlugUserCandidates();
+    const candidate = this.findUserBySlugs(candidates, nameSlug, locSlug);
+    if (!candidate) return null;
+    const found = await this.getSlugUserProfileById(candidate.id);
+    if (!found || found.publicVisibility === 'HIDDEN') return null;
+    return this.enrichSlugUser(found);
   }
 
   //! -------------------------------------------------
@@ -979,7 +920,7 @@ export class UserService {
           id: true,
           saasPlan: true,
           email: true,
-          salonName: true,
+          salonName: true, nickname: true, publicVisibility: true,
           firstName: true,
           lastName: true,
           phone: true,
@@ -1029,7 +970,7 @@ export class UserService {
       await this.cacheService.set(cacheKey, user, ttl);
     }
 
-    return user as CachedUser | null;
+    return user ? withPublicName({ ...user, role: userRole.role }) as CachedUser : null;
   }
 
   //! -------------------------------------------------
@@ -1087,7 +1028,7 @@ export class UserService {
           id: true,
           saasPlan: true,
           email: true,
-          salonName: true,
+          salonName: true, nickname: true, publicVisibility: true,
           firstName: true,
           lastName: true,
           phone: true,
@@ -1169,11 +1110,16 @@ export class UserService {
   //! -------------------------------------------------
   //! UPDATE USER
   //! -------------------------------------------------
-  async updateUser({userId, userBody} : {userId: string; userBody: { salonName: string; firstName: string; lastName: string; phone: string; address: string; city: string; postalCode: string; instagram: string; facebook: string; tiktok: string; website: string; description: string; image: string; profileImage?: string; prestations?: string[]; style?: string[] | string | null; }}): Promise<Record<string, any>> {
+  async updateUser({userId, userBody} : {userId: string; userBody: { salonName: string; nickname?: string; firstName: string; lastName: string; phone: string; address: string; city: string; postalCode: string; instagram: string; facebook: string; tiktok: string; website: string; description: string; image: string; profileImage?: string; prestations?: string[]; style?: string[] | string | null; }}): Promise<Record<string, any>> {
     
     // Vérifier que userId est défini
     if (!userId) {
       throw new Error('UserId est requis pour mettre à jour un utilisateur');
+    }
+
+    if (userBody.nickname?.trim()) {
+      const owner = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+      if (owner?.role !== 'user_tatoueur') throw new ForbiddenException('Le pseudo public est réservé aux comptes indépendants.');
     }
 
     const allowed = new Set(["TATTOO", "RETOUCHE", "PROJET", "PIERCING"]);
@@ -1202,6 +1148,7 @@ export class UserService {
       },
       data: {
         salonName: userBody.salonName,
+        ...(userBody.nickname !== undefined ? { nickname: userBody.nickname?.trim() || null } : {}),
         firstName: userBody.firstName,
         lastName: userBody.lastName,
         phone: userBody.phone,
@@ -1226,6 +1173,8 @@ export class UserService {
     await this.cacheService.delPattern('users:list:*');
     // Invalider les caches de slug qui pourraient être affectés
     await this.cacheService.delPattern('user:slug:*');
+    await this.cacheService.delPattern('portfolio:inspirations:*');
+    await this.cacheService.delPattern('admin:*');
     // Invalider les caches de RDV client qui exposent l'image du salon
     await this.cacheService.delPattern('client:appointments:*');
 
@@ -1455,7 +1404,7 @@ export class UserService {
         select: {
           id: true,
           addConfirmationEnabled: true,
-          salonName: true,
+          salonName: true, nickname: true, publicVisibility: true,
         },
       });
 
@@ -2039,7 +1988,7 @@ export class UserService {
           id: true,
           colorProfile: true,
           colorProfileBis: true,
-          salonName: true,
+          salonName: true, nickname: true, publicVisibility: true,
         },
       });
 
@@ -2084,7 +2033,7 @@ export class UserService {
           id: true,
           role: true,
           isInspirationSalon: true,
-          salonName: true,
+          salonName: true, nickname: true, publicVisibility: true,
         },
       });
 
@@ -2109,7 +2058,7 @@ export class UserService {
         },
         select: {
           id: true,
-          salonName: true,
+          salonName: true, nickname: true, publicVisibility: true,
           isInspirationSalon: true,
           role: true,
         },
@@ -2144,12 +2093,12 @@ export class UserService {
   async getFavoriteSalons({userId}: {userId: string}): Promise<Record<string, any>> {
     try {
       const favorites = await this.prisma.favoriteUser.findMany({
-        where: { clientId: userId },
+        where: { clientId: userId, salon: { publicVisibility: { not: 'HIDDEN' } } },
         select: {
           salon: {
             select: {
               id: true,
-              salonName: true,
+              salonName: true, nickname: true, publicVisibility: true, role: true,
               city: true,
               postalCode: true,
               image: true,
@@ -2162,7 +2111,7 @@ export class UserService {
           }
         }
       });
-      const favoriteSalons = favorites.map(fav => fav.salon);
+      const favoriteSalons = favorites.map(fav => withPublicName(fav.salon));
       return {
         error: false,
         favoriteSalons,
@@ -2180,7 +2129,7 @@ export class UserService {
   async getFavoritePortfolioImages({ userId }: { userId: string }): Promise<Record<string, any>> {
     try {
       const favorites = await this.prisma.favoritePortfolio.findMany({
-        where: { clientId: userId },
+        where: { clientId: userId, portfolio: { user: { publicVisibility: { not: 'HIDDEN' } } } },
         select: {
           createdAt: true,
           portfolio: {
@@ -2195,7 +2144,7 @@ export class UserService {
               user: {
                 select: {
                   id: true,
-                  salonName: true,
+                  salonName: true, nickname: true, publicVisibility: true, role: true,
                   image: true,
                   city: true,
                   postalCode: true,
@@ -2220,6 +2169,7 @@ export class UserService {
         error: false,
         favoritePortfolioImages: favorites.map((favorite) => ({
           ...favorite.portfolio,
+          user: withPublicName(favorite.portfolio.user),
           favoritedAt: favorite.createdAt,
         })),
       };

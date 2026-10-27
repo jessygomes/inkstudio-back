@@ -24,6 +24,8 @@ model User {
   firstName                 String?
   lastName                  String?
   salonName                 String?
+  nickname                  String?
+  publicVisibility          PublicVisibility     @default(VISIBLE)
   image                     String?
   profileImage              String?
   phone                     String?
@@ -168,6 +170,12 @@ model User {
 
   // Index historiques créés en SQL, désormais suivis par Prisma.
   @@index([saasPlan, saasPlanUntil], map: "idx_user_saasPlan_saasPlanUntil")
+}
+
+enum PublicVisibility {
+  VISIBLE
+  SEARCH_HIDDEN
+  HIDDEN
 }
 
 //! MODEL POUR STOCKER LES INFOS D'UN CLIENT CONNECTÉ

@@ -1,18 +1,28 @@
 import { getMembershipDuration } from './account-membership';
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CacheService } from 'src/redis/cache.service';
-import { Role, SaasPlan, VerificationStatusDocument } from '@prisma/client';
+import { PublicVisibility, Role, SaasPlan, VerificationStatusDocument } from '@prisma/client';
 import { MailService } from 'src/email/mailer.service';
 import { findClosestStyle, styleKey } from 'src/portfolio/style.utils';
 
 @Injectable()
 export class AdminService {
+  async updatePublicVisibility(id: string, publicVisibility: PublicVisibility) {
+    const user = await this.prisma.user.findUnique({ where: { id }, select: { role: true } });
+    if (!user) throw new NotFoundException('Compte introuvable.');
+    if (!['user_salon', 'user_tatoueur', 'user'].includes(user.role)) {
+      throw new BadRequestException('Ce compte ne possède pas de profil professionnel.');
+    }
+    const updated = await this.prisma.user.update({ where: { id }, data: { publicVisibility }, select: { id: true, publicVisibility: true } });
+    await Promise.all(['admin:*', 'users:list:*', 'user:slug:*', 'portfolio:inspirations:*', 'user:*', 'tatoueurs:*', 'client:appointments:*'].map((pattern) => this.cacheService.delPattern(pattern)));
+    return { error: false, user: updated };
+  }
   async getProjectReports(page: number) {
     const [data, total] = await Promise.all([
       this.prisma.professionalReport.findMany({ skip: (page - 1) * 20, take: 20, orderBy: { createdAt: 'desc' }, include: {
         client: { select: { id: true, email: true, firstName: true, lastName: true } },
-        professional: { select: { id: true, salonName: true, email: true } },
+        professional: { select: { id: true, salonName: true, nickname: true, publicVisibility: true, email: true } },
         proposal: { select: { message: true, moodboard: { select: { name: true } } } },
       } }), this.prisma.professionalReport.count(),
     ]);
@@ -335,7 +345,7 @@ export class AdminService {
           email: true,
           firstName: true,
           lastName: true,
-          salonName: true,
+          salonName: true, nickname: true, publicVisibility: true,
           phone: true,
           city: true,
           postalCode: true,
@@ -535,7 +545,7 @@ export class AdminService {
           email: true,
           firstName: true,
           lastName: true,
-          salonName: true,
+          salonName: true, nickname: true, publicVisibility: true,
           phone: true,
           city: true,
           postalCode: true,
@@ -592,7 +602,7 @@ export class AdminService {
           firstName: true,
           lastName: true,
           role: true,
-          salonName: true,
+          salonName: true, nickname: true, publicVisibility: true,
           salonHours: true,
           phone: true,
           address: true,

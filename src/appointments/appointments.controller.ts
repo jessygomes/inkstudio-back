@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, ForbiddenException, Get, Param, Patch, Post, Query, Request, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AppointmentsService } from './appointments.service';
+import { PublicProfiles } from '../user/public-profile-access';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
@@ -46,6 +47,11 @@ export class AppointmentsController {
       },
     },
   })
+  @PublicProfiles(
+    { key: 'userId', resource: 'user', source: 'body' },
+    { key: 'salonId', resource: 'user', source: 'body' },
+    { key: 'rdvBody.venueSalonId', resource: 'user', source: 'body' },
+  )
   @Post('by-client')
   async createByClient(
     @Body() body: CreateAppointmentByClientRequestDto,

@@ -130,6 +130,7 @@ describe('UserService', () => {
 
   beforeEach(async () => {
     prisma = createPrismaMock();
+    prisma.user.findMany.mockResolvedValue([]);
     cache = createCacheMock();
     mail = createMailMock();
 
@@ -212,6 +213,7 @@ describe('UserService', () => {
         salonName: { not: null, notIn: [''] },
         city: { not: null, notIn: [''] },
         postalCode: { not: null, notIn: [''] },
+          publicVisibility: 'VISIBLE',
       } });
       expect(prisma.user.findMany).toHaveBeenCalledWith(expect.objectContaining({
         where: expect.objectContaining({ role: { in: ['user', 'user_salon', 'user_tatoueur'] } }),
@@ -331,25 +333,12 @@ describe('UserService', () => {
       expect(result.users).toEqual([]);
     });
 
-    it('should return users from cache when available', async () => {
-      const mockUsers = [
-        buildUser(),
-        buildUser({ id: 'user-2', salonName: 'Salon 2' }),
-      ];
-      const mockResult = {
-        error: false,
-        users: mockUsers,
-        pagination: buildPaginationResult(),
-        filters: { query: null, city: null },
-      };
-
-      cache.get.mockResolvedValue(mockResult);
-
+    it('does not expose cached directory results after a visibility change', async () => {
+      cache.get.mockResolvedValue({ users: [buildUser()] });
+      prisma.$transaction.mockResolvedValue([0, []]);
       const result = await service.getUsers();
-
-      expect(cache.get).toHaveBeenCalled();
-      expect(result).toEqual(mockResult);
-      expect(prisma.user.findMany).not.toHaveBeenCalled();
+      expect(result.users).toEqual([]);
+      expect(prisma.user.count).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ publicVisibility: 'VISIBLE' }) }));
     });
 
     it('should fetch users from database when not in cache', async () => {
@@ -475,6 +464,7 @@ describe('UserService', () => {
           salonName: { not: null, notIn: [''] },
           city: { not: null, notIn: [''] },
           postalCode: { not: null, notIn: [''] },
+          publicVisibility: 'VISIBLE',
         },
       }));
     });
@@ -531,9 +521,9 @@ describe('UserService', () => {
 
       const result = await service.getDistinctStyles();
 
-      expect(result).toContain('Realistic');
-      expect(result).toContain('Geometric');
-      expect(result).toContain('Tribal');
+      expect(result).toContain('REALISTIC');
+      expect(result).toContain('GEOMETRIC');
+      expect(result).toContain('TRIBAL');
       expect(new Set(result).size).toBe(result.length); // All unique
     });
 
@@ -552,21 +542,18 @@ describe('UserService', () => {
 
       const result = await service.getDistinctStyles();
 
-      expect(result[0]).toBe('Geometric'); // Sorted alphabetically
-      expect(result[1]).toBe('Realistic');
+      expect(result[0]).toBe('GEOMETRIC'); // Sorted alphabetically
+      expect(result[1]).toBe('REALISTIC');
     });
   });
 
   describe('getUserById', () => {
-    it('should return user from cache when available', async () => {
-      const mockUser = buildUser();
-      cache.get.mockResolvedValue(mockUser);
-
+    it('reads the current private profile instead of stale cached identity', async () => {
+      cache.get.mockResolvedValue(buildUser({ firstName: 'Old' }));
+      prisma.user.findUnique.mockResolvedValueOnce({ role: 'user_salon' }).mockResolvedValueOnce(buildUser({ role: 'user_salon' }));
       const result = await service.getUserById({ userId: 'user-1' });
-
-      expect(cache.get).toHaveBeenCalledWith('user:user-1');
-      expect(result).toEqual(mockUser);
-      expect(prisma.user.findUnique).not.toHaveBeenCalled();
+      expect(result?.firstName).toBe('Jean');
+      expect(prisma.user.findUnique).toHaveBeenCalled();
     });
 
     it('should fetch salon user from database', async () => {
@@ -874,7 +861,7 @@ describe('UserService', () => {
 
       const updateCall = prisma.user.update.mock
         .calls[0]?.[0] as unknown as any;
-      expect(updateCall?.data?.style).toEqual(['Realistic', 'Geometric']);
+      expect(updateCall?.data?.style).toEqual(['REALISTIC', 'GEOMETRIC']);
     });
 
     it('should throw error when userId is not provided', async () => {
@@ -1443,7 +1430,7 @@ describe('UserService', () => {
         data: { isInspirationSalon: true },
         select: {
           id: true,
-          salonName: true,
+          salonName: true, nickname: true, publicVisibility: true,
           isInspirationSalon: true,
           role: true,
         },
@@ -1503,7 +1490,7 @@ describe('UserService', () => {
         data: { isInspirationSalon: true },
         select: {
           id: true,
-          salonName: true,
+          salonName: true, nickname: true, publicVisibility: true,
           isInspirationSalon: true,
           role: true,
         },
@@ -1512,17 +1499,20 @@ describe('UserService', () => {
   });
 
   describe('getUserBySlugAndLocation', () => {
-    it('should return user from cache when available', async () => {
-      const mockUser = buildUser();
-      cache.get.mockResolvedValue(mockUser);
+    it('does not expose a hidden profile from an old slug cache', async () => {
+      cache.get.mockResolvedValue(buildUser());
+      prisma.user.findMany.mockResolvedValue([]);
+      expect(await service.getUserBySlugAndLocation({ nameSlug: 'test-salon', locSlug: 'paris-75001' })).toBeNull();
+      expect(prisma.user.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ publicVisibility: { not: 'HIDDEN' } }) }));
+    });
 
-      const result = await service.getUserBySlugAndLocation({
-        nameSlug: 'test-salon',
-        locSlug: 'paris-75001',
-      });
-
-      expect(result).toEqual(mockUser);
-      expect(prisma.user.findMany).not.toHaveBeenCalled();
+    it('keeps a search-hidden profile accessible with its public nickname', async () => {
+      const user = buildUser({ role: 'user_tatoueur', nickname: 'Blue Ink', publicVisibility: 'SEARCH_HIDDEN' });
+      prisma.user.findMany.mockResolvedValue([user]);
+      prisma.user.findUnique.mockResolvedValue(user);
+      (prisma as any).salonTatoueurTeamRequest = { findMany: jest.fn().mockResolvedValue([]) };
+      const result = await service.getUserBySlugAndLocation({ nameSlug: 'test-salon', locSlug: 'paris-75001' });
+      expect(result).toMatchObject({ salonName: 'Test Salon', displayName: 'Blue Ink', firstName: 'Jean', lastName: 'Dupont' });
     });
 
     it('should fetch user by slug from database', async () => {
@@ -1536,7 +1526,7 @@ describe('UserService', () => {
       });
 
       expect(result).toBeDefined();
-      expect(cache.set).toHaveBeenCalled();
+      expect(prisma.user.findMany).toHaveBeenCalled();
     });
 
     it('should return null when user not found', async () => {

@@ -1,3 +1,4 @@
+import { publicDisplayName } from '../user/public-profile.utils';
 import { Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CreateTatoueurDto } from './dto/create-tatoueur.dto';
@@ -918,7 +919,7 @@ export class TatoueursService {
   }
 
   //! VOIR TOUS LES TATOUEURS
-  async getAllTatoueurs() {
+  async getAllTatoueurs(publicOnly = false) {
     try {
       const cacheKey = `tatoueurs:all`;
 
@@ -931,15 +932,15 @@ export class TatoueursService {
         [key: string]: any;
       }[]>(cacheKey);
       
-      if (cachedTatoueurs) {
+      if (cachedTatoueurs && !publicOnly) {
         return cachedTatoueurs;
       }
 
       // 2. Sinon, aller chercher en DB
-      const tatoueurs = await this.prisma.tatoueur.findMany();
+      const tatoueurs = await this.prisma.tatoueur.findMany(publicOnly ? { where: { user: { publicVisibility: { not: 'HIDDEN' } } } } : undefined);
 
       // 3. Mettre en cache (TTL 30 minutes pour tous les tatoueurs)
-      await this.cacheService.set(cacheKey, tatoueurs, 1800);
+      if (!publicOnly) await this.cacheService.set(cacheKey, tatoueurs, 1800);
 
       return tatoueurs;
     } catch (error: unknown) {
@@ -952,7 +953,7 @@ export class TatoueursService {
   }
 
   //! VOIR TOUS LES TATOUEURS PAR USER ID
-  async getTatoueurByUserId(userId: string) {
+  async getTatoueurByUserId(userId: string, publicOnly = false) {
     if (this.residencies) {
       const [internal, members] = await Promise.all([
         this.prisma.tatoueur.findMany({ where: { userId } }),
@@ -960,11 +961,11 @@ export class TatoueursService {
       ]);
       return [
         ...internal.map((t) => ({ ...t, isLinkedUser: false, isReadOnly: false })),
-        ...members.map((r) => ({
+        ...members.filter((r) => !publicOnly || r.artist.publicVisibility !== 'HIDDEN').map((r) => ({
           id: 'linked_' + r.artist.id,
           linkedUserId: r.artist.id,
           profileUserId: r.artist.id,
-          name: r.artist.salonName || [r.artist.firstName, r.artist.lastName].filter(Boolean).join(' '),
+          name: publicDisplayName(r.artist),
           img: r.artist.profileImage || r.artist.image,
           isLinkedUser: true,
           isReadOnly: true,
@@ -988,7 +989,7 @@ export class TatoueursService {
         [key: string]: any;
       }[]>(cacheKey);
       
-      if (cachedTatoueurs) {
+      if (cachedTatoueurs && !publicOnly) {
         return cachedTatoueurs;
       }
 
@@ -1007,7 +1008,7 @@ export class TatoueursService {
         profileImage: string | null;
         phone: string | null;
         instagram: string | null;
-        salonName: string | null;
+        salonName: string | null; nickname?: string | null;
         description: string | null;
         prestations: string[];
         style: string[];
@@ -1019,10 +1020,11 @@ export class TatoueursService {
         where: {
           salonId: userId,
           role: Role.user_tatoueur,
+          ...(publicOnly ? { publicVisibility: { not: 'HIDDEN' as const } } : {}),
         },
         select: {
           id: true,
-          salonName: true,
+          salonName: true, nickname: true, publicVisibility: true,
           firstName: true,
           lastName: true,
           image: true,
@@ -1039,7 +1041,7 @@ export class TatoueursService {
       const linkedTatoueurUsers = linkedTatoueurUsersResult as unknown as LinkedTatoueurUser[];
 
       const linkedTatoueurs = linkedTatoueurUsers.map((user) => {
-        const displayName = user.salonName?.trim() || 'Tatoueur';
+        const displayName = publicDisplayName({ ...user, role: 'user_tatoueur' });
 
         return {
           id: `linked_${user.id}`,
@@ -1069,7 +1071,7 @@ export class TatoueursService {
       ];
 
       // 3. Mettre en cache (TTL 20 minutes pour les tatoueurs d'un salon)
-      await this.cacheService.set(cacheKey, tatoueurs, 1200);
+      if (!publicOnly) await this.cacheService.set(cacheKey, tatoueurs, 1200);
 
       return tatoueurs;
     } catch (error: unknown) {
@@ -1082,7 +1084,7 @@ export class TatoueursService {
   }
 
     //! VOIR TOUS LES TATOUEURS QUI PEUVENT PRENDRE DES RDV PAR USER ID
-  async getTatoueurByUserIdForAppointment(userId: string) {
+  async getTatoueurByUserIdForAppointment(userId: string, publicOnly = false) {
     if (this.residencies) {
       const [internal, members] = await Promise.all([
         this.prisma.tatoueur.findMany({ where: { userId, rdvBookingEnabled: true } }),
@@ -1091,13 +1093,13 @@ export class TatoueursService {
       return [
         ...internal.map((t) => ({ ...t, isLinkedUser: false, isReadOnly: false })),
         ...members
-          .filter((r) => r.artistAllowsSalonCreate && canBookLinkedArtist(r.artist, r.salon))
+          .filter((r) => (!publicOnly || r.artist.publicVisibility !== 'HIDDEN') && r.artistAllowsSalonCreate && canBookLinkedArtist(r.artist, r.salon))
           .map((r) => ({
             id: 'linked_' + r.artist.id,
             linkedUserId: r.artist.id,
             profileUserId: r.artist.id,
             name:
-              r.artist.salonName || [r.artist.firstName, r.artist.lastName].filter(Boolean).join(' '),
+              publicDisplayName(r.artist),
             img: r.artist.profileImage || r.artist.image,
             isLinkedUser: true,
             isReadOnly: true,
@@ -1122,7 +1124,7 @@ export class TatoueursService {
         [key: string]: any;
       }[]>(cacheKey);
       
-      if (cachedTatoueurs) {
+      if (cachedTatoueurs && !publicOnly) {
         return cachedTatoueurs;
       }
 
@@ -1138,11 +1140,12 @@ export class TatoueursService {
           where: {
             salonId: userId,
             role: Role.user_tatoueur,
+          ...(publicOnly ? { publicVisibility: { not: 'HIDDEN' as const } } : {}),
             appointmentBookingEnabled: true,
           },
           select: {
             id: true,
-            salonName: true,
+            salonName: true, nickname: true, publicVisibility: true,
             firstName: true,
             lastName: true,
             image: true,
@@ -1159,7 +1162,7 @@ export class TatoueursService {
 
       type LinkedTatoueurUser = {
         id: string;
-        salonName: string | null;
+        salonName: string | null; nickname?: string | null;
         firstName: string | null;
         lastName: string | null;
         image: string | null;
@@ -1175,7 +1178,7 @@ export class TatoueursService {
       const linkedTatoueurUsers = linkedTatoueurUsersResult as unknown as LinkedTatoueurUser[];
 
       const linkedTatoueurs = linkedTatoueurUsers.map((user) => {
-        const displayName = user.salonName?.trim() || 'Tatoueur';
+        const displayName = publicDisplayName({ ...user, role: 'user_tatoueur' });
 
         return {
           id: `linked_${user.id}`,
@@ -1205,7 +1208,7 @@ export class TatoueursService {
       ];
 
       // 3. Mettre en cache (TTL 15 minutes pour les tatoueurs RDV-enabled)
-      await this.cacheService.set(cacheKey, tatoueurs, 900);
+      if (!publicOnly) await this.cacheService.set(cacheKey, tatoueurs, 900);
 
       return tatoueurs;
     } catch (error: unknown) {

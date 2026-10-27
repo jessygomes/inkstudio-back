@@ -1,3 +1,4 @@
+import { PublicProfile } from '../user/public-profile-access';
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Request, UseGuards } from '@nestjs/common';
 import { TatoueursService } from './tatoueurs.service';
 import { CreateTatoueurDto } from './dto/create-tatoueur.dto';
@@ -201,24 +202,28 @@ export class TatoueursController {
   }
 
   //! VOIR TOUS LES TATOUEURS ✅
+  @PublicProfile()
   @Get()
-  findAll() {
-    return this.tatoueursService.getAllTatoueurs();
+  findAll(@Request() req?: RequestWithUser) {
+    return this.tatoueursService.getAllTatoueurs(req?.user?.role !== 'admin');
   }
 
   //! VOIR TOUS LES TATOUEURS PAR USER ID ✅
+  @PublicProfile('id')
   @Get('user/:id')
-  getTatoueurByUserId(@Param('id') id: string) {
-    return this.tatoueursService.getTatoueurByUserId(id);
+  getTatoueurByUserId(@Param('id') id: string, @Request() req?: RequestWithUser) {
+    return this.tatoueursService.getTatoueurByUserId(id, req?.user?.userId !== id && req?.user?.role !== 'admin');
   }
 
     //! VOIR TOUS LES TATOUEURS PAR USER ID ✅
+  @PublicProfile('id')
   @Get('for-appointment/:id')
-  getTatoueurByUserIdForAppointment(@Param('id') id: string) {
-    return this.tatoueursService.getTatoueurByUserIdForAppointment(id);
+  getTatoueurByUserIdForAppointment(@Param('id') id: string, @Request() req?: RequestWithUser) {
+    return this.tatoueursService.getTatoueurByUserIdForAppointment(id, req?.user?.userId !== id && req?.user?.role !== 'admin');
   }
 
   //! VOIR UN SEUL TATOUEUR ✅
+  @PublicProfile('id', 'tatoueur')
   @Get(':id')
   getOneTatoueur(@Param('id') id: string) {
     return this.tatoueursService.getOneTatoueur(id);

@@ -1,3 +1,4 @@
+import { publicDisplayName, withPublicName } from '../user/public-profile.utils';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { AddPhotoDto } from './dto/add-photo.dto';
@@ -134,7 +135,7 @@ export class PortfolioService {
         linkedTatoueurs: {
           select: {
             id: true,
-            salonName: true,
+            salonName: true, nickname: true, publicVisibility: true,
           },
         },
       },
@@ -148,7 +149,7 @@ export class PortfolioService {
       requestedUser?.role === 'user_salon'
         ? (requestedUser.linkedTatoueurs ?? []).map((tatoueurUser) => [
             tatoueurUser.id,
-            tatoueurUser.salonName?.trim() || 'Tatoueur',
+            publicDisplayName({ ...tatoueurUser, role: 'user_tatoueur' }),
           ])
         : [],
     );
@@ -400,6 +401,7 @@ export class PortfolioService {
     page: number = 1,
     limit?: number,
     filters: PortfolioFilters = {},
+    publicOnly = false,
   ) {
     try {
       const { where: filterWhere, cacheKey: filterKey } = this.buildPhotoFilters(filters);
@@ -434,7 +436,7 @@ export class PortfolioService {
         };
       }>(cacheKey);
       
-      if (cachedPhotos) {
+      if (cachedPhotos && !publicOnly) {
         return cachedPhotos;
       }
 
@@ -445,6 +447,7 @@ export class PortfolioService {
 
       const whereClause: Record<string, any> = {
         ...ownerWhere,
+        ...(publicOnly ? { user: { publicVisibility: { not: 'HIDDEN' } } } : {}),
         ...filterWhere,
       };
 
@@ -501,7 +504,7 @@ export class PortfolioService {
       };
 
       // 3. Mettre en cache (TTL 15 minutes pour les photos portfolio)
-      await this.cacheService.set(cacheKey, response, 900);
+      if (!publicOnly) await this.cacheService.set(cacheKey, response, 900);
 
       return response;
     } catch (error) {
@@ -540,25 +543,11 @@ export class PortfolioService {
       });
       const cacheKey = `portfolio:inspirations:page:${currentPage}:limit:${pageSize}:city:${normalizedCity || 'all'}:${filterKey}`;
 
-      const cachedPhotos = await this.cacheService.get<{
-        photos: any[];
-        pagination: {
-          page: number;
-          pageSize: number;
-          total: number;
-          totalPages: number;
-          hasNextPage: boolean;
-          hasPreviousPage: boolean;
-        };
-      }>(cacheKey);
-
-      if (cachedPhotos) {
-        return cachedPhotos;
-      }
-
+      // Visibility must be enforced even when Redis invalidation is unavailable.
       const whereClause: Record<string, any> = {
         user: {
           isInspirationSalon: true,
+          publicVisibility: { not: 'HIDDEN' },
           ...(normalizedCity
             ? {
                 city: {
@@ -594,7 +583,7 @@ export class PortfolioService {
           user: {
             select: {
               id: true,
-              salonName: true,
+              salonName: true, nickname: true, publicVisibility: true,
               image: true,
               city: true,
               postalCode: true,
@@ -608,7 +597,7 @@ export class PortfolioService {
               salon: {
                 select: {
                   id: true,
-                  salonName: true,
+                  salonName: true, nickname: true, publicVisibility: true,
                   image: true,
                   profileImage: true,
                   city: true,
@@ -633,7 +622,10 @@ export class PortfolioService {
 
       const totalPages = Math.max(1, Math.ceil(total / pageSize));
       const response = {
-        photos,
+        photos: photos.map((photo) => photo.user ? ({
+          ...photo,
+          user: { ...withPublicName(photo.user), salon: photo.user.salon?.publicVisibility === 'HIDDEN' ? null : photo.user.salon },
+        }) : photo),
         pagination: {
           page: currentPage,
           pageSize,

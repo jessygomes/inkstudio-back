@@ -23,7 +23,7 @@ import { ResidencyPermissionsDto } from './dto';
 const salonFields = {
   id: true,
   role: true,
-  salonName: true,
+  salonName: true, nickname: true, publicVisibility: true,
   firstName: true,
   lastName: true,
   image: true,
@@ -144,6 +144,7 @@ export class ResidenciesService {
       }),
     ]);
     return members
+      .filter((r) => r.salon.publicVisibility !== 'HIDDEN')
       .map((r) => {
         const state = this.presenceState(r, members, artist || {});
         return {

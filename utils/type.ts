@@ -3,6 +3,8 @@ export type CachedUser = {
   saasPlan?: string,
   email: string,
   salonName?: string,
+  nickname?: string | null,
+  displayName?: string,
   firstName?: string,
   lastName?: string,
   phone?: string,
@@ -49,6 +51,7 @@ export type InternalTatoueur = {
 };
 
 export type SlugUser = {
+  nickname?: string | null,
   id: string,
   role: string,
   salonName: string | null,
@@ -59,6 +62,7 @@ export type SlugUser = {
 };
 
 export type LinkedTatoueurUser = {
+  nickname?: string | null,
   id: string,
   salonName: string | null,
   city: string | null,

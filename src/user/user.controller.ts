@@ -1,4 +1,5 @@
-import { Body, Controller, ForbiddenException, Get, Param, Patch, Post, Query, UseGuards, Request } from '@nestjs/common';
+import { PublicProfile } from '../user/public-profile-access';
+import { Body, Controller, ForbiddenException, Get, NotFoundException, Param, Patch, Post, Query, UseGuards, Request } from '@nestjs/common';
 import { UserService } from './user.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateAppointmentBookingDto, UpdateConfirmationSettingDto } from './dto/update-confirmation-setting.dto';
@@ -199,6 +200,7 @@ export class UserController {
   //! 3️⃣ ROUTES AVEC PARAMÈTRES COMPLEXES
   //! ENVOI D'UN MESSAGE DE CONTACT DEPUIS LE PROFIL PUBLIC
   @UseGuards(PublicContactThrottleGuard)
+  @PublicProfile()
   @Post(':userId/contact')
   async sendPublicContactEmail(
     @Param('userId') userId: string,
@@ -213,6 +215,7 @@ export class UserController {
   }
 
   //! RECUPERER LES PHOTOS DU SALON
+  @PublicProfile()
   @Get(":userId/photos")
   getPhotosSalon(@Param('userId') userId: string) {
     return this.userService.getPhotosSalon({userId});
@@ -256,6 +259,7 @@ export class UserController {
     }); // On appelle la méthode getUserById du service UserService
   }
 
+  @PublicProfile()
   @Get(":userId/param") // :userId est un paramètre dynamique qui sera récupéré dans la méthode getUser
   getUserParam(@Param('userId') userId: string) { // On récupère le paramètre dynamique userId
     return this.userService.getUserParamById({userId});
@@ -263,11 +267,14 @@ export class UserController {
 
   //! GET USER BY SLUG + LOCALISATION
   @Get(":nameSlug/:locSlug")
-  getUserBySlugAndLocation(@Param('nameSlug') nameSlug: string, @Param('locSlug') locSlug: string) {
-    return this.userService.getUserBySlugAndLocation({ nameSlug, locSlug });
+  async getUserBySlugAndLocation(@Param('nameSlug') nameSlug: string, @Param('locSlug') locSlug: string) {
+    const profile = await this.userService.getUserBySlugAndLocation({ nameSlug, locSlug });
+    if (!profile) throw new NotFoundException('Profil introuvable.');
+    return profile;
   }
 
   //! 4️⃣ ROUTES AVEC PARAMÈTRES SIMPLES EN DERNIER
+  @PublicProfile()
   @Get(":userId") // :userId est un paramètre dynamique qui sera récupéré dans la méthode getUser
   getUser(@Param('userId') userId: string) { // On récupère le paramètre dynamique userId
     return this.userService.getUserById({userId}); // On appelle la méthode getUserById du service UserService

@@ -1,11 +1,31 @@
-import { IsArray, IsOptional, IsString } from 'class-validator';
+import { Transform } from 'class-transformer';
+import {
+  IsArray,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 
 export class UpdateUserDto {
   @IsString()
+  @IsNotEmpty()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   firstName: string;
 
   @IsString()
+  @IsNotEmpty()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   lastName: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  nickname?: string;
 
   @IsString()
   salonName: string;

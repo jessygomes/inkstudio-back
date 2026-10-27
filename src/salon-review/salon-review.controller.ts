@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Request, Query } from '@nestjs/common';
 import { SalonReviewService } from './salon-review.service';
+import { PublicProfile } from '../user/public-profile-access';
 import { CreateSalonReviewDto } from './dto/create-salon-review.dto';
 // import { UpdateSalonReviewDto } from './dto/update-salon-review.dto';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
@@ -54,6 +55,7 @@ export class SalonReviewController {
   }
 
   //! RÉCUPÉRER TOUS LES AVIS D'UN SALON AVEC PAGINATION ✅
+  @PublicProfile('salonId')
   @Get('salon/:salonId')
   async findAllReviewBySalon(
     @Param('salonId') salonId: string,

@@ -120,7 +120,7 @@ export class FlashService {
     }
   }
 
-  async getAvailableFlashsByUser(userId: string, page: number = 1) {
+  async getAvailableFlashsByUser(userId: string, page: number = 1, publicOnly = false) {
     try {
       const pageSize = 10;
       const currentPage = Number.isNaN(page) || page < 1 ? 1 : page;
@@ -151,7 +151,7 @@ export class FlashService {
         }
       >(cacheKey);
 
-      if (cached) {
+      if (cached && !publicOnly) {
         return cached;
       }
 
@@ -174,6 +174,7 @@ export class FlashService {
       const flashOwnerIds = Array.from(new Set([userId, ...linkedTatoueurUserIds]));
 
       const whereClause = {
+        ...(publicOnly ? { user: { publicVisibility: { not: 'HIDDEN' as const } } } : {}),
         userId:
           flashOwnerIds.length === 1
             ? flashOwnerIds[0]
@@ -207,7 +208,7 @@ export class FlashService {
         },
       };
 
-      await this.cacheService.set(cacheKey, response, 1200);
+      if (!publicOnly) await this.cacheService.set(cacheKey, response, 1200);
 
       return response;
     } catch (error: unknown) {
@@ -219,7 +220,7 @@ export class FlashService {
     }
   }
 
-  async getAllFlashsByUser(userId: string, page: number = 1, isAvailable?: boolean) {
+  async getAllFlashsByUser(userId: string, page: number = 1, isAvailable?: boolean, publicOnly = false) {
     try {
       const pageSize = 10;
       const currentPage = Number.isNaN(page) || page < 1 ? 1 : page;
@@ -252,7 +253,7 @@ export class FlashService {
         }
       >(cacheKey);
 
-      if (cached) {
+      if (cached && !publicOnly) {
         return cached;
       }
 
@@ -275,6 +276,7 @@ export class FlashService {
       const flashOwnerIds = Array.from(new Set([userId, ...linkedTatoueurUserIds]));
 
       const whereClause = {
+        ...(publicOnly ? { user: { publicVisibility: { not: 'HIDDEN' as const } } } : {}),
         userId:
           flashOwnerIds.length === 1
             ? flashOwnerIds[0]
@@ -308,7 +310,7 @@ export class FlashService {
         },
       };
 
-      await this.cacheService.set(cacheKey, response, 1200);
+      if (!publicOnly) await this.cacheService.set(cacheKey, response, 1200);
 
       return response;
     } catch (error: unknown) {

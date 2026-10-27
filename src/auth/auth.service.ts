@@ -288,7 +288,7 @@ export class AuthService {
           phone,
           password: hashedPassword,
           role: role as import('@prisma/client').Role,
-          ...(role === 'user_salon' ? { salonName } : {}),
+          ...(role === 'user_salon' ? { salonName } : { nickname: registerBody.nickname?.trim() || null }),
           saasPlan: initialPlan,
           saasPlanUntil: offeredEndDate ?? trialEndDate,
           ...((role === 'user_salon' || role === 'user_tatoueur')
@@ -588,6 +588,7 @@ export class AuthService {
           phone,
           password: hashedPassword,
           role: 'user_tatoueur',
+          nickname: registerBody.nickname?.trim() || null,
           ...(shouldOfferTatoueurTrial
             ? {
                 saasPlan: SaasPlan.PRO,

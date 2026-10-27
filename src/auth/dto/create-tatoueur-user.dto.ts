@@ -1,9 +1,11 @@
+import { Transform } from 'class-transformer';
 import {
   IsEmail,
   IsNotEmpty,
   IsOptional,
   IsString,
   MinLength,
+  MaxLength,
 } from 'class-validator';
 
 //! Schema de validation des données pour l'inscription d'un tatoueur (indépendant ou rattaché à un salon)
@@ -14,11 +16,22 @@ export class CreateTatoueurUserDto {
 
   @IsString({ message: 'Vous devez fournir un prénom' })
   @IsNotEmpty({ message: 'Le prénom est requis' })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   firstName: string;
 
   @IsString({ message: 'Vous devez fournir un nom de famille' })
   @IsNotEmpty({ message: 'Le nom de famille est requis' })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   lastName: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  nickname?: string;
 
   @IsOptional()
   @IsString()

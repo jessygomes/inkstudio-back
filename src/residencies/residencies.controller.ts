@@ -1,3 +1,4 @@
+import { PublicProfile, PublicProfiles } from '../user/public-profile-access';
 import {
   Body,
   Controller,
@@ -24,9 +25,11 @@ import {
 @Controller('residencies')
 export class ResidenciesController {
   constructor(private readonly service: ResidenciesService) {}
+  @PublicProfile('artistId')
   @Get('public/:artistId') publicSalons(@Param('artistId') id: string) {
     return this.service.publicSalons(id);
   }
+  @PublicProfiles({ key: 'artistId', resource: 'user', source: 'query' }, { key: 'salonId', resource: 'user', source: 'query' })
   @Get('availability') slots(
     @Query('artistId') artistId: string,
     @Query('salonId') salonId: string,
