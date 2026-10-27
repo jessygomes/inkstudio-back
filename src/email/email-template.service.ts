@@ -1182,6 +1182,13 @@ export class EmailTemplateService {
   /**
    *! Template de demande de suivi de cicatrisation
    */
+  generateAppointmentReminderEmail(title: string, message: string, salonName: string, followUrl?: string): string {
+    const body = this.escapeHtml(message).replace(/\r?\n/g, '<br>');
+    const button = followUrl ? '<div style="text-align:center;margin:28px 0"><a class="cta-button" href="' + this.escapeHtml(this.sanitizeSiteUrl(followUrl, '/suivi')) + '">Envoyer mon suivi</a></div>' : '';
+    const content = '<div class="content"><div class="greeting">' + this.escapeHtml(title) + '</div><div class="message"><p>' + body + '</p></div>' + button + '</div>';
+    return this.getBaseTemplate(content, title, salonName);
+  }
+
   generateCicatrisationFollowUpEmail(data: EmailTemplateData): string {
     const details = data.cicatrisationFollowUpDetails;
     if (!details) {

@@ -68,7 +68,7 @@ export class EmailNotificationService {
       recipientUserId,
     );
 
-    if (!prefs.emailNotificationsEnabled) return false;
+    if (!prefs.emailNotificationsEnabled || prefs.emailFrequency === 'NEVER') return false;
     if (prefs.mutedConversations.includes(conversationId)) return false;
 
     // Redis-based rate limiting (faster than database query)
@@ -135,6 +135,16 @@ export class EmailNotificationService {
     if (!queue) return;
 
     const { conversation, recipientUserId, messageCount } = queue;
+    if (queue.status !== 'PENDING') return;
+    const prefs = await this.notificationPreferenceService.getPreferences(recipientUserId);
+    if (!prefs.emailNotificationsEnabled || prefs.emailFrequency === 'NEVER' || prefs.mutedConversations.includes(conversation.id)) {
+      await this.prisma.emailNotificationQueue.deleteMany({ where: { id: queue.id, status: 'PENDING' } });
+      return;
+    }
+    const frequencyMs = prefs.emailFrequency === 'DAILY' ? 24 * 60 * 60_000 : 60 * 60_000;
+    const lastSent = await this.prisma.emailNotificationQueue.findFirst({ where: { conversationId: conversation.id, recipientUserId, status: 'SENT' }, orderBy: { sentAt: 'desc' }, select: { sentAt: true } });
+    const earliest = Math.max(queue.createdAt.getTime() + frequencyMs, (lastSent?.sentAt?.getTime() || 0) + frequencyMs);
+    if (Date.now() < earliest) return;
     const recipient: User | null =
       conversation.clientUserId === recipientUserId
         ? conversation.clientUser

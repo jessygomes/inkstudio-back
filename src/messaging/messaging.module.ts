@@ -72,6 +72,7 @@ import { InstagramController } from './instagram/instagram.controller';
     MailgunService,
   ],
   exports: [
+    MessagesGateway,
     ConversationsService,
     MessagesService,
     InboxService,

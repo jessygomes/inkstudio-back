@@ -21,7 +21,7 @@ export class PostAppointmentEmailScheduler implements OnModuleInit {
       this.jobName,
       {},
       {
-        repeat: { cron: '0 9 * * *' }, // every day at 09:00
+        repeat: { every: 15 * 60 * 1000 }, // every day at 09:00
         removeOnComplete: true,
         removeOnFail: false,
         attempts: 3,

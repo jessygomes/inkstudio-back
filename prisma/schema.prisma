@@ -72,6 +72,10 @@ model User {
   // Valeurs par défaut: suivi cicatrisation J+7, retouches J+30
   followUpEmailDelayDays         Int             @default(7)
   retouchEmailDelayDays          Int             @default(30)
+  followUpDeliveryChannel       String          @default("EMAIL")
+  retouchDeliveryChannel        String          @default("EMAIL")
+  followUpMessage               String?         @db.Text
+  retouchMessage                String?         @db.Text
   
   // Permissions pour user_tatoueur lié à un salon
   // Autorise le user_salon à voir l'agenda et les RDV du user_tatoueur
@@ -385,6 +389,8 @@ model Tatoueur {
 
 //! MODEL POUR LES RDV
 model Appointment {
+  completedAt        DateTime?
+  reminderDeliveries AppointmentReminderDelivery[]
   photos             AppointmentPhoto[]
   id                 String              @id @default(cuid())
   title              String
@@ -1163,7 +1169,7 @@ model NotificationPreference {
   user                      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   emailNotificationsEnabled Boolean  @default(true)
-  emailFrequency            String   @default("IMMEDIATE") // IMMEDIATE, HOURLY, DAILY, NEVER
+  emailFrequency            String   @default("HOURLY") // HOURLY, DAILY, NEVER
   mutedConversations        String[] @default([])           // conversationIds
 
   createdAt                 DateTime @default(now())
@@ -1683,4 +1689,17 @@ model AccountDeparture {
 model AdminMetricTracking {
   key       String   @id
   startedAt DateTime @default(now())
+}
+
+model AppointmentReminderDelivery {
+  id            String      @id
+  appointmentId String
+  kind          String
+  channel       String
+  status        String      @default("PENDING")
+  claimedAt     DateTime?
+  sentAt        DateTime?
+  createdAt     DateTime    @default(now())
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  @@unique([appointmentId, kind, channel])
 }

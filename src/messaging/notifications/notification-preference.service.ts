@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { NotificationPreference } from '@prisma/client';
 
@@ -16,10 +16,13 @@ export class NotificationPreferenceService {
 
     if (!prefs) {
       prefs = await this.prisma.notificationPreference.create({
-        data: { userId },
+        data: { userId, emailFrequency: 'HOURLY' },
       });
     }
 
+    if (prefs.emailFrequency === 'IMMEDIATE') {
+      prefs = await this.prisma.notificationPreference.update({ where: { userId }, data: { emailFrequency: 'HOURLY' } });
+    }
     return prefs;
   }
 
@@ -30,10 +33,13 @@ export class NotificationPreferenceService {
     userId: string,
     data: Partial<NotificationPreference>,
   ): Promise<NotificationPreference> {
+    if (data.emailFrequency && !['HOURLY', 'DAILY', 'NEVER'].includes(data.emailFrequency)) {
+      throw new BadRequestException('Choisissez une fréquence horaire, quotidienne ou jamais.');
+    }
     return this.prisma.notificationPreference.upsert({
       where: { userId },
       update: data,
-      create: { userId, ...data },
+      create: { userId, emailFrequency: 'HOURLY', ...data },
     });
   }
 

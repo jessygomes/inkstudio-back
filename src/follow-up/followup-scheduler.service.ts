@@ -31,6 +31,7 @@ export class FollowupSchedulerService {
     const appointment = await this.prisma.appointment.findUnique({
       where: { id: appointmentId },
       select: {
+        performerUser: { select: { followUpEmailDelayDays: true, retouchEmailDelayDays: true } },
         user: {
           select: {
             followUpEmailDelayDays: true,
@@ -42,11 +43,11 @@ export class FollowupSchedulerService {
 
     return {
       followUpDelayDays: this.normalizeDelayDays(
-        appointment?.user?.followUpEmailDelayDays,
+        (appointment?.performerUser || appointment?.user)?.followUpEmailDelayDays,
         this.defaultFollowUpDelayDays,
       ),
       retouchDelayDays: this.normalizeDelayDays(
-        appointment?.user?.retouchEmailDelayDays,
+        (appointment?.performerUser || appointment?.user)?.retouchEmailDelayDays,
         this.defaultRetouchDelayDays,
       ),
     };
@@ -55,9 +56,9 @@ export class FollowupSchedulerService {
   // Traduit la règle métier en minutes puis délègue la planification à Bull.
   private async queueFollowupFromDate(appointmentId: string, baseTime: Date): Promise<void> {
     // En dev on garde un délai court pour test rapide; en prod on respecte la config en jours.
-    const isProduction = process.env.NODE_ENV === 'production';
     const { followUpDelayDays } = await this.resolveDelayDaysForAppointment(appointmentId);
-    const delayMinutes = isProduction ? followUpDelayDays * 24 * 60 : 10;
+    const delayMinutes = followUpDelayDays * 24 * 60;
+    await this.prisma.appointment.updateMany({ where: { id: appointmentId, status: 'COMPLETED', completedAt: null }, data: { completedAt: baseTime } });
 
     await this.followupQueueService.scheduleFollowupFromCompletion(
       appointmentId,
@@ -66,15 +67,15 @@ export class FollowupSchedulerService {
     );
 
     this.logger.log(
-      `✅ Suivi cicatrisation planifié via Bull pour le RDV ${appointmentId} (${isProduction ? `J+${followUpDelayDays}` : '10 min'})`,
+      `✅ Suivi cicatrisation planifié via Bull pour le RDV ${appointmentId} (${`J+${followUpDelayDays}`})`,
     );
   }
 
   // Même principe que ci-dessus mais pour le rappel retouches.
   private async queueRetouchesFromDate(appointmentId: string, baseTime: Date): Promise<void> {
-    const isProduction = process.env.NODE_ENV === 'production';
     const { retouchDelayDays } = await this.resolveDelayDaysForAppointment(appointmentId);
-    const delayMinutes = isProduction ? retouchDelayDays * 24 * 60 : 15;
+    const delayMinutes = retouchDelayDays * 24 * 60;
+    await this.prisma.appointment.updateMany({ where: { id: appointmentId, status: 'COMPLETED', completedAt: null }, data: { completedAt: baseTime } });
 
     await this.followupQueueService.scheduleRetouchesFromCompletion(
       appointmentId,
@@ -83,7 +84,7 @@ export class FollowupSchedulerService {
     );
 
     this.logger.log(
-      `✅ Rappel retouches planifié via Bull pour le RDV ${appointmentId} (${isProduction ? `J+${retouchDelayDays}` : '15 min'})`,
+      `✅ Rappel retouches planifié via Bull pour le RDV ${appointmentId} (${`J+${retouchDelayDays}`})`,
     );
   }
 
@@ -175,12 +176,11 @@ export class FollowupSchedulerService {
 
   // Aide de debug pour vérifier la stratégie de délai active selon environnement.
   testDelayCalculation(): { cicatrisation: string; retouches: string; environment: string } {
-    const isProduction = process.env.NODE_ENV === 'production';
 
     return {
-      environment: isProduction ? 'PRODUCTION' : 'DÉVELOPPEMENT',
-      cicatrisation: isProduction ? 'Délai configurable en jours (Bull)' : '10 minutes (Bull)',
-      retouches: isProduction ? 'Délai configurable en jours (Bull)' : '15 minutes (Bull)',
+      environment: process.env.NODE_ENV || 'development',
+      cicatrisation: 'Délai configurable en jours (Bull)',
+      retouches: 'Délai configurable en jours (Bull)',
     };
   }
 

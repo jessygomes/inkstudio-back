@@ -1,4 +1,4 @@
-import { IsBoolean, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsIn, IsOptional, IsString } from 'class-validator';
 
 export class UpdateNotificationPreferenceDto {
   @IsOptional()
@@ -7,7 +7,8 @@ export class UpdateNotificationPreferenceDto {
 
   @IsOptional()
   @IsString()
-  emailFrequency?: string; // IMMEDIATE, HOURLY, DAILY, NEVER
+  @IsIn(['HOURLY', 'DAILY', 'NEVER'])
+  emailFrequency?: string;
 }
 
 export class MuteConversationDto {

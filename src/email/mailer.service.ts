@@ -214,6 +214,12 @@ export class MailService {
   }
 
   //! MAIL DE SUIVI POST-TATOUAGE
+  async sendAppointmentReminder(to: string, kind: 'FOLLOW_UP' | 'RETOUCH', message: string, salonName: string, followUrl?: string): Promise<MailgunResponse> {
+    const title = kind === 'FOLLOW_UP' ? 'Votre suivi après la séance' : 'Votre suivi retouche';
+    const html = this.emailTemplateService.generateAppointmentReminderEmail(title, message, salonName, followUrl);
+    return this.sendMail(to, title + ' - ' + salonName, html, salonName);
+  }
+
   async sendCicatrisationFollowUp(to: string, data: EmailTemplateData, salonName?: string): Promise<MailgunResponse> {
     const subject = `Suivi de cicatrisation${salonName ? ` - ${salonName}` : ''}`;
     const dataWithSalon = { ...data, salonName: salonName || data.salonName };
