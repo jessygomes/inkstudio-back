@@ -87,12 +87,13 @@ export class ReminderDeliveryService {
         },
       });
       const base = (
-        process.env.WEB_URL ||
+        process.env.FOLLOW_UP_FRONTEND_URL ||
         process.env.FRONTEND_URL ||
+        process.env.WEB_URL ||
         ''
       ).replace(/\/+$/, '');
-      if (!base) throw new Error('WEB_URL est requis pour les liens de suivi.');
-      followUrl = `${base}/suivi?f=${request.token}`;
+      if (!base) throw new Error('FRONTEND_URL est requis pour les liens de suivi.');
+      followUrl = `${base}/suivi/${encodeURIComponent(request.token)}`;
       // Already sent by the legacy worker before this release: do not send that email again.
       if (existing?.sentAt && channels.includes('EMAIL')) {
         await this.prisma.appointmentReminderDelivery.upsert({

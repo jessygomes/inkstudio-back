@@ -1,9 +1,10 @@
 
-import { BadRequestException, Body, Controller, ForbiddenException, Get, Param, Post, Query, Request, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, ForbiddenException, Get, Param, Post, Query, Request, ServiceUnavailableException, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { RequestWithUser } from 'src/auth/jwt.strategy';
 import { PrismaService } from 'src/database/prisma.service';
 import { MailService } from 'src/email/mailer.service';
+import { SubmitFollowUpDto } from './dto/submit-follow-up.dto';
 
 @Controller('follow-up')
 export class FollowupsController {
@@ -23,7 +24,12 @@ export class FollowupsController {
       // 🔎 Chercher la demande de suivi avec ce token
       const req = await this.prisma.followUpRequest.findUnique({
         where: { token },
-        include: { submission: true, appointment: true },
+        include: { submission: { select: { id: true } }, appointment: { select: {
+          title: true, start: true, prestation: true,
+          user: { select: { salonName: true, firstName: true, lastName: true } },
+          performerUser: { select: { salonName: true, firstName: true, lastName: true } },
+          tatoueur: { select: { name: true } },
+        } } },
       });
       
       // ❌ Token introuvable
@@ -32,7 +38,7 @@ export class FollowupsController {
       }
       
       // ❌ Déjà soumis par le client
-      if (req.submission) {
+      if (req.submission || req.submissionId || req.status === 'SUBMITTED') {
         throw new BadRequestException('Déjà soumis');
       }
       
@@ -42,12 +48,20 @@ export class FollowupsController {
       }
       
       // ✅ Token valide
-      return { ok: true };
+      const appointment = req.appointment;
+      const owner = appointment?.performerUser ?? appointment?.user;
+      return { ok: true, appointment: appointment ? {
+        title: appointment.title,
+        start: appointment.start,
+        prestation: appointment.prestation,
+        salonName: owner?.salonName || [owner?.firstName, owner?.lastName].filter(Boolean).join(' ') || 'Votre salon',
+        artistName: appointment.tatoueur?.name || [appointment.performerUser?.firstName, appointment.performerUser?.lastName].filter(Boolean).join(' ') || undefined,
+      } : undefined };
     } catch (error) {
       if (error instanceof BadRequestException) {
         throw error;
       }
-      throw new BadRequestException('Erreur lors de la validation du token');
+      throw new ServiceUnavailableException('Le suivi est momentanément indisponible. Réessayez dans un instant.');
     }
   }
 
@@ -59,10 +73,12 @@ export class FollowupsController {
    */
   @Post('submissions')
   async submit(
-    @Body() body: { token: string; rating: number; review?: string; photoUrl: string; userId?: string; isPhotoPublic?: boolean; },
+    @Body() body: SubmitFollowUpDto,
   ) {
     // 🔎 Vérifier que le token existe et récupérer les infos du RDV
-    const req = await this.prisma.followUpRequest.findUnique({ 
+    return this.prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT id FROM "FollowUpRequest" WHERE token = ${body.token} FOR UPDATE`;
+    const req = await tx.followUpRequest.findUnique({
       where: { token: body.token }, 
       include: { appointment: true, submission: true }
     });
@@ -71,7 +87,7 @@ export class FollowupsController {
     if (!req) throw new BadRequestException('Token invalide');
     
     // ❌ Déjà soumis par le client
-    if (req.submission) {
+    if (req.submission || req.submissionId || req.status === 'SUBMITTED') {
       throw new BadRequestException('Ce suivi a déjà été soumis');
     }
     
@@ -81,7 +97,8 @@ export class FollowupsController {
     }
 
     // 💾 Créer la soumission avec photo + avis client
-    const submission = await this.prisma.followUpSubmission.create({
+    if (!req.appointment) throw new BadRequestException('Le rendez-vous de ce suivi est indisponible.');
+    const submission = await tx.followUpSubmission.create({
       data: {
         appointmentId: req.appointmentId,
         clientId: req.appointment?.clientId ?? null, // Associer au client si disponible
@@ -89,12 +106,12 @@ export class FollowupsController {
         review: body.review,      // Commentaire optionnel
         photoUrl: body.photoUrl,  // URL de la photo de cicatrisation
         isPhotoPublic: body.isPhotoPublic ?? false, // Indiquer si la photo est publique
-        userId: req.appointment?.userId || '', // Associer au salon
+        userId: req.appointment.userId, // Le salon vient toujours du rendez-vous, jamais du client.
       },
     });
 
     // ✅ Marquer la demande comme soumise et lier la soumission
-    await this.prisma.followUpRequest.update({
+    await tx.followUpRequest.update({
       where: { token: body.token },
       data: { 
         status: 'SUBMITTED',
@@ -104,6 +121,7 @@ export class FollowupsController {
 
     // 🎉 Succès - Le suivi est maintenant complet
     return { ok: true };
+    });
   }
 
   //! RECUPERER LES SUIVIS PAS ENCORE REPONDU PAR LE SALON

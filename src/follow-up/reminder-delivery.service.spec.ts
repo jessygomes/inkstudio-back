@@ -13,8 +13,10 @@ describe('Appointment reminder delivery', () => {
   let records: Map<string, any>;
   let mail: any;
   const previousWebUrl = process.env.WEB_URL;
+  const previousFollowUpUrl = process.env.FOLLOW_UP_FRONTEND_URL;
   beforeEach(() => {
     process.env.WEB_URL = 'https://client.example.com';
+    process.env.FOLLOW_UP_FRONTEND_URL = 'https://studio.example.com';
     records = new Map();
     appointment = {
       id: 'appointment',
@@ -113,6 +115,8 @@ describe('Appointment reminder delivery', () => {
     );
   });
   afterAll(() => {
+    if (previousFollowUpUrl === undefined) delete process.env.FOLLOW_UP_FRONTEND_URL;
+    else process.env.FOLLOW_UP_FRONTEND_URL = previousFollowUpUrl;
     if (previousWebUrl === undefined) delete process.env.WEB_URL;
     else process.env.WEB_URL = previousWebUrl;
   });
@@ -122,7 +126,7 @@ describe('Appointment reminder delivery', () => {
     expect(mail.sendAppointmentReminder).toHaveBeenCalledWith(
       'client@example.com',
       'FOLLOW_UP',
-      expect.stringContaining('https://client.example.com/suivi?f=token'),
+      expect.stringContaining('https://studio.example.com/suivi/token'),
       'Studio',
       expect.any(String),
     );
