@@ -1093,7 +1093,14 @@ export class TatoueursService {
       return [
         ...internal.map((t) => ({ ...t, isLinkedUser: false, isReadOnly: false })),
         ...members
-          .filter((r) => (!publicOnly || r.artist.publicVisibility !== 'HIDDEN') && r.artistAllowsSalonCreate && canBookLinkedArtist(r.artist, r.salon))
+          .filter((r) =>
+            canBookLinkedArtist(r.artist, r.salon) &&
+            (publicOnly
+              ? r.artist.publicVisibility !== 'HIDDEN' &&
+                r.salonAllowsPublicBooking && r.artistAllowsPublicBooking &&
+                r.presence !== null
+              : r.artistAllowsSalonCreate),
+          )
           .map((r) => ({
             id: 'linked_' + r.artist.id,
             linkedUserId: r.artist.id,
@@ -1103,8 +1110,8 @@ export class TatoueursService {
             img: r.artist.profileImage || r.artist.image,
             isLinkedUser: true,
             isReadOnly: true,
-            rdvBookingEnabled: r.artistAllowsSalonCreate && canBookLinkedArtist(r.artist, r.salon),
-            appointmentBookingEnabled: r.salonAllowsPublicBooking,
+            rdvBookingEnabled: true,
+            appointmentBookingEnabled: r.salonAllowsPublicBooking && r.artistAllowsPublicBooking && r.presence !== null,
             hours: null,
             style: r.artist.style,
             skills: r.artist.prestations,
