@@ -1,4 +1,5 @@
-import { renderInkeraEmail, escapeEmailHtml } from './email-layout';
+import { existsSync, readFileSync } from 'fs';
+import { renderInkeraEmail, escapeEmailHtml, INKERA_LOGO_CID, INKERA_LOGO_PATH } from './email-layout';
 import { Injectable, Logger } from '@nestjs/common';
 import Mailgun from 'mailgun.js';
 import FormData from 'form-data';
@@ -71,8 +72,13 @@ export class MailgunService {
         domain: this.config.domain,
       });
 
+      const payload: Record<string, unknown> = { ...options };
+      if (options.html.includes(`cid:${INKERA_LOGO_CID}`) && existsSync(INKERA_LOGO_PATH)) {
+        payload.inline = [{ filename: INKERA_LOGO_CID + '.png', data: readFileSync(INKERA_LOGO_PATH) }];
+      }
+
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-      const result = await this.mailgun.messages.create(this.config.domain, options);
+      const result = await this.mailgun.messages.create(this.config.domain, payload);
       
       // Assertion de type pour le résultat
       const typedResult = result as MailgunResponse;

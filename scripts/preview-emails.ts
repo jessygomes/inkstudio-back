@@ -7,6 +7,7 @@ import {
 } from '../src/email/email-preview.data';
 import { escapeEmailHtml, renderInkeraEmail } from '../src/email/email-layout';
 import { renderMessageEmail } from '../src/email/message-email';
+import { renderDrawingVersionEmail } from '../src/email/drawing-version-email';
 
 // Offline only: no Nest bootstrap, database connection, or email delivery.
 const output = resolve('.tmp/email-previews');
@@ -20,6 +21,14 @@ const previews = Object.entries(emailPreviewTemplates).map(
   }),
 );
 previews.push(
+  {
+    name: 'drawing-version',
+    html: renderDrawingVersionEmail({ clientName: 'Alex Martin', salonName: 'Atelier Luna', title: 'Projet floral avant-bras', version: 3, imageUrl: 'https://placehold.co/1040x800/f5eee9/3e2c27/png?text=Dessin+floral', caption: 'Une composition plus fine pour votre projet.', conversationUrl: 'https://theinkera.com/mon-profil?tab=messagerie' }).html,
+  },
+  {
+    name: 'drawing-version-email-only',
+    html: renderDrawingVersionEmail({ clientName: 'Alex Martin', salonName: 'Atelier Luna', title: 'Projet floral avant-bras', version: 3, imageUrl: 'https://placehold.co/1040x800/f5eee9/3e2c27/png?text=Dessin+floral' }).html,
+  },
   {
     name: 'message-notification',
     html: renderMessageEmail(

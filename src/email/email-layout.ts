@@ -1,4 +1,9 @@
+import { existsSync } from 'fs';
+import { join } from 'path';
+
 /** Shared email design. Essential styles are inline; media queries are enhancements. */
+export const INKERA_LOGO_CID = 'inkera-logo';
+export const INKERA_LOGO_PATH = join(__dirname, 'assets', 'logo_inline_white.png');
 const bodyFont = "'Didact Gothic', Arial, Helvetica, sans-serif";
 const headingFont = "'Exo 2', Arial, Helvetica, sans-serif";
 const brandFont = "'Montserrat Alternates', Arial, Helvetica, sans-serif";
@@ -88,6 +93,11 @@ export function renderInkeraEmail(
     context !== 'Inkera Studio'
       ? `<p style="margin:20px 0 0;font-family:${bodyFont};font-size:14px;line-height:1.6;color:#e4cbbd;">${safeContext}</p>`
       : '';
+  const textLogo = `<span style="font-family:${brandFont};font-size:30px;font-weight:600;line-height:1.2;letter-spacing:-1px;color:#ffffff;">inkera<span style="color:#ff9d00;">.</span></span>`;
+  // Logo sent as inline CID attachment (see MailgunService); alt text keeps the brand name if images are blocked.
+  const brandMark = existsSync(INKERA_LOGO_PATH)
+    ? `<p style="margin:0;line-height:1.2;"><img src="cid:${INKERA_LOGO_CID}" alt="inkera." height="36" style="display:block;height:36px;width:auto;border:0;font-family:${brandFont},Arial,sans-serif;font-size:30px;font-weight:bold;color:#ffffff;"></p>`
+    : `<p style="margin:0;">${textLogo}</p>`;
   return `<!DOCTYPE html>
 <html lang="fr" xmlns="http://www.w3.org/1999/xhtml" xmlns:o="urn:schemas-microsoft-com:office:office">
 <head>
@@ -123,7 +133,7 @@ export function renderInkeraEmail(
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="email-container" style="width:100%;max-width:600px;table-layout:fixed;">
         <tr><td height="4" bgcolor="#ff5500" style="height:4px;font-size:0;line-height:0;">&nbsp;</td></tr>
         <tr><td class="email-header" bgcolor="#131313" style="padding:34px 40px;background-color:#131313;">
-          <p style="margin:0;font-family:${brandFont};font-size:30px;font-weight:600;line-height:1.2;letter-spacing:-1px;color:#ffffff;">inkera<span style="color:#ff9d00;">.</span></p>
+          ${brandMark}
           <p style="margin:9px 0 0;font-family:${headingFont};font-size:10px;line-height:1.5;letter-spacing:3px;color:#c79f8b;text-transform:uppercase;">STUDIO · L’ESPACE DES ARTISTES</p>
           ${contextLine}
         </td></tr>

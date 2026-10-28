@@ -8,12 +8,42 @@ import { UpdateDrawingCardImageDto } from './dto/update-drawing-card-image.dto';
 import { SearchDrawingCardsDto } from './dto/search-drawing-cards.dto';
 import { UpdateDrawingCardDto } from './dto/update-drawing-card.dto';
 import { SuiviService } from './suivi.service';
+import { DrawingDeliveryService } from './drawing-delivery.service';
+import { UpdateDrawingAssociationsDto } from './dto/update-drawing-associations.dto';
 
 // Préfixe distinct du suivi de cicatrisation, qui conserve ses propres routes.
 @Controller('suiviDessin')
 @UseGuards(JwtAuthGuard)
 export class SuiviController {
-  constructor(private readonly suiviService: SuiviService) {}
+  constructor(
+    private readonly suiviService: SuiviService,
+    private readonly delivery: DrawingDeliveryService,
+  ) {}
+
+  @Get('appointment-options')
+  getAppointmentOptions(@Request() req: RequestWithUser, @Query('clientId') clientId?: string, @Query('clientUserId') clientUserId?: string, @Query('cardId') cardId?: string) {
+    return this.suiviService.getAppointmentOptions(req.user.userId, { clientId, clientUserId, cardId });
+  }
+
+  @Get('appointments/:appointmentId/linkable-cards')
+  getLinkableCards(@Param('appointmentId') appointmentId: string, @Request() req: RequestWithUser) {
+    return this.suiviService.getLinkableCards(appointmentId, req.user.userId);
+  }
+
+  @Post('cards/:id/appointment/:appointmentId')
+  linkAppointment(@Param('id') id: string, @Param('appointmentId') appointmentId: string, @Request() req: RequestWithUser) {
+    return this.suiviService.linkAppointment(id, appointmentId, req.user.userId);
+  }
+
+  @Patch('cards/:id/associations')
+  updateAssociations(@Param('id') id: string, @Request() req: RequestWithUser, @Body() dto: UpdateDrawingAssociationsDto) {
+    return this.suiviService.updateAssociations(id, req.user.userId, dto);
+  }
+
+  @Post('cards/:id/images/:imageId/send')
+  sendImage(@Param('id') id: string, @Param('imageId') imageId: string, @Request() req: RequestWithUser) {
+    return this.delivery.send(id, imageId, req.user.userId);
+  }
 
   // Affiche toutes les cards du tableau Suivi de l'utilisateur connecté.
   @Get('cards')

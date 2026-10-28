@@ -464,7 +464,7 @@ model Appointment {
 model DrawingCard {
   id                  String             @id @default(cuid()) // Identifiant unique de la card
   salonId             String // Salon propriétaire de la card
-  sourceAppointmentId  String             @unique // RDV à l'origine de la card
+  sourceAppointmentId  String?            @unique // RDV facultatif à l'origine de la card
   tattooAppointmentId  String?            @unique // RDV Tattoo final associé
   clientId             String? // Fiche Client du salon
   clientUserId         String? // Compte client connecté
@@ -480,7 +480,7 @@ model DrawingCard {
   updatedAt            DateTime           @updatedAt // Date de dernière modification
 
   salon               User                @relation("DrawingCardSalon", fields: [salonId], references: [id], onDelete: Cascade) // Relation vers le salon
-  sourceAppointment   Appointment         @relation("DrawingCardSource", fields: [sourceAppointmentId], references: [id], onDelete: Cascade) // Relation vers le RDV source
+  sourceAppointment   Appointment?        @relation("DrawingCardSource", fields: [sourceAppointmentId], references: [id], onDelete: SetNull) // Relation facultative vers le RDV source
   tattooAppointment   Appointment?        @relation("DrawingCardTattoo", fields: [tattooAppointmentId], references: [id], onDelete: SetNull) // Relation vers le RDV Tattoo
   client              Client?             @relation(fields: [clientId], references: [id], onDelete: SetNull) // Relation vers la fiche client
   clientUser          User?               @relation("DrawingCardClient", fields: [clientUserId], references: [id], onDelete: SetNull) // Relation vers le compte client
@@ -511,6 +511,9 @@ model DrawingCardNote {
 }
 
 model DrawingCardImage {
+  clientEmailSentAt   DateTime?
+  clientMessageSentAt DateTime?
+  deliveryClaimedAt   DateTime?
   id           String   @id @default(cuid()) // Identifiant unique du fichier
   cardId       String // Card concernée
   uploadedById String // Utilisateur ayant ajouté le fichier

@@ -1,8 +1,17 @@
 import { IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class CreateDrawingCardDto {
+  @IsOptional()
   @IsString()
-  sourceAppointmentId: string; // RDV Projet ou RDV créé par le tatoueur à l'origine de la card
+  sourceAppointmentId?: string;
+
+  @IsOptional()
+  @IsString()
+  clientId?: string;
+
+  @IsOptional()
+  @IsString()
+  clientUserId?: string;
 
   @IsOptional()
   @IsString()

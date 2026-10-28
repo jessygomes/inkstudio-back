@@ -3,11 +3,15 @@ import { DrawingCardStatus, PrestationType } from '@prisma/client';
 import { SuiviService } from './suivi.service';
 
 const createPrismaMock = () => ({
+  user: { findUnique: jest.fn().mockResolvedValue({ role: 'user_salon' }) },
+  $queryRaw: jest.fn().mockResolvedValue([]),
+  $transaction: jest.fn(),
   appointment: {
     findUnique: jest.fn(),
     findFirst: jest.fn(),
   },
   drawingCard: {
+    findFirst: jest.fn().mockResolvedValue(null),
     findUnique: jest.fn(),
     findMany: jest.fn(),
     create: jest.fn(),
@@ -31,6 +35,7 @@ describe('SuiviService', () => {
 
   beforeEach(() => {
     prisma = createPrismaMock();
+    prisma.$transaction.mockImplementation(async callback => callback(prisma));
     service = new SuiviService(prisma as never);
   });
 
