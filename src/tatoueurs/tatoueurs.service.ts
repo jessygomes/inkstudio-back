@@ -1,4 +1,4 @@
-import { publicDisplayName } from '../user/public-profile.utils';
+import { linkedArtistBookingHref, publicDisplayName } from '../user/public-profile.utils';
 import { Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CreateTatoueurDto } from './dto/create-tatoueur.dto';
@@ -969,8 +969,11 @@ export class TatoueursService {
           img: r.artist.profileImage || r.artist.image,
           isLinkedUser: true,
           isReadOnly: true,
-          rdvBookingEnabled: r.artistAllowsSalonCreate && canBookLinkedArtist(r.artist, r.salon),
-          appointmentBookingEnabled: r.salonAllowsPublicBooking,
+          rdvBookingEnabled: canBookLinkedArtist(r.artist, r.salon) && (publicOnly
+            ? r.salonAllowsPublicBooking && r.artistAllowsPublicBooking && r.presence !== null
+            : r.artistAllowsSalonCreate),
+          appointmentBookingEnabled: canBookLinkedArtist(r.artist, r.salon) && r.salonAllowsPublicBooking && r.artistAllowsPublicBooking && r.presence !== null,
+          bookingHref: linkedArtistBookingHref(r.artist, userId),
           hours: null,
           style: r.artist.style,
           skills: r.artist.prestations,
@@ -1105,6 +1108,7 @@ export class TatoueursService {
             id: 'linked_' + r.artist.id,
             linkedUserId: r.artist.id,
             profileUserId: r.artist.id,
+            bookingHref: linkedArtistBookingHref(r.artist, userId),
             name:
               publicDisplayName(r.artist),
             img: r.artist.profileImage || r.artist.image,

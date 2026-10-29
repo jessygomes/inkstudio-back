@@ -1,5 +1,19 @@
 import type { Prisma } from '@prisma/client';
 
+/** Continue a salon booking on the selected artist's profile, keeping its venue. */
+export function linkedArtistBookingHref(
+  artist: { salonName?: string | null; city?: string | null; postalCode?: string | null },
+  salonId: string,
+): string {
+  const slug = (value: string) => value.normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  const location = [artist.city, artist.postalCode]
+    .filter((value): value is string => typeof value === 'string' && value.trim() !== '')
+    .join('-');
+  return `/salon/${slug(artist.salonName || '')}/${slug(location) || 'localisation'}/reserver?venueSalonId=${encodeURIComponent(salonId)}`;
+}
+
 /** Minimum identity required by the public /salon/name/city-postcode route. */
 export function publicProfessionalProfileWhere(
   search = true,

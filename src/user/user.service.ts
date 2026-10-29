@@ -1,6 +1,6 @@
 import { AgendaMode, SaasPlan } from '@prisma/client';
 import { styleKey } from '../portfolio/style.utils';
-import { publicDisplayName, withPublicName, publicProfessionalProfileWhere } from './public-profile.utils';
+import { linkedArtistBookingHref, publicDisplayName, withPublicName, publicProfessionalProfileWhere } from './public-profile.utils';
 import { searchGeographyWhere } from './search-geography';
 import { ForbiddenException, Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
@@ -775,13 +775,7 @@ export class UserService {
                 r.artistAllowsPublicBooking &&
                 r.presence !== null && canBookLinkedArtist(r.artist, r.salon),
             } as any),
-            bookingHref:
-              '/salon/' +
-              this.toSlug(r.artist.salonName || '') +
-              '/' +
-              this.buildLocationSlug(r.artist.city, r.artist.postalCode) +
-              '/reserver?venueSalonId=' +
-              encodeURIComponent(found.id),
+            bookingHref: linkedArtistBookingHref(r.artist, found.id),
           })),
         ],
       };

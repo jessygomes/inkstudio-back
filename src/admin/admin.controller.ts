@@ -1,3 +1,4 @@
+import type { ActivityQuery } from './activity-stats';
 import { Controller, Get, Query, UseGuards, Request, Param, Delete, Post, Body, Patch } from '@nestjs/common';
 import { CreateTattooCategoryDto, UpdateTattooCategoryDto } from './dto/tattoo-category.dto';
 import { StyleNameDto } from './dto/style.dto';
@@ -64,6 +65,11 @@ export class AdminController {
 
   //! 1️⃣ ROUTES COLLECTION (statiques / filtres)
   //! RÉCUPÉRER LES STATISTIQUES
+  @Get('activity-stats')
+  getActivityStats(@Query() query: ActivityQuery) {
+    return this.adminService.getActivityStats(query);
+  }
+
   @Get('stats')
   async getAdminStats() {
     return await this.adminService.getAdminStats();

@@ -1,3 +1,4 @@
+import { getActivityStats, type ActivityQuery } from './activity-stats';
 import { getMembershipDuration } from './account-membership';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
@@ -8,6 +9,10 @@ import { findClosestStyle, styleKey } from 'src/portfolio/style.utils';
 
 @Injectable()
 export class AdminService {
+  getActivityStats(query: ActivityQuery) {
+    return getActivityStats(this.prisma, query);
+  }
+
   async updatePublicVisibility(id: string, publicVisibility: PublicVisibility) {
     const user = await this.prisma.user.findUnique({ where: { id }, select: { role: true } });
     if (!user) throw new NotFoundException('Compte introuvable.');
