@@ -17,6 +17,18 @@ describe('Appointment moodboard access', () => {
     await service.connectToAppointment('board', 'appointment', 'client');
     expect(prisma.appointment.update).toHaveBeenCalledWith(expect.objectContaining({ data: { moodboardId: 'board' } }));
   });
+  it('retains the checked client, participant and previous link in the write predicate', async () => {
+    await service.connectToAppointment('board', 'appointment', 'client');
+    expect(prisma.appointment.update).toHaveBeenCalledWith(expect.objectContaining({ where: {
+      id: 'appointment', clientUserId: 'client', moodboardId: null,
+      OR: [{ clientUserId: 'client' }, { userId: 'client' }, { performerUserId: 'client' }],
+    } }));
+  });
+  it('requires the exact checked board when disconnecting', async () => {
+    prisma.appointment.findUnique.mockResolvedValue({ id: 'appointment', userId: 'salon', clientUserId: 'client', moodboardId: 'board' });
+    await service.disconnectFromAppointment('board', 'appointment', 'client');
+    expect(prisma.appointment.update).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: 'appointment', clientUserId: 'client', moodboardId: 'board' }), data: { moodboardId: null } }));
+  });
 
   it('does not let the salon attach an unrelated private moodboard', async () => {
     await expect(service.connectToAppointment('board', 'appointment', 'salon')).rejects.toBeInstanceOf(ForbiddenException);

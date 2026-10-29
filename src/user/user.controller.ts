@@ -1,5 +1,5 @@
 import { PublicProfile } from '../user/public-profile-access';
-import { Body, Controller, ForbiddenException, Get, NotFoundException, Param, Patch, Post, Query, UseGuards, Request } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Header, NotFoundException, Param, Patch, Post, Query, UseGuards, Request } from '@nestjs/common';
 import { UserService } from './user.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateAppointmentBookingDto, UpdateConfirmationSettingDto } from './dto/update-confirmation-setting.dto';
@@ -259,9 +259,19 @@ export class UserController {
     }); // On appelle la méthode getUserById du service UserService
   }
 
-  @PublicProfile()
+  @UseGuards(JwtAuthGuard)
+  @Header('Cache-Control', 'private, no-store')
+  @Get(':userId/private')
+  getPrivateUser(@Param('userId') userId: string, @Request() req: RequestWithUser) {
+    if (req.user.userId !== userId) throw new ForbiddenException('Accès réservé au propriétaire du compte.');
+    return this.userService.getUserById({ userId });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Header('Cache-Control', 'private, no-store')
   @Get(":userId/param") // :userId est un paramètre dynamique qui sera récupéré dans la méthode getUser
-  getUserParam(@Param('userId') userId: string) { // On récupère le paramètre dynamique userId
+  getUserParam(@Param('userId') userId: string, @Request() req: RequestWithUser) { // On récupère le paramètre dynamique userId
+    if (req.user.userId !== userId) throw new ForbiddenException('Accès réservé au propriétaire du compte.');
     return this.userService.getUserParamById({userId});
   } 
 
@@ -276,8 +286,10 @@ export class UserController {
   //! 4️⃣ ROUTES AVEC PARAMÈTRES SIMPLES EN DERNIER
   @PublicProfile()
   @Get(":userId") // :userId est un paramètre dynamique qui sera récupéré dans la méthode getUser
-  getUser(@Param('userId') userId: string) { // On récupère le paramètre dynamique userId
-    return this.userService.getUserById({userId}); // On appelle la méthode getUserById du service UserService
+  async getUser(@Param('userId') userId: string) { // On récupère le paramètre dynamique userId
+    const profile = await this.userService.getPublicUserById({ userId });
+    if (!profile) throw new NotFoundException('Profil introuvable.');
+    return profile;
   } 
   
   //! Récupérer les RDV du client connecté

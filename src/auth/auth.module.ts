@@ -1,3 +1,4 @@
+import { SecurityThrottleModule } from './security-throttle';
 import { Module } from '@nestjs/common';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
@@ -12,12 +13,14 @@ import { RedisModule } from 'src/redis/redis.module';
 import { StripeModule } from 'src/stripe/stripe.module';
 import { RegistrationRateLimiterService } from './registration-rate-limiter.service';
 import { RegistrationThrottleGuard } from './registration-throttle.guard';
+import { GoogleIdentityService } from './google-identity.service';
 // import googleOauthConfig from './google-oauth.config';
 // import { ConfigModule } from '@nestjs/config';
 // import { GoogleStrategy } from './google.strategy';
 
 @Module({
   imports: [
+    SecurityThrottleModule,
     JwtModule.register({
       global: true,
       secret: process.env.JWT_SECRET,
@@ -33,6 +36,7 @@ import { RegistrationThrottleGuard } from './registration-throttle.guard';
   controllers: [AuthController],
   providers: [
     AuthService,
+    GoogleIdentityService,
     PrismaService,
     UserService,
     JwtStrategy,

@@ -1,4 +1,6 @@
-import { BadRequestException, Body, Controller, Get, Post, Query, Request, UseGuards } from '@nestjs/common';
+import { SecurityThrottle } from './security-throttle';
+import { EmailRequestDto, EmailTokenDto, ResetPasswordDto } from './dto/email-security.dto';
+import { BadRequestException, Body, Controller, Get, Header, Post, Query, Request, UseGuards } from '@nestjs/common';
 import { AuthService, AuthTokenResponse } from './auth.service';
 import { RequestWithUser } from './jwt.strategy';
 import { JwtAuthGuard } from './jwt-auth.guard';
@@ -12,6 +14,7 @@ import { CreateTatoueurUserDto } from './dto/create-tatoueur-user.dto';
 import { CachedUser } from 'utils/type';
 import { RegistrationThrottleGuard } from './registration-throttle.guard';
 import { invitationTokenHash } from './invitation-policy';
+import { GoogleLoginDto } from './dto/google-login.dto';
 // import { GoogleAuthGuard } from './guards/google-auth/google-auth.guard';
 
 
@@ -26,27 +29,17 @@ export class AuthController {
     4. Si le mot de passe est incorrect, l'API renvoie une erreur
     5. Si le mot de passe est correct, l'API renvoie un token d'authentification
   */
+  @SecurityThrottle('login')
   @Post('login') // POST /auth/login
   async login(@Body() authBody: LoginUserDto) {
     return await this.authService.login({ authBody });
   }
 
+  @SecurityThrottle('google')
   @Post('google') // POST /auth/google
-  async googleLogin(@Body() body: {
-    email: string;
-    firstName?: string;
-    lastName?: string;
-    avatar?: string | null;
-    googleId?: string;
-    idToken?: string;
-    accessToken?: string;
-  }): Promise<AuthTokenResponse> {
+  async googleLogin(@Body() body: GoogleLoginDto): Promise<AuthTokenResponse> {
     return await this.authService.loginWithGoogle({
-      email: body.email,
-      firstName: body.firstName,
-      lastName: body.lastName,
-      image: body.avatar,
-      access_token: body.accessToken,
+      idToken: body.idToken,
     });
   }
 
@@ -95,46 +88,31 @@ export class AuthController {
   // ici on utilise JWTStategy
   @UseGuards(JwtAuthGuard)
   @Get()
+  @Header('Cache-Control', 'private, no-store')
   async getAuthenticatedUser(@Request() request: RequestWithUser): Promise<CachedUser | null> {
     return await this.userService.getUserById({userId: request.user.userId});
   }
 
+  @SecurityThrottle('verify')
+  @Header('Cache-Control', 'private, no-store')
   @Get('verify-email')
-  async verifyEmail(@Query('token') token: string, @Query('email') email: string) {
-    const record = await this.prisma.verificationToken.findUnique({
-      where: { email_token: { email, token } },
-    });
-
-    if (!record || record.expires < new Date()) {
-      throw new BadRequestException("Lien invalide ou expiré.");
-    }
-
-    await this.prisma.user.update({
-      where: { email },
-      data: { emailVerified: new Date() },
-    });
-
-    await this.prisma.verificationToken.delete({
-      where: { id: record.id },
-    });
-
-    return { message: "Email vérifié avec succès." };
+  async verifyEmail(@Query() query: EmailTokenDto) {
+    return this.authService.verifyEmail(query.email, query.token);
   }
 
+  @SecurityThrottle('forgot')
   @Post('forgot-password')
-  async forgotPassword(@Body('email') email: string) {
-    return this.authService.sendResetPasswordEmail(email);
+  async forgotPassword(@Body() body: EmailRequestDto) {
+    return this.authService.sendResetPasswordEmail(body.email);
   }
 
+  @SecurityThrottle('reset')
   @Post('reset-password')
-  async resetPassword(
-    @Body('email') email: string,
-    @Body('token') token: string,
-    @Body('password') password: string
-  ) {
-    return this.authService.resetPassword({ email, token, password });
+  async resetPassword(@Body() body: ResetPasswordDto) {
+    return this.authService.resetPassword(body);
   }
 
+  @SecurityThrottle('change')
   @UseGuards(JwtAuthGuard)
   @Post('change-password')
   async changePassword(

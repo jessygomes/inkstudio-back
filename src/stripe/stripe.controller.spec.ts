@@ -259,6 +259,24 @@ describe('StripeController webhook flows', () => {
     );
   });
 
+  it('does not read or modify subscriptions for unsigned webhooks', async () => {
+    const req = { headers: {}, rawBody: Buffer.from('{}') };
+    await controller.handleWebhook(req as never);
+    expect(stripeMock.webhooks.constructEvent).not.toHaveBeenCalled();
+    expect(prisma.stripeWebhookEvent.findUnique).not.toHaveBeenCalled();
+    expect(saasService.updateUserPlan).not.toHaveBeenCalled();
+    expect(saasService.markSubscriptionActive).not.toHaveBeenCalled();
+  });
+
+  it('does not read or modify subscriptions for invalid webhook signatures', async () => {
+    stripeMock.webhooks.constructEvent.mockImplementation(() => { throw new Error('Invalid signature'); });
+    const req = { headers: { 'stripe-signature': 'forged' }, rawBody: Buffer.from('{}') };
+    await controller.handleWebhook(req as never, 'forged');
+    expect(prisma.stripeWebhookEvent.findUnique).not.toHaveBeenCalled();
+    expect(saasService.updateUserPlan).not.toHaveBeenCalled();
+    expect(saasService.markSubscriptionActive).not.toHaveBeenCalled();
+  });
+
   it('ignores duplicate webhook event ids (idempotence)', async () => {
     stripeMock.webhooks.constructEvent.mockReturnValue({
       id: 'evt_duplicate',

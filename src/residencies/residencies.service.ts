@@ -1,3 +1,4 @@
+import { validateInternalBooking, updateInternalBooking } from '../appointments/internal-booking-policy';
 import {
   BadRequestException,
   ConflictException,
@@ -893,69 +894,91 @@ export class ResidenciesService {
     args: Prisma.AppointmentCreateArgs,
     actorId: string | null,
     publicBooking: boolean,
+    transaction?: Tx,
   ): Promise<any> {
     const data = args.data as Prisma.AppointmentUncheckedCreateInput;
     const artistId = data.performerUserId;
     if (!artistId) {
-      if (
-        data.tatoueurId &&
-        !(await this.prisma.tatoueur.findFirst({
-          where: { id: data.tatoueurId, userId: data.userId },
-        }))
-      )
-        throw new ForbiddenException(
-          'Ce tatoueur ne fait pas partie du salon.',
+      const persistInternal = async (db: Tx) => {
+        await validateInternalBooking(
+          db,
+          {
+            userId: data.userId,
+            tatoueurId: data.tatoueurId,
+            start: data.start as Date | string,
+            end: data.end as Date | string,
+            prestation: data.prestation,
+          },
+          publicBooking,
         );
-      const snapshot = await this.venueSnapshot(
-        null,
-        data.userId,
-        data.venueSalonId || undefined,
-        actorId,
-        publicBooking,
-        new Date(data.start as string),
-        new Date(data.end as string),
-      );
-      return this.prisma.appointment.create({
-        ...args,
-        data: { ...args.data, ...snapshot } as any,
-      });
-    }
-    return this.prisma.$transaction(
-      async (tx) => {
-        await this.lockArtist(tx, artistId);
-        const artist = await tx.user.findUnique({ where: { id: artistId }, select: { saasPlan: true } });
-        if (artist?.saasPlan === SaasPlan.FREE) {
-          const sponsor = await this.businessSponsor(artistId, data.venueSalonId || (data.userId !== artistId ? data.userId : undefined), publicBooking, tx);
-          if (data.userId !== sponsor.id || (!publicBooking && actorId !== sponsor.id)) throw new ForbiddenException('Ce rendez-vous doit être géré par le salon Business choisi.');
-        }
-        const start = new Date(data.start as string);
-        const end = new Date(data.end as string);
         const snapshot = await this.venueSnapshot(
-          artistId,
+          null,
           data.userId,
           data.venueSalonId || undefined,
           actorId,
           publicBooking,
-          start,
-          end,
+          new Date(data.start as string),
+          new Date(data.end as string),
+          db,
+        );
+        return db.appointment.create({
+          ...args,
+          data: { ...args.data, ...snapshot } as any,
+        });
+      };
+      return transaction
+        ? persistInternal(transaction)
+        : this.prisma.$transaction(persistInternal, { timeout: 20000 });
+    }
+    const persist = async (tx: Tx) => {
+      await this.lockArtist(tx, artistId);
+      const artist = await tx.user.findUnique({
+        where: { id: artistId },
+        select: { saasPlan: true },
+      });
+      if (artist?.saasPlan === SaasPlan.FREE) {
+        const sponsor = await this.businessSponsor(
+          artistId,
+          data.venueSalonId ||
+            (data.userId !== artistId ? data.userId : undefined),
+          publicBooking,
           tx,
         );
         if (
-          await this.conflict(tx, artistId, snapshot.venueSalonId, start, end)
+          data.userId !== sponsor.id ||
+          (!publicBooking && actorId !== sponsor.id)
         )
-          throw new ConflictException(
-            'Ce tatoueur est déjà occupé ou indisponible sur ce créneau.',
+          throw new ForbiddenException(
+            'Ce rendez-vous doit être géré par le salon Business choisi.',
           );
-        return tx.appointment.create({
-          ...args,
-          data: {
-            ...args.data,
-            ...snapshot,
-          } as Prisma.AppointmentUncheckedCreateInput,
-        });
-      },
-      { timeout: 20000 },
-    );
+      }
+      const start = new Date(data.start as string);
+      const end = new Date(data.end as string);
+      const snapshot = await this.venueSnapshot(
+        artistId,
+        data.userId,
+        data.venueSalonId || undefined,
+        actorId,
+        publicBooking,
+        start,
+        end,
+        tx,
+      );
+      if (await this.conflict(tx, artistId, snapshot.venueSalonId, start, end))
+        throw new ConflictException(
+          'Ce tatoueur est déjà occupé ou indisponible sur ce créneau.',
+        );
+      return tx.appointment.create({
+        ...args,
+        data: {
+          ...args.data,
+          ...snapshot,
+        } as Prisma.AppointmentUncheckedCreateInput,
+      });
+    };
+    return transaction
+      ? persist(transaction)
+      : this.prisma.$transaction(persist, { timeout: 20000 });
   }
 
   async updateAppointment(
@@ -972,20 +995,17 @@ export class ResidenciesService {
     } else await this.assertAppointmentAccess(existing.id, actorId, true);
     const update = args.data as Prisma.AppointmentUncheckedUpdateInput;
     if (!existing.performerUserId) {
-      if (update.performerUserId)
-        throw new BadRequestException(
-          'Créez un nouveau rendez-vous pour changer de compte tatoueur.',
-        );
-      if (
-        typeof update.tatoueurId === 'string' &&
-        !(await this.prisma.tatoueur.findFirst({
-          where: { id: update.tatoueurId, userId: existing.userId },
-        }))
-      )
-        throw new ForbiddenException(
-          'Ce tatoueur ne fait pas partie du salon.',
-        );
-      return this.prisma.appointment.update(args);
+      return this.prisma.$transaction(
+        (tx) =>
+          updateInternalBooking(
+            tx,
+            args,
+            existing.userId,
+            actorId,
+            clientBooking,
+          ),
+        { timeout: 20000 },
+      );
     }
     if (
       update.performerUserId !== undefined &&

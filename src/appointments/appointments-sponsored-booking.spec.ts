@@ -20,6 +20,8 @@ describe('Public booking for a FREE artist in a Business salon', () => {
       client: { findFirst: jest.fn().mockResolvedValue(null), create: jest.fn(({data}) => Promise.resolve({id:'client',...data})) },
       tattooDetail: { create: jest.fn().mockResolvedValue({id:'details'}) },
     };
+    db.$transaction = jest.fn(async (callback) => callback(db));
+    db.$queryRaw = jest.fn();
     mail = { sendPendingAppointmentNotification: jest.fn(), sendAutoConfirmedAppointment: jest.fn(), sendNewAppointmentNotification: jest.fn() };
     residencies = { businessSponsor: jest.fn().mockResolvedValue(sponsor), persistAppointment: jest.fn(({data}) => Promise.resolve({id:'appointment',...data})) };
     const cache = { del: jest.fn(), delPattern: jest.fn(), set: jest.fn() };
@@ -30,7 +32,7 @@ describe('Public booking for a FREE artist in a Business salon', () => {
     expect(result.error).toBe(false);
     expect(residencies.businessSponsor).toHaveBeenCalledWith('artist','business');
     expect(db.client.create).toHaveBeenCalledWith(expect.objectContaining({data: expect.objectContaining({userId:'business'})}));
-    expect(residencies.persistAppointment).toHaveBeenCalledWith(expect.objectContaining({data: expect.objectContaining({userId:'business',performerUserId:'artist',venueSalonId:'business',status:'PENDING'})}),null,true);
+    expect(residencies.persistAppointment).toHaveBeenCalledWith(expect.objectContaining({data: expect.objectContaining({userId:'business',performerUserId:'artist',venueSalonId:'business',status:'PENDING'})}),null,true,db);
     expect(mail.sendPendingAppointmentNotification).toHaveBeenCalledWith('salon@example.test',expect.anything(),'Business Salon');
   });
   it('refuses an ineligible or unrelated venue before creating any client or appointment', async () => {
@@ -45,6 +47,6 @@ describe('Public booking for a FREE artist in a Business salon', () => {
     const result = await service.createByClient({ userId:'artist', rdvBody:body });
     expect(result.error).toBe(false);
     expect(residencies.businessSponsor).not.toHaveBeenCalled();
-    expect(residencies.persistAppointment).toHaveBeenCalledWith(expect.objectContaining({data:expect.objectContaining({userId:'artist',performerUserId:'artist'})}),null,true);
+    expect(residencies.persistAppointment).toHaveBeenCalledWith(expect.objectContaining({data:expect.objectContaining({userId:'artist',performerUserId:'artist'})}),null,true,db);
   });
 });

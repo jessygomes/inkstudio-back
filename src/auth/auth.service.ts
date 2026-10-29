@@ -1,4 +1,5 @@
-import { Injectable, Logger, BadRequestException, Optional } from '@nestjs/common';
+import { emailTokenHash, validateEmailToken } from './email-token-policy';
+import { Injectable, Logger, BadRequestException, Optional, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import {compare, hash} from 'bcryptjs';
 import { JwtService } from '@nestjs/jwt';
@@ -15,6 +16,7 @@ import { CreateTatoueurUserDto } from './dto/create-tatoueur-user.dto';
 import { StripeService } from 'src/stripe/stripe.service';
 import { AgendaMode, SaasPlan, SaasPlanStatus } from '@prisma/client';
 import { CacheService } from 'src/redis/cache.service';
+import { GoogleIdentityService } from './google-identity.service';
 
 interface AuthenticatedUser {
   id: string;
@@ -80,6 +82,7 @@ export class AuthService {
     private readonly mailService: MailService,
     private readonly saasService: SaasService,
     private readonly stripeService: StripeService,
+    private readonly googleIdentity: GoogleIdentityService,
     @Optional() private readonly cacheService?: CacheService,
   ) {}
 
@@ -133,25 +136,8 @@ export class AuthService {
       }
 
       if (!existingUser.emailVerified) {
-        // Supprimer tout token de vérification existant pour cet email
-        await this.prisma.verificationToken.deleteMany({
-          where: {
-            email,
-          },
-        });
-  
-        // Générer un nouveau token de vérification
-        const token = Math.floor(100000 + Math.random() * 900000).toString(); // Génère un nombre à 6 chiffres
-        const expires = new Date(Date.now() + 1000 * 60 * 10); // Expiration dans 10 minutes
-  
-        await this.prisma.verificationToken.create({
-          data: {
-            email,
-            token,
-            expires,
-          },
-        });
-  
+        const token = await this.issueEmailToken(email, 'verify');
+
         const confirmationUrl = this.buildAuthEmailUrl('/verifier-email', token, email);
 
         // Envoyer le bon template selon le rôle de l'utilisateur
@@ -352,16 +338,7 @@ export class AuthService {
       });
 
       // Génération du token de vérification de l'adresse mail
-      const token = Math.floor(100000 + Math.random() * 900000).toString(); // Génère un nombre à 6 chiffres
-      const expires = new Date(Date.now() + 1000 * 60 * 10); // Expiration dans 10 minutes
-
-      await this.prisma.verificationToken.create({
-        data: {
-          email,
-          token,
-          expires,
-        },
-      });
+      const token = await this.issueEmailToken(email, 'verify');
 
       const confirmationUrl = this.buildAuthEmailUrl('/verifier-email', token, email);
 
@@ -497,16 +474,7 @@ export class AuthService {
       });
 
       // Génération du token de vérification de l'adresse mail
-      const token = Math.floor(100000 + Math.random() * 900000).toString(); // Génère un nombre à 6 chiffres
-      const expires = new Date(Date.now() + 1000 * 60 * 10); // Expiration dans 10 minutes
-
-      await this.prisma.verificationToken.create({
-        data: {
-          email,
-          token,
-          expires,
-        },
-      });
+      const token = await this.issueEmailToken(email, 'verify');
 
       const confirmationUrl = this.buildAuthEmailUrl('/verifier-email', token, email);
 
@@ -610,12 +578,7 @@ export class AuthService {
       });
 
       // Token de vérification email
-      const token = Math.floor(100000 + Math.random() * 900000).toString();
-      const expires = new Date(Date.now() + 1000 * 60 * 10);
-
-      await this.prisma.verificationToken.create({
-        data: { email, token, expires },
-      });
+      const token = await this.issueEmailToken(email, 'verify');
 
       const confirmationUrl = this.buildAuthEmailUrl('/verifier-email', token, email);
 
@@ -666,26 +629,8 @@ export class AuthService {
       return { message: "Si un compte existe avec cette adresse, un email a été envoyé." };
     }
   
-    // Supprimer tout token de réinitialisation existant pour cet email
-    await this.prisma.passwordResetToken.deleteMany({
-      where: {
-        email,
-      },
-    });
+    const token = await this.issueEmailToken(email, 'reset');
 
-    // Générer un nouveau token de réinitialisation
-    const token = randomBytes(32).toString('hex');
-    const expires = new Date(Date.now() + 1000 * 60 * 15); // 15 minutes
-  
-    // Enregistrer le token dans la base de données
-    await this.prisma.passwordResetToken.create({
-      data: {
-        email,
-        token,
-        expires,
-      },
-    });
-  
     // Construire l'URL de réinitialisation du mot de passe
     const resetUrl = this.buildAuthEmailUrl('/reset-password', token, email);
 
@@ -714,30 +659,83 @@ export class AuthService {
     token: string;
     password: string;
   }) {
-    const record = await this.prisma.passwordResetToken.findUnique({
-      where: {
-        email_token: { email, token },
-      },
-    });
-  
-    if (!record || record.expires < new Date()) {
-      throw new Error("Lien de réinitialisation invalide ou expiré.");
-    }
-  
+    validateEmailToken(email, token);
+    if (
+      typeof password !== 'string' ||
+      password.length < 8 ||
+      Buffer.byteLength(password, 'utf8') > 72
+    )
+      throw new BadRequestException(
+        'Le mot de passe doit contenir au moins 8 caract\u00e8res et au maximum 72 octets.',
+      );
     const hashedPassword = await this.hashPassword({ password });
-  
-    await this.prisma.user.update({
-      where: { email },
-      data: { password: hashedPassword },
+    await this.consumeEmailToken(email, token, 'reset', hashedPassword);
+    return { message: 'Mot de passe mis \u00e0 jour avec succ\u00e8s.' };
+  }
+
+  async verifyEmail(email: string, token: string) {
+    validateEmailToken(email, token);
+    await this.consumeEmailToken(email, token, 'verify');
+    return { message: 'Email v\u00e9rifi\u00e9 avec succ\u00e8s.' };
+  }
+
+  private async issueEmailToken(
+    email: string,
+    purpose: 'verify' | 'reset',
+  ): Promise<string> {
+    const token = randomBytes(32).toString('hex');
+    const expires = new Date(
+      Date.now() + (purpose === 'verify' ? 10 : 15) * 60000,
+    );
+    const data = { email, token: emailTokenHash(purpose, token), expires };
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "User" WHERE email = ${email} FOR UPDATE`;
+      if (purpose === 'verify') {
+        await tx.verificationToken.deleteMany({ where: { email } });
+        await tx.verificationToken.create({ data });
+      } else {
+        await tx.passwordResetToken.deleteMany({ where: { email } });
+        await tx.passwordResetToken.create({ data });
+      }
     });
-  
-    await this.prisma.passwordResetToken.delete({
-      where: { id: record.id },
+    return token;
+  }
+
+  private async consumeEmailToken(
+    email: string,
+    token: string,
+    purpose: 'verify' | 'reset',
+    password?: string,
+  ) {
+    const digest = emailTokenHash(purpose, token);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "User" WHERE email = ${email} FOR UPDATE`;
+      const where = { email_token: { email, token: digest } };
+      const record =
+        purpose === 'verify'
+          ? await tx.verificationToken.findUnique({ where })
+          : await tx.passwordResetToken.findUnique({ where });
+      const now = new Date();
+      if (!record || record.expires <= now)
+        throw new BadRequestException('Lien invalide ou expir\u00e9.');
+      const claim = {
+        where: { id: record.id, email, token: digest, expires: { gt: now } },
+      };
+      const consumed =
+        purpose === 'verify'
+          ? await tx.verificationToken.deleteMany(claim)
+          : await tx.passwordResetToken.deleteMany(claim);
+      if (consumed.count !== 1)
+        throw new BadRequestException('Lien invalide ou expir\u00e9.');
+      await tx.user.update({
+        where: { email },
+        data: purpose === 'verify' ? { emailVerified: now } : { password },
+      });
+      // Invalidate all previous links of the same purpose in the same transaction.
+      if (purpose === 'verify')
+        await tx.verificationToken.deleteMany({ where: { email } });
+      else await tx.passwordResetToken.deleteMany({ where: { email } });
     });
-  
-    return {
-      message: "Mot de passe mis à jour avec succès.",
-    };
   }
 
   //! CHANGEMENT DE MOT DE PASSE
@@ -849,21 +847,9 @@ export class AuthService {
 
   // GOOGLE OAUTH - Authentifie/crée l'utilisateur puis retourne le token métier
   async loginWithGoogle(payload: {
-    email: string;
-    firstName?: string;
-    lastName?: string;
-    image?: string | null;
-    access_token?: string;
+    idToken: string;
   }): Promise<AuthTokenResponse> {
-    const { email, firstName = '', lastName = '', image = null, access_token } = payload;
-
-    const user = await this.validateGoogleUser({
-      email,
-      firstName,
-      lastName,
-      image: image ?? undefined,
-      access_token: access_token ?? '',
-    });
+    const user = await this.validateGoogleUser(payload);
 
     return this.authenticateUser({
       id: user.id,
@@ -893,43 +879,55 @@ export class AuthService {
   }
 
   //! GOOGLE OAUTH - Validation et création d'utilisateur
-  async validateGoogleUser(googleUser: {
-    email: string;
-    firstName: string;
-    lastName: string;
-    image?: string;
-    access_token: string;
-  }) {
-    const { email, firstName, lastName, image } = googleUser;
+  private async validateGoogleUser({ idToken }: { idToken: string }) {
+    const { subject, email, firstName, lastName, image, isEmailAuthoritative } =
+      await this.googleIdentity.verify(idToken);
+    const include = {
+      clientProfile: true,
+      saasPlanDetails: { select: { agendaMode: true } },
+    } as const;
+
+    // Once linked, the stable Google subject identifies the account even if its email changes.
+    const linkedUser = await this.prisma.user.findUnique({
+      where: { googleSubject: subject },
+      include,
+    });
+    if (linkedUser) return linkedUser;
 
     // Vérifier si l'utilisateur existe déjà
     const existingUser = await this.prisma.user.findUnique({
       where: { email },
-      include: {
-        clientProfile: true,
-        saasPlanDetails: {
-          select: {
-            agendaMode: true,
-          },
-        },
-      }
+      include,
     });
 
     if (existingUser) {
-      // Utilisateur existe, vérifier l'email et retourner
-      if (!existingUser.emailVerified) {
-        await this.prisma.user.update({
-          where: { id: existingUser.id },
-          data: { emailVerified: new Date() }
-        });
+      if (existingUser.googleSubject || !isEmailAuthoritative) {
+        throw new UnauthorizedException(
+          'Connectez-vous avec votre mot de passe pour cette adresse email.',
+        );
       }
-      return existingUser;
+      // Compare-and-set prevents a simultaneous login from replacing another Google identity.
+      const linked = await this.prisma.user.updateMany({
+        where: { id: existingUser.id, googleSubject: null },
+        data: {
+          googleSubject: subject,
+          // Do not activate a password chosen before email ownership was proven.
+          ...(!existingUser.emailVerified
+            ? { emailVerified: new Date(), password: '' }
+            : {}),
+        },
+      });
+      if (linked.count !== 1) {
+        throw new UnauthorizedException('Connexion Google à réessayer.');
+      }
+      return { ...existingUser, googleSubject: subject };
     }
 
     // Créer un nouvel utilisateur client avec Google
     const newUser = await this.prisma.user.create({
       data: {
         email,
+        googleSubject: subject,
         firstName,
         lastName,
         image,

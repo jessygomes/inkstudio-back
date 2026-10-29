@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { CreateTattooHistoryDto } from './dto/create-tattoohistory.dto';
 import { PrismaService } from 'src/database/prisma.service';
 
@@ -7,7 +7,7 @@ export class TattooHistoryService {
   constructor(private readonly prisma: PrismaService) {}
 
   //! CREER UN HISTORIQUE DE TATOUAGE
-  async createHistory(data: CreateTattooHistoryDto) {
+  async createHistory(data: CreateTattooHistoryDto, userId: string) {
     try {
       const client = await this.prisma.client.findUnique({
         where: { id: data.clientId },
@@ -20,9 +20,13 @@ export class TattooHistoryService {
         };
       }
 
+      if (!userId || client.userId !== userId) {
+        throw new ForbiddenException('Non autorisé à créer un historique pour ce client.');
+      }
+
       const history = await this.prisma.tattooHistory.create({
         data: {
-          clientId: data.clientId,
+          client: { connect: { id: data.clientId, userId } },
           date: new Date(data.date),
           description: data.description,
           photo: data.photo,
@@ -41,6 +45,7 @@ export class TattooHistoryService {
         history,
       };
     } catch (error: unknown) {
+      if (error instanceof ForbiddenException) throw error;
       const message = error instanceof Error ? error.message : "Erreur inconnue";
       return { error: true, message };
     }

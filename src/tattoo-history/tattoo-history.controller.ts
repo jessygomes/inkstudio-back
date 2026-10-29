@@ -5,13 +5,14 @@ import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { RequestWithUser } from 'src/auth/jwt.strategy';
 
 @Controller('tattoo-history')
+@UseGuards(JwtAuthGuard)
 export class TattooHistoryController {
   constructor(private readonly tattooHistoryService: TattooHistoryService) {}
 
   //! CREER UN HISTORIQUE DE TATOUAGE ✅
   @Post()
-  async createHistory(@Body() body: CreateTattooHistoryDto) {
-    return this.tattooHistoryService.createHistory(body);
+  async createHistory(@Body() body: CreateTattooHistoryDto, @Request() req: RequestWithUser) {
+    return this.tattooHistoryService.createHistory(body, req.user.userId);
   }
 
   //! MODIFIER UN HISTORIQUE DE TATOUAGE ✅

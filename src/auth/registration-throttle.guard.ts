@@ -21,7 +21,7 @@ export class RegistrationThrottleGuard implements CanActivate {
   /**
    * Guard ciblé pour les endpoints d'inscription.
    *
-   * Il extrait une IP fiable (priorité à x-forwarded-for si présent),
+   * Il utilise l'IP calculée par Express selon les proxies autorisés,
    * puis consomme une tentative via le service Redis.
    */
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -71,21 +71,10 @@ export class RegistrationThrottleGuard implements CanActivate {
   }
 
   /**
-   * Résout l'IP client en tenant compte d'un reverse proxy:
-   * - x-forwarded-for: "client, proxy1, proxy2"
-   * - fallback: request.ip
+   * Utilise l'adresse résolue par la politique de confiance Express.
    */
   private extractClientIp(request: Request): string {
-    const xForwardedFor = request.headers['x-forwarded-for'];
-
-    if (typeof xForwardedFor === 'string' && xForwardedFor.length > 0) {
-      return xForwardedFor.split(',')[0].trim();
-    }
-
-    if (Array.isArray(xForwardedFor) && xForwardedFor.length > 0) {
-      return xForwardedFor[0].split(',')[0].trim();
-    }
-
+    // Express resolves the address using only explicitly trusted proxies.
     return request.ip || 'unknown-ip';
   }
 

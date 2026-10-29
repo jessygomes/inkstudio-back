@@ -17,9 +17,9 @@ export class CreateAppointmentByClientRequestDto {
   @ApiProperty({ type: CreateAppointmentDto })
   @ValidateNested()
   @Type(() => CreateAppointmentDto)
-  rdvBody: CreateAppointmentDto & { clientUserId?: string };
+  rdvBody: CreateAppointmentDto;
 
-  @ApiPropertyOptional({ description: 'ID du compte client connecté (optionnel)' })
+  @ApiPropertyOptional({ description: 'Champ de compatibilité : doit correspondre au compte client authentifié par JWT. Ne sert jamais de preuve d’identité.' })
   @IsOptional()
   @IsString()
   clientUserId?: string;

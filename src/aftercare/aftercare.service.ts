@@ -1,4 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CreateAftercareDto } from './dto/create-aftercare.dto';
 import { UpdateAftercareDto } from './dto/update-aftercare.dto';
@@ -7,88 +11,72 @@ import { UpdateAftercareDto } from './dto/update-aftercare.dto';
 export class AftercareService {
   constructor(private readonly prisma: PrismaService) {}
 
-  //! CREER UN SUIVI POST-TATOUAGE
-  async createAftercare(body: CreateAftercareDto) {
-    try {
-      const client = await this.prisma.client.findUnique({
-        where: { id: body.clientId },
-      });
-
-      if (!client) {
-        return { error: true, message: 'Client introuvable.' };
-      }
-
-      const aftercare = await this.prisma.aftercare.create({
-        data: {
-          clientId: body.clientId,
-          photoUrl: body.photoUrl,
-          comment: body.comment,
-          approved: body.approved ?? false,
-          visibleInPortfolio: body.visibleInPortfolio ?? false,
-        },
-      });
-
-      return {
-        error: false,
-        message: 'Suivi post-tatouage enregistré.',
-        aftercare,
-      };
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Erreur inconnue';
-      return { error: true, message };
-    }
+  private async requireOwnedClient(clientId: string, userId: string) {
+    const client = await this.prisma.client.findUnique({
+      where: { id: clientId },
+      select: { userId: true },
+    });
+    if (!client) throw new NotFoundException('Client introuvable.');
+    if (!userId || client.userId !== userId)
+      throw new ForbiddenException('Accès refusé à ce client.');
   }
 
-  //! MODIFIER UN SUIVI POST-TATOUAGE
-  async updateAftercare(id: string, dto: UpdateAftercareDto) {
-    try {
-      const existing = await this.prisma.aftercare.findUnique({
-        where: { id },
-      });
-  
-      if (!existing) {
-        return {
-          error: true,
-          message: 'Suivi post-tatouage introuvable.',
-        };
-      }
-  
-      const updated = await this.prisma.aftercare.update({
-        where: { id },
-        data: {
-          photoUrl: dto.photoUrl ?? undefined,
-          comment: dto.comment ?? undefined,
-          approved: dto.approved ?? undefined,
-          visibleInPortfolio: dto.visibleInPortfolio ?? undefined,
-        },
-      });
-  
-      return {
-        error: false,
-        message: 'Suivi post-tatouage mis à jour.',
-        aftercare: updated,
-      };
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Erreur inconnue';
-      return { error: true, message };
-    }
+  private async requireOwnedAftercare(id: string, userId: string) {
+    const record = await this.prisma.aftercare.findUnique({
+      where: { id },
+      select: { client: { select: { userId: true } } },
+    });
+    if (!record)
+      throw new NotFoundException('Suivi post-tatouage introuvable.');
+    if (!userId || record.client.userId !== userId)
+      throw new ForbiddenException('Accès refusé à ce suivi.');
   }
 
-  //! SUPPRIMER UN SUIVI POST-TATOUAGE
-  async deleteAftercare(id: string) {
-    try {
-      const deleted = await this.prisma.aftercare.delete({
-        where: { id },
-      });
+  async createAftercare(body: CreateAftercareDto, userId: string) {
+    await this.requireOwnedClient(body.clientId, userId);
+    const aftercare = await this.prisma.aftercare.create({
+      data: {
+        client: { connect: { id: body.clientId, userId } },
+        photoUrl: body.photoUrl,
+        comment: body.comment,
+        approved: body.approved ?? false,
+        visibleInPortfolio: body.visibleInPortfolio ?? false,
+      },
+    });
+    return {
+      error: false,
+      message: 'Suivi post-tatouage enregistré.',
+      aftercare,
+    };
+  }
 
-      return {
-        error: false,
-        message: 'Suivi post-tatouage supprimé.',
-        aftercare: deleted,
-      };
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Erreur inconnue';
-      return { error: true, message };
-    }
+  async updateAftercare(id: string, dto: UpdateAftercareDto, userId: string) {
+    await this.requireOwnedAftercare(id, userId);
+    const aftercare = await this.prisma.aftercare.update({
+      where: { id, client: { userId } },
+      data: {
+        photoUrl: dto.photoUrl ?? undefined,
+        comment: dto.comment ?? undefined,
+        approved: dto.approved ?? undefined,
+        visibleInPortfolio: dto.visibleInPortfolio ?? undefined,
+      },
+    });
+    return {
+      error: false,
+      message: 'Suivi post-tatouage mis à jour.',
+      aftercare,
+    };
+  }
+
+  async deleteAftercare(id: string, userId: string) {
+    await this.requireOwnedAftercare(id, userId);
+    const aftercare = await this.prisma.aftercare.delete({
+      where: { id, client: { userId } },
+    });
+    return {
+      error: false,
+      message: 'Suivi post-tatouage supprimé.',
+      aftercare,
+    };
   }
 }

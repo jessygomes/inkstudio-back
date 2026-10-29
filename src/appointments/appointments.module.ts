@@ -1,3 +1,4 @@
+import { SecurityThrottleModule } from '../auth/security-throttle';
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bull';
 import { AppointmentsController } from './appointments.controller';
@@ -16,6 +17,7 @@ import { AppointmentConsumablesModule } from 'src/appointment-consumables/appoin
 
 @Module({
   imports: [
+    SecurityThrottleModule,
     FollowUpModule,
     SaasModule,
     MailModule,

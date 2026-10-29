@@ -49,7 +49,7 @@ describe('public profile HTTP access with real JWT authentication', () => {
     else process.env.JWT_SECRET = originalSecret;
   });
   beforeEach(() =>
-    prisma.user.findUnique.mockResolvedValue({ publicVisibility: 'HIDDEN' }),
+    prisma.user.findUnique.mockResolvedValue({ role: 'user_salon', publicVisibility: 'HIDDEN' }),
   );
 
   it('returns 404 to anonymous visitors and invalid tokens', async () => {
@@ -76,7 +76,7 @@ describe('public profile HTTP access with real JWT authentication', () => {
   it.each(['VISIBLE', 'SEARCH_HIDDEN'])(
     'allows public access to %s profiles',
     async (publicVisibility) => {
-      prisma.user.findUnique.mockResolvedValue({ publicVisibility });
+      prisma.user.findUnique.mockResolvedValue({ role: 'user_salon', publicVisibility });
       await request(app.getHttpServer())
         .get('/visibility-fixture/owner')
         .expect(200, { accessible: true });

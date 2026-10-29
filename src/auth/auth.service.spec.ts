@@ -8,6 +8,8 @@ import { MailService } from 'src/email/mailer.service';
 import { SaasService } from 'src/saas/saas.service';
 import { StripeService } from 'src/stripe/stripe.service';
 import * as bcrypt from 'bcryptjs';
+import { UnauthorizedException } from '@nestjs/common';
+import { GoogleIdentityService } from './google-identity.service';
 
 jest.mock('bcryptjs', () => ({
   compare: jest.fn(() => true),
@@ -22,17 +24,20 @@ const createPrismaMock = () => ({
     update: jest.fn(),
   },
   $transaction: jest.fn(),
+  $queryRaw: jest.fn(),
   user: {
     findUnique: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
+    updateMany: jest.fn(),
   },
   verificationToken: {
-    deleteMany: jest.fn(),
+    findUnique: jest.fn(),
+    deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
     create: jest.fn(),
   },
   passwordResetToken: {
-    deleteMany: jest.fn(),
+    deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
     create: jest.fn(),
     findUnique: jest.fn(),
     delete: jest.fn(),
@@ -60,12 +65,15 @@ describe('AuthService', () => {
   let mail: ReturnType<typeof createMailMock>;
   let stripe: ReturnType<typeof createStripeMock>;
   let jwt: { sign: jest.Mock };
+  let googleIdentity: { verify: jest.Mock };
 
   beforeEach(async () => {
     prisma = createPrismaMock();
+    prisma.$transaction.mockImplementation(async fn => fn(prisma));
     mail = createMailMock();
     stripe = createStripeMock();
     jwt = { sign: jest.fn(() => 'jwt-token') };
+    googleIdentity = { verify: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -75,6 +83,7 @@ describe('AuthService', () => {
         { provide: MailService, useValue: mail },
         { provide: SaasService, useValue: { getPlanConfiguration: jest.fn().mockReturnValue({}) } },
         { provide: StripeService, useValue: stripe },
+        { provide: GoogleIdentityService, useValue: googleIdentity },
       ],
     }).compile();
 
@@ -740,7 +749,7 @@ describe('AuthService', () => {
         fail('Should have thrown an error');
       } catch (error: any) {
         expect(error.message).toBe(
-          'Lien de réinitialisation invalide ou expiré.',
+          'Lien invalide ou expiré.',
         );
       }
     });
@@ -750,20 +759,20 @@ describe('AuthService', () => {
       prisma.passwordResetToken.findUnique.mockResolvedValue({
         id: 'token-1',
         email: 'user@example.com',
-        token: 'valid-token',
+        token: 'a'.repeat(64),
         expires: new Date(now.getTime() - 1000), // 1 second ago
       });
 
       try {
         await service.resetPassword({
           email: 'user@example.com',
-          token: 'valid-token',
+          token: 'a'.repeat(64),
           password: 'newpassword123',
         });
         fail('Should have thrown an error');
       } catch (error: any) {
         expect(error.message).toBe(
-          'Lien de réinitialisation invalide ou expiré.',
+          'Lien invalide ou expiré.',
         );
       }
     });
@@ -773,7 +782,7 @@ describe('AuthService', () => {
       prisma.passwordResetToken.findUnique.mockResolvedValue({
         id: 'token-1',
         email: 'user@example.com',
-        token: 'valid-token',
+        token: 'a'.repeat(64),
         expires: futureDate,
       });
       prisma.user.update.mockResolvedValue({
@@ -784,7 +793,7 @@ describe('AuthService', () => {
 
       const result = await service.resetPassword({
         email: 'user@example.com',
-        token: 'valid-token',
+        token: 'a'.repeat(64),
         password: 'newpassword123',
       });
 
@@ -792,8 +801,8 @@ describe('AuthService', () => {
         where: { email: 'user@example.com' },
         data: { password: 'hashed-newpassword123' },
       });
-      expect(prisma.passwordResetToken.delete).toHaveBeenCalledWith({
-        where: { id: 'token-1' },
+      expect(prisma.passwordResetToken.deleteMany).toHaveBeenCalledWith({
+        where: expect.objectContaining({ id: 'token-1', email: 'user@example.com', token: expect.stringMatching(/^sha256:/), expires: expect.any(Object) }),
       });
       expect(result).toEqual({
         message: 'Mot de passe mis à jour avec succès.',
@@ -920,138 +929,175 @@ describe('AuthService', () => {
   });
 
   // ============================================================================
-  // TESTS POUR LA FONCTION VALIDATEGOOGLEUSER
+  // TESTS POUR LA CONNEXION GOOGLE
   // ============================================================================
 
-  // describe('validateGoogleUser()', () => {
-  //   it('returns existing user when already in database', async () => {
-  //     const existingUser = {
-  //       id: 'google-u1',
-  //       email: 'google@example.com',
-  //       firstName: 'Google',
-  //       lastName: 'User',
-  //       image: 'avatar.jpg',
-  //       emailVerified: new Date(),
-  //       clientProfile: { id: 'cp1', userId: 'google-u1' },
-  //     };
-  //     prisma.user.findUnique.mockResolvedValue(existingUser);
+  describe('loginWithGoogle()', () => {
+    const identity = {
+      subject: 'google-subject',
+      email: 'verified@gmail.com',
+      firstName: 'Verified',
+      lastName: 'User',
+      image: null,
+      isEmailAuthoritative: true,
+    };
+    const existing = {
+      id: 'existing-user',
+      email: identity.email,
+      role: 'client',
+      emailVerified: new Date(),
+      googleSubject: null,
+      clientProfile: { id: 'profile', userId: 'existing-user' },
+    };
 
-  //     await service.validateGoogleUser({
-  //       email: 'google@example.com',
-  //       firstName: 'Google',
-  //       lastName: 'User',
-  //       image: 'avatar.jpg',
-  //       access_token: 'google-token',
-  //     });
+    beforeEach(() => {
+      googleIdentity.verify.mockResolvedValue(identity);
+    });
 
-  //     expect(result).toEqual(existingUser);
-  //     expect(prisma.user.create).not.toHaveBeenCalled();
-  //   });
+    it('never reads accounts or issues a JWT when Google verification fails', async () => {
+      googleIdentity.verify.mockRejectedValue(new UnauthorizedException());
+      await expect(
+        service.loginWithGoogle({ idToken: 'forged' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
+      expect(prisma.user.create).not.toHaveBeenCalled();
+      expect(prisma.user.updateMany).not.toHaveBeenCalled();
+      expect(jwt.sign).not.toHaveBeenCalled();
+    });
 
-  //   it('verifies email for existing user when not verified', async () => {
-  //     const existingUser = {
-  //       id: 'google-u1',
-  //       email: 'google@example.com',
-  //       firstName: 'Google',
-  //       lastName: 'User',
-  //       emailVerified: null,
-  //       clientProfile: { id: 'cp1', userId: 'google-u1' },
-  //     };
-  //     prisma.user.findUnique.mockResolvedValue(existingUser);
-  //     prisma.user.update.mockResolvedValue({
-  //       ...existingUser,
-  //       emailVerified: new Date(),
-  //     });
+    it('looks up the verified subject before email and supports subsequent email changes', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        ...existing,
+        email: 'original@example.test',
+        googleSubject: identity.subject,
+      });
+      const result = await service.loginWithGoogle({ idToken: 'signed' });
+      expect(googleIdentity.verify).toHaveBeenCalledWith('signed');
+      expect(prisma.user.findUnique).toHaveBeenCalledTimes(1);
+      expect(prisma.user.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { googleSubject: identity.subject } }),
+      );
+      expect(result).toMatchObject({
+        id: existing.id,
+        email: 'original@example.test',
+      });
+      expect(prisma.user.updateMany).not.toHaveBeenCalled();
+    });
 
-  //     const result = await service.validateGoogleUser({
-  //       email: 'google@example.com',
-  //       firstName: 'Google',
-  //       lastName: 'User',
-  //       image: 'avatar.jpg',
-  //       access_token: 'google-token',
-  //     });
+    it('links an existing account only after Google establishes email ownership', async () => {
+      prisma.user.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(existing);
+      prisma.user.updateMany.mockResolvedValue({ count: 1 });
+      const result = await service.loginWithGoogle({ idToken: 'signed' });
+      expect(prisma.user.updateMany).toHaveBeenCalledWith({
+        where: { id: existing.id, googleSubject: null },
+        data: { googleSubject: identity.subject },
+      });
+      expect(result).toMatchObject({
+        id: existing.id,
+        access_token: 'jwt-token',
+        role: 'client',
+      });
+    });
 
-  //     expect(prisma.user.update).toHaveBeenCalledWith({
-  //       where: { id: 'google-u1' },
-  //       data: { emailVerified: expect.any(Date) },
-  //     });
-  //   });
+    it('can verify a previously unverified local email only after authoritative Google verification', async () => {
+      prisma.user.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ ...existing, emailVerified: null });
+      prisma.user.updateMany.mockResolvedValue({ count: 1 });
+      await service.loginWithGoogle({ idToken: 'signed' });
+      expect(prisma.user.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: {
+            googleSubject: identity.subject,
+            emailVerified: expect.any(Date),
+            password: '',
+          },
+        }),
+      );
+    });
 
-  //   it('creates new client user from Google OAuth', async () => {
-  //     prisma.user.findUnique.mockResolvedValue(null);
-  //     prisma.user.create.mockResolvedValue({
-  //       id: 'new-google-u1',
-  //       email: 'newgoogle@example.com',
-  //       firstName: 'New',
-  //       lastName: 'GoogleUser',
-  //       image: 'newavatar.jpg',
-  //       password: '',
-  //       role: 'client',
-  //       emailVerified: new Date(),
-  //       clientProfile: {
-  //         id: 'cp-new',
-  //         userId: 'new-google-u1',
-  //       },
-  //     });
+    it('refuses email-only linking for third-party addresses', async () => {
+      googleIdentity.verify.mockResolvedValue({
+        ...identity,
+        isEmailAuthoritative: false,
+      });
+      prisma.user.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(existing);
+      await expect(
+        service.loginWithGoogle({ idToken: 'signed' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(prisma.user.updateMany).not.toHaveBeenCalled();
+      expect(jwt.sign).not.toHaveBeenCalled();
+    });
 
-  //     const result = await service.validateGoogleUser({
-  //       email: 'newgoogle@example.com',
-  //       firstName: 'New',
-  //       lastName: 'GoogleUser',
-  //       image: 'newavatar.jpg',
-  //       access_token: 'google-token',
-  //     });
+    it('never replaces a different linked Google identity', async () => {
+      prisma.user.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          ...existing,
+          googleSubject: 'different-subject',
+        });
+      await expect(
+        service.loginWithGoogle({ idToken: 'signed' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(prisma.user.updateMany).not.toHaveBeenCalled();
+      expect(jwt.sign).not.toHaveBeenCalled();
+    });
 
-  //     expect(prisma.user.create).toHaveBeenCalledWith(
-  //       expect.objectContaining({
-  //         data: expect.objectContaining({
-  //           email: 'newgoogle@example.com',
-  //           firstName: 'New',
-  //           lastName: 'GoogleUser',
-  //           image: 'newavatar.jpg',
-  //           role: 'client',
-  //           password: '',
-  //           emailVerified: expect.any(Date),
-  //           clientProfile: expect.any(Object),
-  //         }),
-  //       }),
-  //     );
-  //     expect(result).toEqual(
-  //       expect.objectContaining({
-  //         email: 'newgoogle@example.com',
-  //         role: 'client',
-  //       }),
-  //     );
-  //   });
+    it('does not issue a JWT if another request already linked the account', async () => {
+      prisma.user.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(existing);
+      prisma.user.updateMany.mockResolvedValue({ count: 0 });
+      await expect(
+        service.loginWithGoogle({ idToken: 'signed' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(jwt.sign).not.toHaveBeenCalled();
+    });
 
-  //   it('creates Google user with empty password and verified email', async () => {
-  //     prisma.user.findUnique.mockResolvedValue(null);
-  //     prisma.user.create.mockResolvedValue({
-  //       id: 'google-u2',
-  //       email: 'google2@example.com',
-  //       firstName: 'GoogleUser',
-  //       lastName: 'Test',
-  //       image: undefined,
-  //       password: '',
-  //       role: 'client',
-  //       emailVerified: new Date(),
-  //       clientProfile: { id: 'cp2', userId: 'google-u2' },
-  //     });
+    it('creates a client from verified claims and ignores injected identity fields', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.user.create.mockResolvedValue({
+        ...existing,
+        googleSubject: identity.subject,
+      });
+      await service.loginWithGoogle({
+        idToken: 'signed',
+        email: 'admin@example.test',
+        role: 'admin',
+        firstName: 'Injected',
+      } as any);
+      expect(prisma.user.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            email: identity.email,
+            googleSubject: identity.subject,
+            firstName: identity.firstName,
+            role: 'client',
+            emailVerified: expect.any(Date),
+          }),
+        }),
+      );
+      expect(jwt.sign).toHaveBeenCalledWith({
+        userId: existing.id,
+        role: 'client',
+      });
+    });
 
-  //     await service.validateGoogleUser({
-  //       email: 'google2@example.com',
-  //       firstName: 'GoogleUser',
-  //       lastName: 'Test',
-  //       access_token: 'google-token',
-  //     });
+    it('preserves an existing role from the database rather than accepting a requested role', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        ...existing,
+        googleSubject: identity.subject,
+      });
+      await service.loginWithGoogle({ idToken: 'signed', role: 'admin' } as any);
+      expect(jwt.sign).toHaveBeenCalledWith({
+        userId: existing.id,
+        role: 'client',
+      });
+    });
+  });
 
-  //     expect(prisma.user.create).toHaveBeenCalledWith({
-  //       data: expect.objectContaining({
-  //         password: '',
-  //         emailVerified: expect.any(Date),
-  //       }),
-  //       include: { clientProfile: true },
-  //     });
-  //   });
-  // });
 });

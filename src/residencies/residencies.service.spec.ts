@@ -414,6 +414,16 @@ describe('Salon residencies', () => {
       venueCity: 'Paris',
     });
   });
+  it('reuses the enclosing booking transaction instead of committing the artist appointment separately', async () => {
+    const result = await service.persistAppointment({ data: {
+      userId: 'artist', performerUserId: 'artist', venueSalonId: 'paris',
+      start: new Date('2026-11-02T09:00Z'), end: new Date('2026-11-02T10:00Z'),
+    } } as any, 'artist', false, db);
+    expect(result).toMatchObject({ venueSalonId: 'paris', performerUserId: 'artist' });
+    expect(db.$transaction).not.toHaveBeenCalled();
+    expect(db.$queryRaw).toHaveBeenCalled();
+    expect(db.appointment.create).toHaveBeenCalledTimes(1);
+  });
   it('does not permit leaving a salon with upcoming appointments', async () => {
     db.appointment.count.mockResolvedValue(2);
     await expect(service.leave('r1', 'artist')).rejects.toThrow(

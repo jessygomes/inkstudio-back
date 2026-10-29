@@ -1,4 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
+import { lockInternalCalendar } from '../appointments/internal-booking-policy';
 import { AgendaMode } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma.service';
 import { CreateBlockedSlotDto } from './dto/create-blocked-slot.dto';
@@ -7,6 +9,28 @@ import { UpdateBlockedSlotDto } from './dto/update-blocked-slot.dto';
 @Injectable()
 export class BlockedTimeSlotsService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private withCalendarLock<T>(
+    userId: string,
+    work: (tx: Prisma.TransactionClient) => Promise<T>,
+    artistId?: string | null,
+  ): Promise<T> {
+    return this.prisma.$transaction(async (tx) => {
+      await lockInternalCalendar(tx, userId);
+      if (
+        artistId &&
+        !(await tx.tatoueur.findFirst({
+          where: { id: artistId, userId },
+          select: { id: true },
+        }))
+      )
+        throw new ForbiddenException(
+          'Ce tatoueur ne fait pas partie du salon.',
+        );
+      return work(tx);
+    });
+  }
+
 
   private resolveAgendaMode({
     role,
@@ -27,7 +51,10 @@ export class BlockedTimeSlotsService {
   }
 
   //! CRÉER UN CRÉNEAU BLOQUÉ
-  async createBlockedSlot(blockedSlotData: CreateBlockedSlotDto, userId: string) {
+  async createBlockedSlot(
+    blockedSlotData: CreateBlockedSlotDto,
+    userId: string,
+  ) {
     try {
       const { startDate, endDate, reason, tatoueurId } = blockedSlotData;
 
@@ -59,23 +86,28 @@ export class BlockedTimeSlotsService {
       }
 
       // Créer le créneau bloqué
-      const blockedSlot = await this.prisma.blockedTimeSlot.create({
-        data: {
-          startDate: start,
-          endDate: end,
-          reason: reason || null,
-          tatoueurId: tatoueurId || null,
-          userId,
-        },
-        include: {
-          tatoueur: {
-            select: {
-              id: true,
-              name: true,
+      const blockedSlot = await this.withCalendarLock(
+        userId,
+        async (tx) =>
+          tx.blockedTimeSlot.create({
+            data: {
+              startDate: start,
+              endDate: end,
+              reason: reason || null,
+              tatoueurId: tatoueurId || null,
+              userId,
             },
-          },
-        },
-      });
+            include: {
+              tatoueur: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+          }),
+        blockedSlotData.tatoueurId,
+      );
 
       return {
         error: false,
@@ -84,7 +116,8 @@ export class BlockedTimeSlotsService {
       };
     } catch (error: unknown) {
       console.error('Erreur lors de la création du créneau bloqué:', error);
-      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      const errorMessage =
+        error instanceof Error ? error.message : 'An unknown error occurred';
       return {
         error: true,
         message: errorMessage,
@@ -242,7 +275,11 @@ export class BlockedTimeSlotsService {
   }
 
   //! MODIFIER UN CRÉNEAU BLOQUÉ
-  async updateBlockedSlot(id: string, updateData: UpdateBlockedSlotDto, userId: string) {
+  async updateBlockedSlot(
+    id: string,
+    updateData: UpdateBlockedSlotDto,
+    userId: string,
+  ) {
     try {
       // Vérifier que le créneau bloqué appartient au salon connecté
       const existingSlot = await this.prisma.blockedTimeSlot.findFirst({
@@ -291,18 +328,23 @@ export class BlockedTimeSlotsService {
         };
       }
 
-      const updatedSlot = await this.prisma.blockedTimeSlot.update({
-        where: { id },
-        data: updatePayload,
-        include: {
-          tatoueur: {
-            select: {
-              id: true,
-              name: true,
+      const updatedSlot = await this.withCalendarLock(
+        userId,
+        async (tx) =>
+          tx.blockedTimeSlot.update({
+            where: { id, userId },
+            data: updatePayload,
+            include: {
+              tatoueur: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
             },
-          },
-        },
-      });
+          }),
+        updatePayload.tatoueurId ?? existingSlot.tatoueurId,
+      );
 
       return {
         error: false,
@@ -310,7 +352,8 @@ export class BlockedTimeSlotsService {
         blockedSlot: updatedSlot,
       };
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      const errorMessage =
+        error instanceof Error ? error.message : 'An unknown error occurred';
       return {
         error: true,
         message: errorMessage,
@@ -336,16 +379,22 @@ export class BlockedTimeSlotsService {
         };
       }
 
-      await this.prisma.blockedTimeSlot.delete({
-        where: { id },
-      });
+      await this.withCalendarLock(
+        userId,
+        async (tx) =>
+          tx.blockedTimeSlot.delete({
+            where: { id, userId },
+          }),
+        undefined,
+      );
 
       return {
         error: false,
         message: 'Créneau bloqué supprimé avec succès.',
       };
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+      const errorMessage =
+        error instanceof Error ? error.message : 'An unknown error occurred';
       return {
         error: true,
         message: errorMessage,

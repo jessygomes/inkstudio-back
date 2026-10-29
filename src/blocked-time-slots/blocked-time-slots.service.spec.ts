@@ -6,6 +6,7 @@ import { PrismaService } from 'src/database/prisma.service';
 
 // Mock factories
 const createPrismaMock = () => ({
+  $transaction: jest.fn(), $queryRaw: jest.fn(),
   blockedTimeSlot: {
     create: jest.fn(),
     findMany: jest.fn(),
@@ -14,6 +15,7 @@ const createPrismaMock = () => ({
     delete: jest.fn(),
   },
   tatoueur: {
+    findFirst: jest.fn().mockResolvedValue({id:'tatoueur-1'}),
     findUnique: jest.fn(),
   },
 });
@@ -55,6 +57,7 @@ describe('BlockedTimeSlotsService', () => {
 
   beforeEach(async () => {
     prismaMock = createPrismaMock();
+    prismaMock.$transaction.mockImplementation(async (fn) => fn(prismaMock));
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -629,7 +632,7 @@ describe('BlockedTimeSlotsService', () => {
       expect(result.error).toBe(false);
       expect(result.message).toBe('Créneau bloqué supprimé avec succès.');
       expect(prismaMock.blockedTimeSlot.delete).toHaveBeenCalledWith({
-        where: { id: 'blocked-slot-1' },
+        where: { id: 'blocked-slot-1', userId: 'salon-1' },
       });
     });
 

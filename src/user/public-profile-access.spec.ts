@@ -53,14 +53,14 @@ describe('public profile identity and access', () => {
   it.each(['VISIBLE', 'SEARCH_HIDDEN'])(
     'keeps direct profile access for %s',
     async (publicVisibility) => {
-      prisma.user.findUnique.mockResolvedValue({ publicVisibility });
+      prisma.user.findUnique.mockResolvedValue({ role: 'user_salon', publicVisibility });
       await expect(guard.canActivate(context())).resolves.toBe(true);
     },
   );
   it.each([undefined, { userId: 'other', role: 'client' }])(
     'returns 404 for a hidden profile to visitors and other clients',
     async (user) => {
-      prisma.user.findUnique.mockResolvedValue({ publicVisibility: 'HIDDEN' });
+      prisma.user.findUnique.mockResolvedValue({ role: 'user_salon', publicVisibility: 'HIDDEN' });
       await expect(guard.canActivate(context(user))).rejects.toBeInstanceOf(
         NotFoundException,
       );
@@ -70,7 +70,7 @@ describe('public profile identity and access', () => {
     { userId: 'professional', role: 'user_salon' },
     { userId: 'admin', role: 'admin' },
   ])('preserves authenticated owner and admin access', async (user) => {
-    prisma.user.findUnique.mockResolvedValue({ publicVisibility: 'HIDDEN' });
+    prisma.user.findUnique.mockResolvedValue({ role: 'user_salon', publicVisibility: 'HIDDEN' });
     await expect(guard.canActivate(context(user))).resolves.toBe(true);
   });
   it('also blocks assets accessed through an internal artist ID', async () => {
@@ -80,13 +80,13 @@ describe('public profile identity and access', () => {
       source: 'params',
     });
     prisma.tatoueur.findUnique.mockResolvedValue({ userId: 'hidden-owner' });
-    prisma.user.findUnique.mockResolvedValue({ publicVisibility: 'HIDDEN' });
+    prisma.user.findUnique.mockResolvedValue({ role: 'user_salon', publicVisibility: 'HIDDEN' });
     await expect(guard.canActivate(context())).rejects.toBeInstanceOf(
       NotFoundException,
     );
     expect(prisma.user.findUnique).toHaveBeenCalledWith({
       where: { id: 'hidden-owner' },
-      select: { publicVisibility: true },
+      select: { publicVisibility: true, role: true },
     });
   });
   it('resolves linked artist identifiers before checking visibility', async () => {
@@ -96,7 +96,7 @@ describe('public profile identity and access', () => {
       source: 'params',
     });
     prisma.tatoueur.findUnique.mockResolvedValue(null);
-    prisma.user.findUnique.mockResolvedValue({ publicVisibility: 'HIDDEN' });
+    prisma.user.findUnique.mockResolvedValue({ role: 'user_salon', publicVisibility: 'HIDDEN' });
     const ctx = {
       getHandler: () => ({}),
       switchToHttp: () => ({
@@ -108,7 +108,7 @@ describe('public profile identity and access', () => {
     );
     expect(prisma.user.findUnique).toHaveBeenCalledWith({
       where: { id: 'artist' },
-      select: { publicVisibility: true },
+      select: { publicVisibility: true, role: true },
     });
   });
   it('checks both the artist and the venue in a public booking request', async () => {
@@ -117,8 +117,8 @@ describe('public profile identity and access', () => {
       { key: 'rdvBody.venueSalonId', resource: 'user', source: 'body' },
     ]);
     prisma.user.findUnique
-      .mockResolvedValueOnce({ publicVisibility: 'VISIBLE' })
-      .mockResolvedValueOnce({ publicVisibility: 'HIDDEN' });
+      .mockResolvedValueOnce({ role: 'user_salon', publicVisibility: 'VISIBLE' })
+      .mockResolvedValueOnce({ role: 'user_salon', publicVisibility: 'HIDDEN' });
     const ctx = {
       getHandler: () => ({}),
       switchToHttp: () => ({
@@ -132,7 +132,7 @@ describe('public profile identity and access', () => {
     );
     expect(prisma.user.findUnique).toHaveBeenLastCalledWith({
       where: { id: 'venue' },
-      select: { publicVisibility: true },
+      select: { publicVisibility: true, role: true },
     });
   });
   it('does not run authentication on unrelated private routes', async () => {

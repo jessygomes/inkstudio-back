@@ -92,7 +92,7 @@ describe('TattooHistoryService', () => {
       prismaMock.client.findUnique.mockResolvedValue(client);
       prismaMock.tattooHistory.create.mockResolvedValue(history);
 
-      const result = await service.createHistory(createDto);
+      const result = await service.createHistory(createDto, 'salon-1');
 
       expect(result.error).toBe(false);
       expect(result.message).toContain('succès');
@@ -106,7 +106,7 @@ describe('TattooHistoryService', () => {
       const createDto = buildCreateTattooHistoryDto();
       prismaMock.client.findUnique.mockResolvedValue(null);
 
-      const result = await service.createHistory(createDto);
+      const result = await service.createHistory(createDto, 'salon-1');
 
       expect(result.error).toBe(true);
       expect(result.message).toContain('Client introuvable');
@@ -124,7 +124,7 @@ describe('TattooHistoryService', () => {
       prismaMock.client.findUnique.mockResolvedValue(client);
       prismaMock.tattooHistory.create.mockResolvedValue(history);
 
-      await service.createHistory(createDto);
+      await service.createHistory(createDto, 'salon-1');
 
       const callArgs = prismaMock.tattooHistory.create.mock.calls[0][0];
       expect(callArgs.data.date).toEqual(new Date('2026-02-20T15:30:00Z'));
@@ -143,7 +143,7 @@ describe('TattooHistoryService', () => {
       prismaMock.client.findUnique.mockResolvedValue(client);
       prismaMock.tattooHistory.create.mockResolvedValue(history);
 
-      await service.createHistory(createDto);
+      await service.createHistory(createDto, 'salon-1');
 
       const callArgs = prismaMock.tattooHistory.create.mock.calls[0][0];
       expect(callArgs.data).toMatchObject({
@@ -163,7 +163,7 @@ describe('TattooHistoryService', () => {
         new Error('Database error'),
       );
 
-      const result = await service.createHistory(createDto);
+      const result = await service.createHistory(createDto, 'salon-1');
 
       expect(result.error).toBe(true);
       expect(result.message).toContain('Database error');
@@ -177,7 +177,7 @@ describe('TattooHistoryService', () => {
       prismaMock.client.findUnique.mockResolvedValue(client);
       prismaMock.tattooHistory.create.mockResolvedValue(history);
 
-      const result = await service.createHistory(createDto);
+      const result = await service.createHistory(createDto, 'salon-1');
 
       expect(result.error).toBe(false);
       expect(result.history?.photo).toBeNull();
@@ -194,7 +194,7 @@ describe('TattooHistoryService', () => {
       prismaMock.client.findUnique.mockResolvedValue(client);
       prismaMock.tattooHistory.create.mockResolvedValue(history);
 
-      const result = await service.createHistory(createDto);
+      const result = await service.createHistory(createDto, 'salon-1');
 
       expect(result.error).toBe(false);
       expect(result.history).toBeDefined();
@@ -208,7 +208,7 @@ describe('TattooHistoryService', () => {
       prismaMock.client.findUnique.mockResolvedValue(client);
       prismaMock.tattooHistory.create.mockResolvedValue(history);
 
-      const result = await service.createHistory(createDto);
+      const result = await service.createHistory(createDto, 'salon-1');
 
       expect(result.history?.description).toBe(createDto.description);
       expect(result.history?.zone).toBe(createDto.zone);
@@ -528,8 +528,8 @@ describe('TattooHistoryService', () => {
         .mockResolvedValueOnce(history1)
         .mockResolvedValueOnce(history2);
 
-      const result1 = await service.createHistory(dto1);
-      const result2 = await service.createHistory(dto2);
+      const result1 = await service.createHistory(dto1, 'salon-1');
+      const result2 = await service.createHistory(dto2, 'salon-1');
 
       expect(result1.error).toBe(false);
       expect(result2.error).toBe(false);
@@ -551,7 +551,7 @@ describe('TattooHistoryService', () => {
       prismaMock.tattooHistory.update.mockResolvedValue(updatedHistory);
       prismaMock.tattooHistory.delete.mockResolvedValue(updatedHistory);
 
-      const createResult = await service.createHistory(createDto);
+      const createResult = await service.createHistory(createDto, 'salon-1');
       const updateResult = await service.updateHistory(
         history.id,
         createDto,
@@ -572,7 +572,7 @@ describe('TattooHistoryService', () => {
       prismaMock.client.findUnique.mockResolvedValue(client);
       prismaMock.tattooHistory.create.mockResolvedValue(history);
 
-      const result = await service.createHistory(createDto);
+      const result = await service.createHistory(createDto, 'salon-1');
 
       expect(result.error).toBe(false);
       expect(result.history?.price).toBe(999999);
@@ -589,7 +589,7 @@ describe('TattooHistoryService', () => {
       prismaMock.client.findUnique.mockResolvedValue(client);
       prismaMock.tattooHistory.create.mockResolvedValue(history);
 
-      const result = await service.createHistory(createDto);
+      const result = await service.createHistory(createDto, 'salon-1');
 
       expect(result.error).toBe(false);
       expect(result.history?.description?.length).toBe(1000);
@@ -606,7 +606,7 @@ describe('TattooHistoryService', () => {
       prismaMock.client.findUnique.mockResolvedValue(client);
       prismaMock.tattooHistory.create.mockResolvedValue(history);
 
-      const result = await service.createHistory(createDto);
+      const result = await service.createHistory(createDto, 'salon-1');
 
       expect(result.error).toBe(false);
       expect(result.history?.description).toBe(specialDescription);
@@ -620,7 +620,7 @@ describe('TattooHistoryService', () => {
       prismaMock.client.findUnique.mockResolvedValue(client);
       prismaMock.tattooHistory.create.mockResolvedValue(history);
 
-      const result = await service.createHistory(createDto);
+      const result = await service.createHistory(createDto, 'salon-1');
 
       expect(result.error).toBe(false);
       expect(result.history?.price).toBe(0);
@@ -638,7 +638,7 @@ describe('TattooHistoryService', () => {
       prismaMock.client.findUnique.mockResolvedValue(client);
       prismaMock.tattooHistory.create.mockResolvedValue(history);
 
-      const result = await service.createHistory(createDto);
+      const result = await service.createHistory(createDto, 'salon-1');
 
       expect(result.error).toBe(false);
       expect(result.history?.healingTime).toContain('365');
@@ -653,8 +653,8 @@ describe('TattooHistoryService', () => {
         new Error(errorMessage),
       );
 
-      const result1 = await service.createHistory(createDto);
-      const result2 = await service.createHistory(createDto);
+      const result1 = await service.createHistory(createDto, 'salon-1');
+      const result2 = await service.createHistory(createDto, 'salon-1');
 
       expect(result1.message).toContain(errorMessage);
       expect(result2.message).toContain(errorMessage);
@@ -672,8 +672,8 @@ describe('TattooHistoryService', () => {
         .mockResolvedValueOnce(history2);
 
       const [result1, result2] = await Promise.all([
-        service.createHistory(dto),
-        service.createHistory(dto),
+        service.createHistory(dto, 'salon-1'),
+        service.createHistory(dto, 'salon-1'),
       ]);
 
       expect(result1.error).toBe(false);
@@ -685,7 +685,7 @@ describe('TattooHistoryService', () => {
       const createDto = buildCreateTattooHistoryDto();
       prismaMock.client.findUnique.mockResolvedValue(null);
 
-      const result = await service.createHistory(createDto);
+      const result = await service.createHistory(createDto, 'salon-1');
 
       expect(result).toHaveProperty('error');
       expect(result).toHaveProperty('message');
@@ -709,8 +709,8 @@ describe('TattooHistoryService', () => {
         .mockResolvedValueOnce(history1)
         .mockResolvedValueOnce(history2);
 
-      const result1 = await service.createHistory(createDto1);
-      const result2 = await service.createHistory(createDto2);
+      const result1 = await service.createHistory(createDto1, 'salon-1');
+      const result2 = await service.createHistory(createDto2, 'salon-1');
 
       expect(result1.error).toBe(false);
       expect(result2.error).toBe(false);

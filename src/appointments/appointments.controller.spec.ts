@@ -1,3 +1,4 @@
+import { SecurityThrottleGuard } from '../auth/security-throttle';
 /* eslint-disable prettier/prettier */
 import { Test, TestingModule } from '@nestjs/testing';
 import { ForbiddenException } from '@nestjs/common';
@@ -11,6 +12,8 @@ describe('AppointmentsController', () => {
   let controller: AppointmentsController;
   const appointmentsService = {
     getSkinTones: jest.fn(),
+    assertAppointmentAccess: jest.fn(),
+    confirmAppointment: jest.fn(),
     getAllAppointmentsBySalon: jest.fn(),
     getAppointmentsBySalonRange: jest.fn(),
   };
@@ -38,7 +41,7 @@ describe('AppointmentsController', () => {
           },
         },
       ],
-    }).compile();
+    }).overrideGuard(SecurityThrottleGuard).useValue({canActivate: () => true}).compile();
 
     controller = module.get<AppointmentsController>(AppointmentsController);
     jest.clearAllMocks();
@@ -156,4 +159,10 @@ describe('AppointmentsController', () => {
       },
     ]);
   });
+  it('passes the authenticated actor through confirmation and checks access', async () => {
+    await controller.confirmAppointment({ user: { userId: 'salon' } } as any, 'appointment', { message: 'Confirmed' });
+    expect(appointmentsService.assertAppointmentAccess).toHaveBeenCalledWith('appointment', 'salon', true);
+    expect(appointmentsService.confirmAppointment).toHaveBeenCalledWith('appointment', 'Confirmed', 'salon');
+  });
+
 });

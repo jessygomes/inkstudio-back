@@ -511,40 +511,4 @@ export class SaasService {
         throw new BadRequestException('Plan inconnu');
     }
   }
-
-  /**
-   * 🆙 PASSER AU PLAN MEDIUM
-   */
-  async upgradeToMedium(userId: string, endDate?: Date | null) {
-    return await this.updateUserPlan(userId, SaasPlan.PRO, endDate);
-  }
-
-  /**
-   * 🚀 PASSER AU PLAN PREMIUM
-   */
-  async upgradeToPremium(userId: string, endDate?: Date | null) {
-    return await this.updateUserPlan(userId, SaasPlan.BUSINESS, endDate);
-  }
-
-  /**
-   * 🔧 CORRIGER UN PLAN EXISTANT (HELPER POUR DEBUG)
-   */
-  async fixExistingPlan(userId: string) {
-    const planDetails = await this.prisma.saasPlanDetails.findUnique({
-      where: { userId },
-    });
-
-    if (!planDetails) {
-      throw new BadRequestException('Aucun plan trouvé pour cet utilisateur');
-    }
-
-    const planConfig = this.getPlanConfiguration(planDetails.currentPlan);
-    
-    return await this.prisma.saasPlanDetails.update({
-      where: { userId },
-      data: {
-        ...planConfig,
-      },
-    });
-  }
 }

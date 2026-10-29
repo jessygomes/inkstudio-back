@@ -10,6 +10,7 @@ import { APP_GUARD, Reflector } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
 import { PrismaModule } from '../database/prisma.module';
 import { PrismaService } from '../database/prisma.service';
+import { publicProfessionalRoles } from './public-user-profile';
 
 type Target = {
   key: string;
@@ -80,10 +81,11 @@ export class PublicProfileAccessGuard
       if (!userId) throw new NotFoundException('Profil introuvable.');
       const user = await this.prisma.user.findUnique({
         where: { id: userId },
-        select: { publicVisibility: true },
+        select: { publicVisibility: true, role: true },
       });
       if (
         !user ||
+        !publicProfessionalRoles.some((role) => role === user.role) ||
         (user.publicVisibility === 'HIDDEN' &&
           req.user?.userId !== userId &&
           req.user?.role !== 'admin')

@@ -71,18 +71,7 @@ export class PublicContactThrottleGuard implements CanActivate {
   }
 
   private extractClientIp(request: Request): string {
-    const xForwardedFor = request.headers['x-forwarded-for'];
-
-    // Cas proxy/CDN: on prend la premiere IP de la chaine.
-    if (typeof xForwardedFor === 'string' && xForwardedFor.length > 0) {
-      return xForwardedFor.split(',')[0].trim();
-    }
-
-    if (Array.isArray(xForwardedFor) && xForwardedFor.length > 0) {
-      return xForwardedFor[0].split(',')[0].trim();
-    }
-
-    // Fallback local quand le header n'est pas present.
+    // Express resolves the address using only explicitly trusted proxies.
     return request.ip || 'unknown-ip';
   }
 

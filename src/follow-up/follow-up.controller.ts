@@ -1,3 +1,4 @@
+import { attachGuestUploads } from '../uploads/guest-upload-attachment';
 
 import { BadRequestException, Body, Controller, ForbiddenException, Get, Param, Post, Query, Request, ServiceUnavailableException, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
@@ -43,7 +44,7 @@ export class FollowupsController {
       }
       
       // ❌ Lien expiré (14 jours max)
-      if (req.expiresAt && req.expiresAt < new Date()) {
+      if (req.status === 'EXPIRED' || (req.expiresAt && req.expiresAt <= new Date())) {
         throw new BadRequestException('Lien expiré');
       }
       
@@ -92,12 +93,13 @@ export class FollowupsController {
     }
     
     // ❌ Lien expiré (14 jours maximum)
-    if (req.expiresAt && req.expiresAt < new Date()) {
+    if (req.status === 'EXPIRED' || (req.expiresAt && req.expiresAt <= new Date())) {
       throw new BadRequestException('Lien expiré');
     }
 
     // 💾 Créer la soumission avec photo + avis client
     if (!req.appointment) throw new BadRequestException('Le rendez-vous de ce suivi est indisponible.');
+    await attachGuestUploads(tx, [body.photoUrl], 'follow-up', [req.id]);
     const submission = await tx.followUpSubmission.create({
       data: {
         appointmentId: req.appointmentId,

@@ -1,4 +1,5 @@
 import { ResidenciesModule } from './residencies/residencies.module';
+import { UploadsModule } from './uploads/uploads.module';
 import { PublicProfileAccessModule } from './user/public-profile-access';
 import { Module } from '@nestjs/common';
 import { UserModule } from './user/user.module';
@@ -48,6 +49,7 @@ import { AppointmentPhotosModule } from './appointment-photos/appointment-photos
 
 @Module({
   imports: [
+    UploadsModule,
     PublicProfileAccessModule,
     ResidenciesModule,
     UserModule,

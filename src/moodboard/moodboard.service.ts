@@ -28,16 +28,45 @@ export class MoodboardService {
     }, select: { id: true, name: true }, orderBy: { createdAt: 'desc' } });
   }
 
-  private async assertAppointmentMoodboardAccess(moodboardId: string, appointmentId: string, userId: string) {
-    const appointment = await this.prisma.appointment.findUnique({ where: { id: appointmentId } });
-    const board = await this.prisma.moodboard.findUnique({ where: { id: moodboardId }, include: { clientProfile: true } });
-    if (!appointment || !board) throw new NotFoundException('Rendez-vous ou moodboard introuvable.');
-    if (board.clientProfile.userId !== appointment.clientUserId) throw new ForbiddenException('Ce moodboard appartient à un autre client.');
-    if (appointment.clientUserId === userId) return;
-    if (appointment.userId !== userId && appointment.performerUserId !== userId) throw new ForbiddenException('Accès refusé à ce rendez-vous.');
-    const accepted = await this.prisma.projectProposal.findFirst({ where: { moodboardId, professionalId: userId, status: 'ACCEPTED' } });
-    if (board.projectStatus === 'OPEN' && !accepted && appointment.moodboardId !== moodboardId) await assertProfessionalCanMessage(this.prisma, userId);
-    if (board.projectStatus !== 'OPEN' && !accepted && appointment.moodboardId !== moodboardId) throw new ForbiddenException('Le client doit partager ce moodboard avant de le lier.');
+  private async assertAppointmentMoodboardAccess(
+    moodboardId: string,
+    appointmentId: string,
+    userId: string,
+  ) {
+    const appointment = await this.prisma.appointment.findUnique({
+      where: { id: appointmentId },
+    });
+    const board = await this.prisma.moodboard.findUnique({
+      where: { id: moodboardId },
+      include: { clientProfile: true },
+    });
+    if (!appointment || !board)
+      throw new NotFoundException('Rendez-vous ou moodboard introuvable.');
+    if (board.clientProfile.userId !== appointment.clientUserId)
+      throw new ForbiddenException(
+        'Ce moodboard appartient à un autre client.',
+      );
+    if (appointment.clientUserId === userId) return { appointment, board };
+    if (appointment.userId !== userId && appointment.performerUserId !== userId)
+      throw new ForbiddenException('Accès refusé à ce rendez-vous.');
+    const accepted = await this.prisma.projectProposal.findFirst({
+      where: { moodboardId, professionalId: userId, status: 'ACCEPTED' },
+    });
+    if (
+      board.projectStatus === 'OPEN' &&
+      !accepted &&
+      appointment.moodboardId !== moodboardId
+    )
+      await assertProfessionalCanMessage(this.prisma, userId);
+    if (
+      board.projectStatus !== 'OPEN' &&
+      !accepted &&
+      appointment.moodboardId !== moodboardId
+    )
+      throw new ForbiddenException(
+        'Le client doit partager ce moodboard avant de le lier.',
+      );
+    return { appointment, board };
   }
 
   //! ─── UTILS ────────────────────────────────────────────────────────────────
@@ -196,25 +225,19 @@ export class MoodboardService {
     appointmentId: string,
     userId: string,
   ) {
-    await this.assertAppointmentMoodboardAccess(moodboardId, appointmentId, userId);
-
-    // Vérifier que le rdv appartient bien au client connecté
-    const appointment = await this.prisma.appointment.findUnique({
-      where: { id: appointmentId },
-    });
-
-    if (!appointment) {
-      throw new NotFoundException('Rendez-vous introuvable.');
-    }
-
-    if (appointment.clientUserId !== userId && appointment.userId !== userId && appointment.performerUserId !== userId) {
-      throw new ForbiddenException(
-        'Vous ne pouvez connecter un moodboard qu\'à vos propres rendez-vous.',
-      );
-    }
+    const { appointment, board } = await this.assertAppointmentMoodboardAccess(
+      moodboardId,
+      appointmentId,
+      userId,
+    );
 
     return this.prisma.appointment.update({
-      where: { id: appointmentId },
+      where: {
+        id: appointmentId,
+        clientUserId: board.clientProfile.userId,
+        moodboardId: appointment.moodboardId,
+        OR: [{ clientUserId: userId }, { userId }, { performerUserId: userId }],
+      },
       data: { moodboardId },
       select: { id: true, title: true, start: true, moodboardId: true },
     });
@@ -226,30 +249,24 @@ export class MoodboardService {
     appointmentId: string,
     userId: string,
   ) {
-    await this.assertAppointmentMoodboardAccess(moodboardId, appointmentId, userId);
+    const { appointment, board } = await this.assertAppointmentMoodboardAccess(
+      moodboardId,
+      appointmentId,
+      userId,
+    );
 
-    const appointment = await this.prisma.appointment.findUnique({
-      where: { id: appointmentId },
-    });
-
-    if (!appointment) {
-      throw new NotFoundException('Rendez-vous introuvable.');
-    }
-
-    if (appointment.clientUserId !== userId && appointment.userId !== userId && appointment.performerUserId !== userId) {
+    if (appointment.moodboardId !== moodboardId)
       throw new ForbiddenException(
-        'Vous ne pouvez déconnecter un moodboard que de vos propres rendez-vous.',
+        'Ce moodboard ne correspond pas au rendez-vous.',
       );
-    }
-
-    if (appointment.moodboardId !== moodboardId) {
-      throw new ForbiddenException(
-        'Ce moodboard n\'est pas connecté à ce rendez-vous.',
-      );
-    }
 
     return this.prisma.appointment.update({
-      where: { id: appointmentId },
+      where: {
+        id: appointmentId,
+        clientUserId: board.clientProfile.userId,
+        moodboardId: appointment.moodboardId,
+        OR: [{ clientUserId: userId }, { userId }, { performerUserId: userId }],
+      },
       data: { moodboardId: null },
       select: { id: true, title: true, start: true, moodboardId: true },
     });

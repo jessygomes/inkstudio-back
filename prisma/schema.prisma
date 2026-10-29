@@ -11,6 +11,7 @@ datasource db {
 }
 
 model User {
+  uploadedFiles UploadedFile[]
   projectProposalsSent ProjectProposal[] @relation("ProjectProfessional")
   projectProposalsReceived ProjectProposal[] @relation("ProjectClient")
   professionalBlocksReceived ProfessionalBlock[] @relation("BlockedProfessional")
@@ -20,6 +21,7 @@ model User {
   id                        String               @id @default(cuid())
   email                     String               @unique
   emailVerified             DateTime?
+  googleSubject             String?              @unique
   password                  String
   firstName                 String?
   lastName                  String?
@@ -176,10 +178,45 @@ model User {
   @@index([saasPlan, saasPlanUntil], map: "idx_user_saasPlan_saasPlanUntil")
 }
 
+// Ownership is recorded only by signed server callbacks, never by client URLs.
+model UploadedFile {
+  application String
+  key String
+  ownerUserId String
+  createdAt DateTime @default(now())
+  owner User @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  @@id([application, key])
+  @@index([ownerUserId])
+}
+
 enum PublicVisibility {
   VISIBLE
   SEARCH_HIDDEN
   HIDDEN
+}
+
+// Quota is held until a signed storage deletion receipt, never merely on timeout.
+model UploadReservation {
+  id          String   @id @default(uuid())
+  application String
+  ownerUserId String?
+  budgetKey   String
+  contextType String
+  contextId   String?
+  bytes       Int
+  contentType String
+  status      String   @default("RESERVED")
+  key         String?
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime
+  attachedAt  DateTime?
+
+  @@unique([application, key])
+  @@index([key])
+  @@index([budgetKey, createdAt])
+  @@index([ownerUserId, status])
+  @@index([status, createdAt])
 }
 
 //! MODEL POUR STOCKER LES INFOS D'UN CLIENT CONNECTÉ

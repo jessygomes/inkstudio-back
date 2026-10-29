@@ -16,21 +16,27 @@ import {
 } from './dto/create-appointment.dto';
 import { SkinTone } from './constants/skin-tone.constants';
 
+const policyHours = "{\"monday\":{\"start\":\"00:00\",\"end\":\"24:00\"},\"tuesday\":{\"start\":\"00:00\",\"end\":\"24:00\"},\"wednesday\":{\"start\":\"00:00\",\"end\":\"24:00\"},\"thursday\":{\"start\":\"00:00\",\"end\":\"24:00\"},\"friday\":{\"start\":\"00:00\",\"end\":\"24:00\"},\"saturday\":{\"start\":\"00:00\",\"end\":\"24:00\"},\"sunday\":{\"start\":\"00:00\",\"end\":\"24:00\"}}";
 const createPrismaMock = () => ({
+  $transaction: jest.fn(),
+  $queryRaw: jest.fn(),
+  blockedTimeSlot: { findFirst: jest.fn().mockResolvedValue(null) },
   appointment: {
     count: jest.fn(),
     findMany: jest.fn(),
     findUnique: jest.fn(),
+    findUniqueOrThrow: jest.fn(),
     findFirst: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
   },
   tatoueur: {
+    findFirst: jest.fn().mockResolvedValue({id:'internal',hours:policyHours,rdvBookingEnabled:true}),
     findUnique: jest.fn(),
     findMany: jest.fn(),
   },
   user: {
-    findUnique: jest.fn(),
+    findUnique: jest.fn().mockResolvedValue({role:'user',publicVisibility:'VISIBLE',saasPlan:'PRO',salonHours:policyHours,prestations:['PROJET','TATTOO','PIERCING','RETOUCHE'],saasPlanDetails:{currentPlan:'PRO',agendaMode:'GLOBAL'}}),
   },
   client: {
     findFirst: jest.fn(),
@@ -84,6 +90,8 @@ describe('AppointmentsService', () => {
 
   beforeEach(async () => {
     prisma = createPrismaMock();
+    prisma.appointment.findUniqueOrThrow.mockImplementation((args) => prisma.appointment.findUnique(args));
+    prisma.$transaction.mockImplementation(async (callback: (tx: typeof prisma) => unknown) => callback(prisma));
     cache = createCacheMock();
     mailService = createMailServiceMock();
     videoCallService = createVideoCallServiceMock();
@@ -113,7 +121,7 @@ describe('AppointmentsService', () => {
   describe('confirmAppointment conversation reuse', () => {
     it.each(['client-inkera', null])('uses the canonical conversation service for connected or CRM-linked clients: %s', async clientUserId => {
       const appointment = {
-        id: 'appointment', userId: 'salon', clientUserId,
+        id: 'appointment', userId: 'salon', clientUserId, status: 'PENDING',
         prestation: 'TATTOO', title: 'Tattoo', start: new Date('2026-11-01T10:00:00Z'), end: new Date('2026-11-01T11:00:00Z'),
         client: { id: 'crm-client', linkedUserId: 'linked-client', firstName: 'Jean', lastName: 'Dupont', email: 'client@example.test' },
         tatoueur: { name: 'Artist' },
@@ -122,7 +130,7 @@ describe('AppointmentsService', () => {
       prisma.appointment.update.mockResolvedValue({ ...appointment, status: 'CONFIRMED' });
       prisma.user.findUnique.mockResolvedValue({ salonName: 'Salon', email: 'salon@example.test' });
       conversationsService.createConversation.mockResolvedValue({ id: 'existing-conversation' });
-      await expect(service.confirmAppointment('appointment', '')).resolves.toMatchObject({ error: false });
+      await expect(service.confirmAppointment('appointment', '', 'salon')).resolves.toMatchObject({ error: false });
       expect(conversationsService.createConversation).toHaveBeenCalledWith('salon', expect.objectContaining({ clientUserId: clientUserId || 'linked-client', appointmentId: 'appointment' }));
     });
   });
@@ -152,7 +160,7 @@ describe('AppointmentsService', () => {
     };
 
     it('should return error when tatoueur does not exist', async () => {
-      prisma.user.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      prisma.user.findUnique.mockResolvedValueOnce({
         id: userId,
         addConfirmationEnabled: false,
         salonName: 'Salon Test',
@@ -188,7 +196,7 @@ describe('AppointmentsService', () => {
         id: tatoueurId,
         name: 'John Doe',
       });
-      prisma.user.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      prisma.user.findUnique.mockResolvedValueOnce({
         id: userId,
         salonName: 'Tattoo Studio Pro',
         saasPlan: SaasPlan.PRO,
@@ -248,7 +256,7 @@ describe('AppointmentsService', () => {
         id: tatoueurId,
         name: 'John Doe',
       });
-      prisma.user.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      prisma.user.findUnique.mockResolvedValueOnce({
         id: userId,
         salonName: 'Tattoo Studio Pro',
         saasPlan: SaasPlan.PRO,
@@ -283,7 +291,7 @@ describe('AppointmentsService', () => {
       });
       prisma.appointment.findFirst.mockResolvedValue(null);
       prisma.user.findUnique
-        .mockResolvedValueOnce(null) // clientUser lookup
+         // clientUser lookup
         .mockResolvedValueOnce({ id: userId, salonName: 'Tattoo Studio Pro' }); // salon lookup
       prisma.client.findFirst.mockResolvedValue(null);
       prisma.client.create.mockResolvedValue({
@@ -358,7 +366,7 @@ describe('AppointmentsService', () => {
       });
       prisma.appointment.findFirst.mockResolvedValue(null);
       prisma.user.findUnique
-        .mockResolvedValueOnce(null) // clientUser lookup
+         // clientUser lookup
         .mockResolvedValueOnce({ id: userId, salonName: 'Tattoo Studio Pro' }); // salon lookup
       prisma.client.findFirst.mockResolvedValue(existingClient);
       prisma.appointment.create.mockResolvedValue({
@@ -394,7 +402,7 @@ describe('AppointmentsService', () => {
       expect(mailService.sendAppointmentConfirmation).toHaveBeenCalled();
     });
 
-    it('should link connected client to appointment', async () => {
+    it('does not link a CRM record to an account based only on its email', async () => {
       const connectedClient = {
         id: 'client-user-123',
         firstName: 'Jean',
@@ -423,7 +431,7 @@ describe('AppointmentsService', () => {
       });
       prisma.appointment.findFirst.mockResolvedValue(null);
       prisma.user.findUnique
-        .mockResolvedValueOnce(connectedClient) // clientUser lookup
+         // clientUser lookup
         .mockResolvedValueOnce({ id: userId, salonName: 'Tattoo Studio Pro' }); // salon lookup
       prisma.client.findFirst.mockResolvedValue(clientRecord);
       prisma.client.update.mockResolvedValue({
@@ -458,9 +466,9 @@ describe('AppointmentsService', () => {
       });
 
       expect(result.error).toBe(false);
-      expect(result.clientLinked).toBe(true);
-      expect(prisma.client.update).toHaveBeenCalled();
-      expect(conversationsService.createConversation).toHaveBeenCalled();
+      expect(result.clientLinked).toBe(false);
+      expect(prisma.client.update).not.toHaveBeenCalled();
+      expect(conversationsService.createConversation).not.toHaveBeenCalled();
     });
 
     it('should create tattoo detail for TATTOO prestation', async () => {
@@ -470,7 +478,7 @@ describe('AppointmentsService', () => {
       });
       prisma.appointment.findFirst.mockResolvedValue(null);
       prisma.user.findUnique
-        .mockResolvedValueOnce(null)
+
         .mockResolvedValueOnce({ id: userId, salonName: 'Tattoo Studio' });
       prisma.client.findFirst.mockResolvedValue(null);
       prisma.client.create.mockResolvedValue({
@@ -543,7 +551,7 @@ describe('AppointmentsService', () => {
       });
       prisma.appointment.findFirst.mockResolvedValue(null);
       prisma.user.findUnique
-        .mockResolvedValueOnce(null)
+
         .mockResolvedValueOnce({ id: userId, salonName: 'Tattoo Studio' });
       prisma.client.findFirst.mockResolvedValue(null);
       prisma.client.create.mockResolvedValue({
@@ -612,7 +620,7 @@ describe('AppointmentsService', () => {
       });
       prisma.appointment.findFirst.mockResolvedValue(null);
       prisma.user.findUnique
-        .mockResolvedValueOnce(null)
+
         .mockResolvedValueOnce({ id: userId, salonName: 'Tattoo Studio' });
       prisma.client.findFirst.mockResolvedValue(null);
       prisma.client.create.mockResolvedValue({
@@ -677,7 +685,7 @@ describe('AppointmentsService', () => {
       });
       prisma.appointment.findFirst.mockResolvedValue(null);
       prisma.user.findUnique
-        .mockResolvedValueOnce(null)
+
         .mockResolvedValueOnce({ id: userId, salonName: 'Tattoo Studio' });
       prisma.client.findFirst.mockResolvedValue(null);
       prisma.client.create.mockResolvedValue({
@@ -735,7 +743,7 @@ describe('AppointmentsService', () => {
       });
       prisma.appointment.findFirst.mockResolvedValue(null);
       prisma.user.findUnique
-        .mockResolvedValueOnce(null)
+
         .mockResolvedValueOnce({ id: userId, salonName: 'Tattoo Studio' });
       prisma.client.findFirst.mockResolvedValue(null);
       prisma.client.create.mockResolvedValue({
@@ -792,7 +800,7 @@ describe('AppointmentsService', () => {
       });
       prisma.appointment.findFirst.mockResolvedValue(null);
       prisma.user.findUnique
-        .mockResolvedValueOnce(null)
+
         .mockResolvedValueOnce({ id: userId, salonName: 'Tattoo Studio' });
       prisma.client.findFirst.mockResolvedValue(null);
       prisma.client.create.mockResolvedValue({
@@ -880,8 +888,8 @@ describe('AppointmentsService', () => {
     const createByClientDto: CreateAppointmentDto = {
       title: 'Projet Tatouage Personnalisé',
       prestation: PrestationType.PROJET,
-      start: '2025-02-15T14:00:00Z',
-      end: '2025-02-15T16:00:00Z',
+      start: '2030-02-15T14:00:00Z',
+      end: '2030-02-15T16:00:00Z',
       clientFirstname: 'Marie',
       clientLastname: 'Martin',
       clientEmail,
@@ -910,7 +918,7 @@ describe('AppointmentsService', () => {
     });
 
     it('should return error when tatoueur does not exist', async () => {
-      prisma.user.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      prisma.user.findUnique.mockResolvedValueOnce({
         id: userId,
         addConfirmationEnabled: false,
         salonName: 'Salon Test',
@@ -941,7 +949,7 @@ describe('AppointmentsService', () => {
 
       prisma.tatoueur.findUnique.mockResolvedValue(null);
       prisma.user.findUnique
-        .mockResolvedValueOnce(null)
+
         .mockResolvedValueOnce({
           id: userId,
           addConfirmationEnabled: false,
@@ -979,7 +987,7 @@ describe('AppointmentsService', () => {
         id: tatoueurId,
         name: 'Jane Artist',
       });
-      prisma.user.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      prisma.user.findUnique.mockResolvedValueOnce({
         id: userId,
         addConfirmationEnabled: false,
         salonName: 'Business Tattoo',
@@ -1009,7 +1017,7 @@ describe('AppointmentsService', () => {
         id: tatoueurId,
         name: 'Jane Artist',
       });
-      prisma.user.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      prisma.user.findUnique.mockResolvedValueOnce({
         id: userId,
         addConfirmationEnabled: false,
         salonName: 'Business Tattoo',
@@ -1062,7 +1070,7 @@ describe('AppointmentsService', () => {
     });
 
     it('should block client booking when target profile is on FREE plan', async () => {
-      prisma.user.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      prisma.user.findUnique.mockResolvedValueOnce({
         id: userId,
         role: 'user_salon',
         saasPlan: SaasPlan.FREE,
@@ -1103,7 +1111,7 @@ describe('AppointmentsService', () => {
       // First call: look for clientUser by email -> null (no connected client)
       // Second call: get salon data
       prisma.user.findUnique
-        .mockResolvedValueOnce(null) // clientUser lookup - no connected client
+         // clientUser lookup - no connected client
         .mockResolvedValueOnce(salonData); // salon lookup
       prisma.client.findFirst.mockResolvedValue(null);
       prisma.client.create.mockResolvedValue({
@@ -1161,7 +1169,7 @@ describe('AppointmentsService', () => {
       // First call: look for clientUser by email -> null
       // Second call: get salon data
       prisma.user.findUnique
-        .mockResolvedValueOnce(null) // clientUser lookup
+         // clientUser lookup
         .mockResolvedValueOnce(salonData); // salon lookup
       prisma.client.findFirst.mockResolvedValue(null);
       prisma.client.create.mockResolvedValue({
@@ -1218,7 +1226,7 @@ describe('AppointmentsService', () => {
       };
 
       prisma.user.findUnique
-        .mockResolvedValueOnce(null) // clientUser lookup
+         // clientUser lookup
         .mockResolvedValueOnce(salonData); // salon lookup
       prisma.client.findFirst.mockResolvedValue(null);
       prisma.client.create.mockResolvedValue({
@@ -1273,7 +1281,7 @@ describe('AppointmentsService', () => {
       });
       prisma.appointment.findFirst.mockResolvedValue(null);
       prisma.user.findUnique
-        .mockResolvedValueOnce(null) // clientUser lookup
+         // clientUser lookup
         .mockResolvedValueOnce(salonData); // salon lookup
       prisma.client.findFirst.mockResolvedValue(null);
       prisma.client.create.mockResolvedValue({
@@ -1347,7 +1355,7 @@ describe('AppointmentsService', () => {
       });
       prisma.appointment.findFirst.mockResolvedValue(null);
       prisma.user.findUnique
-        .mockResolvedValueOnce(null) // clientUser lookup
+         // clientUser lookup
         .mockResolvedValueOnce(salonData); // salon lookup
       prisma.client.findFirst.mockResolvedValue(null);
       prisma.client.create.mockResolvedValue({
@@ -1390,7 +1398,7 @@ describe('AppointmentsService', () => {
     });
 
     it('should catch errors and return error response', async () => {
-      prisma.user.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      prisma.user.findUnique.mockResolvedValueOnce({
         id: userId,
         addConfirmationEnabled: false,
         salonName: 'Salon Test',
@@ -1411,7 +1419,7 @@ describe('AppointmentsService', () => {
       });
 
       expect(result.error).toBe(true);
-      expect(result.message).toBe('Tatoueur service error');
+      expect(result.message).not.toContain('Tatoueur service error');
     });
   });
 
@@ -1431,8 +1439,8 @@ describe('AppointmentsService', () => {
       status: 'CONFIRMED',
       prestation: PrestationType.TATTOO,
       tatoueurId: 'tat-1',
-      start: new Date('2025-03-01T10:00:00Z'),
-      end: new Date('2025-03-01T11:00:00Z'),
+      start: new Date('2030-03-01T10:00:00Z'),
+      end: new Date('2030-03-01T11:00:00Z'),
       visio: false,
       visioRoom: null,
       client: {
@@ -1452,8 +1460,8 @@ describe('AppointmentsService', () => {
     };
 
     const rdvBody = {
-      start: '2025-03-05T10:00:00Z',
-      end: '2025-03-05T11:00:00Z',
+      start: '2030-03-05T10:00:00Z',
+      end: '2030-03-05T11:00:00Z',
     };
 
     it('should return error when appointment is not found', async () => {

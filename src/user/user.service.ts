@@ -1,3 +1,4 @@
+import { publicProfessionalRoles, publicUserProfile, publicUserProfileSelect } from './public-user-profile';
 import { AgendaMode, SaasPlan } from '@prisma/client';
 import { styleKey } from '../portfolio/style.utils';
 import { linkedArtistBookingHref, publicDisplayName, withPublicName, publicProfessionalProfileWhere } from './public-profile.utils';
@@ -512,73 +513,11 @@ export class UserService {
    */
   private async getSlugUserProfileById(userId: string): Promise<SlugUser | null> {
     const userResult = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        email: true,
-        role: true,
-        verifiedSalon: true,
-        salonName: true, nickname: true, publicVisibility: true,
-        description: true,
-        image: true,
-        profileImage: true,
-        firstName: true,
-        lastName: true,
-        phone: true,
-        address: true,
-        city: true,
-        postalCode: true,
-        salonHours: true,
-        prestations: true,
-        style: true,
-        appointmentBookingEnabled: true,
-        projectAppointmentDurationMinutes: true,
-        projectAppointmentIsFree: true,
-        projectAppointmentPrice: true,
-        addConfirmationEnabled: true,
-        colorProfile: true,
-        colorProfileBis: true,
-        saasPlan: true,
-        saasPlanDetails: {
-          select: {
-            currentPlan: true,
-            agendaMode: true,
-          },
-        },
-        Tatoueur: {
-          select: {
-            id: true,
-            name: true,
-            img: true,
-            description: true,
-            phone: true,
-            hours: true,
-            instagram: true,
-            style: true,
-            skills: true,
-            rdvBookingEnabled: true,
-          },
-        },
-        salonPhotos: true,
-        instagram: true,
-        facebook: true,
-        tiktok: true,
-        website: true,
-        ProductSalon: {
-          select: {
-            id: true,
-            name: true,
-            description: true,
-            price: true,
-            imageUrl: true,
-            createdAt: true,
-            updatedAt: true,
-          },
-        },
-      },
+      where: { id: userId, role: { in: [...publicProfessionalRoles] }, publicVisibility: { not: 'HIDDEN' } },
+      select: publicUserProfileSelect,
     });
 
-    return userResult as unknown as SlugUser | null;
+    return publicUserProfile(userResult) as SlugUser | null;
   }
 
   /**
@@ -862,6 +801,11 @@ export class UserService {
   //! -------------------------------------------------
   //! GET USER BY ID
   //! -------------------------------------------------
+  async getPublicUserById({ userId }: { userId: string }): Promise<Record<string, unknown> | null> {
+    const profile = await this.getSlugUserProfileById(userId);
+    return profile ? this.enrichSlugUser(profile) : null;
+  }
+
   async getUserById({userId} : {userId: string}): Promise<CachedUser | null> {
     const cacheKey = `user:${userId}`;
 

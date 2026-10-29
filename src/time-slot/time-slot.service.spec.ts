@@ -1,3 +1,4 @@
+import { ServiceUnavailableException } from '@nestjs/common';
 import { AgendaMode, SaasPlan } from '@prisma/client';
 import { Test, TestingModule } from '@nestjs/testing';
 import { TimeSlotService } from './time-slot.service';
@@ -336,7 +337,7 @@ describe('TimeSlotService', () => {
           status: { in: ['PENDING', 'CONFIRMED'] },
           start: { lt: firstSlotEnd },
           end: { gt: firstSlotStart },
-          OR: [{ tatoueurId: tatoueur.id }, { performerUserId: tatoueur.id }],
+          OR: [{ tatoueurId: tatoueur.id }, { performerUserId: tatoueur.id }, { tatoueurId: null, performerUserId: null }],
         },
         select: { id: true },
       });
@@ -346,7 +347,7 @@ describe('TimeSlotService', () => {
           status: { in: ['PENDING', 'CONFIRMED'] },
           start: { lt: secondSlotEnd },
           end: { gt: secondSlotStart },
-          OR: [{ tatoueurId: tatoueur.id }, { performerUserId: tatoueur.id }],
+          OR: [{ tatoueurId: tatoueur.id }, { performerUserId: tatoueur.id }, { tatoueurId: null, performerUserId: null }],
         },
         select: { id: true },
       });
@@ -401,6 +402,7 @@ describe('TimeSlotService', () => {
           OR: [
             { tatoueurId: linkedTatoueurId },
             { performerUserId: linkedTatoueurId },
+            { tatoueurId: null, performerUserId: null },
           ],
         },
         select: { id: true },
@@ -498,13 +500,7 @@ describe('TimeSlotService', () => {
 
       prisma.tatoueur.findUnique.mockRejectedValue(new Error('DB error'));
 
-      // Should not throw, error is caught internally
-      try {
-        await service.generateTatoueurTimeSlots(date, tatoueurId);
-      } catch (error) {
-        // Service logs error and continues
-        expect(error).toBeDefined();
-      }
+      await expect(service.generateTatoueurTimeSlots(date, tatoueurId)).rejects.toThrow('DB error');
     });
   });
 
@@ -550,15 +546,7 @@ describe('TimeSlotService', () => {
       });
       prisma.appointment.findFirst.mockResolvedValue(null);
 
-      // Should not throw, error is caught and slot considered not blocked
-      const slots = await service.generateTimeSlotsForDate(
-        date,
-        salonHours,
-        userId,
-      );
-
-      // All 18 slots should be returned (error treatment = not blocked)
-      expect(slots.length).toBe(18);
+      await expect(service.generateTimeSlotsForDate(date, salonHours, userId)).rejects.toBeInstanceOf(ServiceUnavailableException);
     });
   });
 

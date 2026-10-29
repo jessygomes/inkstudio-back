@@ -9,6 +9,7 @@ import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 describe('Public follow-up HTTP journey (no user session)', () => {
   let app: INestApplication;
   let saved: boolean;
+  let expired: boolean;
   const submission = {
     token: 'test-email-token',
     rating: 5,
@@ -24,7 +25,7 @@ describe('Public follow-up HTTP journey (no user session)', () => {
             ? null
             : {
                 id: 'request',
-                status: saved ? 'SUBMITTED' : 'SENT',
+                status: expired ? 'EXPIRED' : saved ? 'SUBMITTED' : 'PENDING',
                 expiresAt: new Date(Date.now() + 86_400_000),
                 appointmentId: 'appointment',
                 appointment: {
@@ -64,6 +65,7 @@ describe('Public follow-up HTTP journey (no user session)', () => {
   });
   beforeEach(() => {
     saved = false;
+    expired = false;
   });
   afterAll(async () => {
     await app?.close();
@@ -96,4 +98,11 @@ describe('Public follow-up HTTP journey (no user session)', () => {
       .expect(400);
     expect(saved).toBe(false);
   });
+  it('rejects an explicitly expired link even when its timestamp is still in the future', async () => {
+    expired = true;
+    await request(app.getHttpServer()).get('/follow-up/requests/test-email-token').expect(400);
+    await request(app.getHttpServer()).post('/follow-up/submissions').send(submission).expect(400);
+    expect(saved).toBe(false);
+  });
+
 });

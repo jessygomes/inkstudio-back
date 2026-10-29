@@ -1,105 +1,49 @@
-import { Controller, Get, Post, Body, Param, Patch } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  Header,
+  Param,
+  Post,
+  Request,
+  UseGuards,
+} from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RequestWithUser } from '../auth/jwt.strategy';
+import { CheckFeatureDto } from './dto/check-feature.dto';
 import { SaasService } from './saas.service';
 
 @Controller('saas')
-// @UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard)
 export class SaasController {
   constructor(private readonly saasService: SaasService) {}
 
-  /**
-   * 📝 RÉCUPÉRER LES DÉTAILS DU PLAN
-   * GET /saas/plan/:userID
-   */
   @Get('plan/:userId')
-  async getPlanDetails(@Param('userId') userId: string) {
-    return await this.saasService.getUserPlanDetails(userId);
+  @Header('Cache-Control', 'private, no-store')
+  getPlanDetails(
+    @Param('userId') userId: string,
+    @Request() req: RequestWithUser,
+  ) {
+    if (req.user.userId !== userId && req.user.role !== 'admin') {
+      throw new ForbiddenException('Accès non autorisé à cet abonnement.');
+    }
+    return this.saasService.getUserPlanDetails(userId);
   }
 
-
-  /**
-   *! 🔧 VÉRIFIER SI UNE FONCTIONNALITÉ EST DISPONIBLE
-   * POST /saas/check-feature
-   * Body: { feature: 'advancedStats' | 'emailReminders' | 'customBranding' | 'apiAccess' }
-   */
   @Post('check-feature')
+  @Header('Cache-Control', 'private, no-store')
   async checkFeature(
-    @Param('userId') userId: string,
-    @Body() body: { feature: 'advancedStats' | 'emailReminders' | 'customBranding' | 'apiAccess' }
+    @Request() req: RequestWithUser,
+    @Body() body: CheckFeatureDto,
   ) {
-    const hasFeature = await this.saasService.hasFeature(userId, body.feature);
-    return { feature: body.feature, available: hasFeature };
+    const available = await this.saasService.hasFeature(
+      req.user.userId,
+      body.feature,
+    );
+    return { feature: body.feature, available };
   }
 
-  /**
-   *! 🆙 PASSER AU PLAN (FREE, MEDIUM, PREMIUM)
-   * POST /saas/upgrade/:userId
-   * Body: { plan: 'FREE' | 'MEDIUM' | 'PREMIUM', endDate?: string }
-   */
-  @Patch('upgrade/:userId')
-  async upgradePlan(
-    @Param('userId') userId: string,
-    @Body() body: { plan: 'FREE' | 'PRO' | 'BUSINESS', endDate?: string }
-  ) {
-    const endDate = body.endDate ? new Date(body.endDate) : undefined;
-    
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    const updatedPlan = await this.saasService.updateUserPlan(userId, body.plan as any, endDate);
-    return {
-      success: true,
-      message: `Plan mis à jour vers ${body.plan}`,
-      plan: updatedPlan
-    };
-  }
-
-  /**
-   *! 🆙 PASSER AU PLAN MEDIUM (HELPER)
-   * POST /saas/upgrade-pro
-   */
-  @Post('upgrade-pro')
-  async upgradeToPro(
-    @Param('userId') userId: string,
-    @Body() body: { endDate?: string }
-  ) {
-    const endDate = body.endDate ? new Date(body.endDate) : undefined;
-    
-    const updatedPlan = await this.saasService.upgradeToMedium(userId, endDate);
-    return {
-      success: true,
-      message: 'Plan mis à jour vers MEDIUM',
-      plan: updatedPlan
-    };
-  }
-
-  /**
-   *! 🚀 PASSER AU PLAN PREMIUM (HELPER)
-   * POST /saas/upgrade-business
-   */
-  @Post('upgrade-business')
-  async upgradeToBusiness(
-    @Param('userId') userId: string,
-    @Body() body: { endDate?: string }
-  ) {
-    const endDate = body.endDate ? new Date(body.endDate) : undefined;
-    
-    const updatedPlan = await this.saasService.upgradeToPremium(userId, endDate);
-    return {
-      success: true,
-      message: 'Plan mis à jour vers PREMIUM',
-      plan: updatedPlan
-    };
-  }
-
-  /**
-   *! 🔧 CORRIGER UN PLAN EXISTANT (DEBUG)
-   * POST /saas/fix-plan/:userId
-   */
-  @Post('fix-plan/:userId')
-  async fixPlan(@Param('userId') userId: string) {
-    const fixedPlan = await this.saasService.fixExistingPlan(userId);
-    return {
-      success: true,
-      message: 'Plan corrigé avec succès',
-      plan: fixedPlan
-    };
-  }
+  // Plan changes go through authenticated Stripe flows or the audited admin
+  // subscription endpoint. Legacy upgrade and repair routes are intentionally removed.
 }

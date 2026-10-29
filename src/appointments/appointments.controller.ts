@@ -1,3 +1,4 @@
+import { SecurityThrottle } from '../auth/security-throttle';
 import { Body, Controller, Delete, ForbiddenException, Get, Param, Patch, Post, Query, Request, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AppointmentsService } from './appointments.service';
@@ -6,6 +7,7 @@ import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from 'src/auth/optional-jwt-auth.guard';
+import { BookingIdentityGuard } from './booking-identity.guard';
 import { SaasLimitGuard } from 'src/saas/saas-limit.guard';
 import { SaasLimit } from 'src/saas/saas-limit.decorator';
 import { SendCustomEmailDto } from './dto/send-custom-email.dto';
@@ -34,15 +36,20 @@ export class AppointmentsController {
   }
 
   @ApiOperation({ summary: 'Créer un RDV via le parcours client (sans auth)' })
-  @ApiResponse({ status: 201, description: 'RDV créé (PENDING ou CONFIRMED selon le salon).' })
+  @ApiResponse({
+    status: 201,
+    description: 'RDV créé (PENDING ou CONFIRMED selon le salon).',
+  })
   @ApiResponse({
     status: 200,
-    description: 'Erreur métier — code LINKED_BOOKING_REDIRECT: tatoueur réservable uniquement via son profil direct.',
+    description:
+      'Erreur métier — code LINKED_BOOKING_REDIRECT: tatoueur réservable uniquement via son profil direct.',
     schema: {
       example: {
         error: true,
         code: 'LINKED_BOOKING_REDIRECT',
-        message: "La reservation client avec ce tatoueur n'est plus disponible depuis le profil du salon.",
+        message:
+          "La reservation client avec ce tatoueur n'est plus disponible depuis le profil du salon.",
         performerUserId: 'linked-user-id',
       },
     },
@@ -53,17 +60,24 @@ export class AppointmentsController {
     { key: 'rdvBody.venueSalonId', resource: 'user', source: 'body' },
   )
   @Post('by-client')
+  @SecurityThrottle('booking')
+  @UseGuards(BookingIdentityGuard)
   async createByClient(
     @Body() body: CreateAppointmentByClientRequestDto,
+    @Request() req: { user?: { userId: string; role?: string } },
   ): Promise<CreateAppointmentByClientResponse> {
     const userId = body.userId ?? body.salonId;
     const { rdvBody, clientUserId } = body;
-    const resolvedClientUserId = clientUserId ?? rdvBody?.clientUserId;
-    
+    if (clientUserId && clientUserId !== req.user?.userId) {
+      throw new ForbiddenException(
+        'L’identité client doit correspondre au compte connecté.',
+      );
+    }
+
     return await this.appointmentsService.createByClient({
       userId,
       rdvBody,
-      clientUserId: resolvedClientUserId,
+      authenticatedClientUserId: req.user?.userId,
     });
   }
 
@@ -331,7 +345,7 @@ export class AppointmentsController {
   @Patch('confirm/:id')
   async confirmAppointment(@Request() req: RequestWithUser, @Param('id') appointmentId: string, @Body() message: { message: string }) {
     await this.appointmentsService.assertAppointmentAccess(appointmentId, req.user.userId, true);
-    return await this.appointmentsService.confirmAppointment(appointmentId, message.message);
+    return await this.appointmentsService.confirmAppointment(appointmentId, message.message, req.user.userId);
   }
 
   //! COMPLETER UN RDV ✅

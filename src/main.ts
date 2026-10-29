@@ -4,11 +4,16 @@ import { ValidationPipe } from '@nestjs/common';
 import * as bodyParser from 'body-parser';
 import { corsOriginDelegate } from './config/cors.config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { trustedProxyConfig } from './config/trusted-proxy.config';
 
 async function bootstrap() {
   // Conserver les octets exacts des requêtes pour vérifier la signature Meta.
   // Le webhook Stripe ci-dessous conserve son traitement dédié.
-  const app = await NestFactory.create(AppModule, { rawBody: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    rawBody: true,
+  });
+  app.set('trust proxy', trustedProxyConfig());
 
   // On utilise un pipe pour valider les données entrantes dans les requêtes POST (permet de déclarer un modele de données genre comme ZOD)
   app.useGlobalPipes(
