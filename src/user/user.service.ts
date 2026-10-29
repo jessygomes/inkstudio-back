@@ -773,7 +773,7 @@ export class UserService {
               appointmentBookingEnabled:
                 r.salonAllowsPublicBooking &&
                 r.artistAllowsPublicBooking &&
-                r.presence !== null && canBookLinkedArtist(r.artist, r.salon),
+                canBookLinkedArtist(r.artist, r.salon),
             } as any),
             bookingHref: linkedArtistBookingHref(r.artist, found.id),
           })),

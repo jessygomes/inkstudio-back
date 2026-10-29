@@ -69,6 +69,20 @@ describe('Salon residencies', () => {
     service = new ResidenciesService(db, { delPattern: jest.fn() } as any);
   });
   afterEach(() => jest.useRealTimers());
+  it('lists both authorized Business salons even when one has no presence configured', async () => {
+    db.user.findUnique.mockResolvedValue({ saasPlan: 'FREE' });
+    db.salonResidency.findMany.mockResolvedValue([
+      { ...member, salon: { id: 'paris', role: 'user_salon', saasPlan: 'BUSINESS' } },
+      { ...member, id: 'r2', salonId: 'raven', presence: null, salon: { id: 'raven', role: 'user_salon', saasPlan: 'BUSINESS' } },
+    ]);
+    const salons = await service.publicSalons('artist');
+    expect(salons).toHaveLength(2);
+    expect(salons).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'paris', publicBookingEnabled: true }),
+      expect.objectContaining({ id: 'raven', publicBookingEnabled: true }),
+    ]));
+  });
+
   it('preserves an artist’s historical appointments while hiding them in FREE and revealing them in PRO', async () => {
     db.appointment.findUnique.mockResolvedValue({ userId: 'paris', performerUserId: 'artist', venueSalonId: 'paris' });
     db.user.findUnique.mockResolvedValue({ role: 'user_tatoueur', saasPlan: 'FREE' });

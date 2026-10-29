@@ -162,7 +162,7 @@ export class ResidenciesService {
           publicBookingEnabled:
             r.salonAllowsPublicBooking &&
             r.artistAllowsPublicBooking &&
-            !!state.presence && canBookLinkedArtist(artist || {}, r.salon),
+            canBookLinkedArtist(artist || {}, r.salon),
         };
       })
       .sort(
