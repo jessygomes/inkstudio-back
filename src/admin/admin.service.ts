@@ -1,3 +1,4 @@
+import { getActivityChart, type ActivityChartQuery } from './activity-chart';
 import { getActivityStats, type ActivityQuery } from './activity-stats';
 import { getMembershipDuration } from './account-membership';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
@@ -9,6 +10,10 @@ import { findClosestStyle, styleKey } from 'src/portfolio/style.utils';
 
 @Injectable()
 export class AdminService {
+  getActivityChart(query: ActivityChartQuery) {
+    return getActivityChart(this.prisma, query);
+  }
+
   getActivityStats(query: ActivityQuery) {
     return getActivityStats(this.prisma, query);
   }
