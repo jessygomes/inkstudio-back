@@ -740,3 +740,24 @@ SMTP_PASS=your-app-password
 3. **Rate limiting** recommandé sur les routes d'authentification
 4. **Logs de sécurité** pour surveiller les tentatives de connexion
 5. **Refresh tokens** non implémentés (à considérer pour l'amélioration)
+
+---
+
+## Connexion avec Apple (clients uniquement)
+
+`POST /auth/apple` — rate-limité (`apple`), réponse identique à `/auth/google` (`AuthTokenResponse`).
+
+```json
+{
+  "identityToken": "<JWT Apple, obligatoire>",
+  "nonce": "<nonce brut envoyé à Apple, recommandé>",
+  "firstName": "<optionnel, 1re connexion seulement>",
+  "lastName": "<optionnel, 1re connexion seulement>"
+}
+```
+
+- Le jeton est vérifié côté serveur (signature via https://appleid.apple.com/auth/keys, `iss`, `aud`, `exp`, `nonce`).
+- Variable d'environnement : `APPLE_CLIENT_ID` = bundle ID (app iOS) et/ou Services ID (web), séparés par des virgules. Sans elle, la route répond 503.
+- Le nom n'est fourni par Apple qu'à la 1re autorisation, hors jeton signé : il sert uniquement à créer le compte.
+- Compte lié par `appleSubject` (unique). Liaison à un compte existant par email uniquement si l'email est vérifié par Apple et n'est pas une adresse `privaterelay.appleid.com`.
+- Réservé au rôle `client` : un compte tatoueur/salon est refusé (401).

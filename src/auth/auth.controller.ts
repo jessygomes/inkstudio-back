@@ -15,6 +15,7 @@ import { CachedUser } from 'utils/type';
 import { RegistrationThrottleGuard } from './registration-throttle.guard';
 import { invitationTokenHash } from './invitation-policy';
 import { GoogleLoginDto } from './dto/google-login.dto';
+import { AppleLoginDto } from './dto/apple-login.dto';
 // import { GoogleAuthGuard } from './guards/google-auth/google-auth.guard';
 
 
@@ -40,6 +41,17 @@ export class AuthController {
   async googleLogin(@Body() body: GoogleLoginDto): Promise<AuthTokenResponse> {
     return await this.authService.loginWithGoogle({
       idToken: body.idToken,
+    });
+  }
+
+  @SecurityThrottle('apple')
+  @Post('apple') // POST /auth/apple
+  async appleLogin(@Body() body: AppleLoginDto): Promise<AuthTokenResponse> {
+    return await this.authService.loginWithApple({
+      identityToken: body.identityToken,
+      nonce: body.nonce,
+      firstName: body.firstName,
+      lastName: body.lastName,
     });
   }
 

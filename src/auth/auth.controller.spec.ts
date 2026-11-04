@@ -14,7 +14,7 @@ import { RegistrationThrottleGuard } from './registration-throttle.guard';
 
 describe('AuthController', () => {
   let app: INestApplication;
-  const authService = { loginWithGoogle: jest.fn() };
+  const authService = { loginWithGoogle: jest.fn(), loginWithApple: jest.fn() };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -86,5 +86,50 @@ describe('AuthController', () => {
       .send({ idToken: 'forged-jwt' })
       .expect(401);
     expect(response.body.message).toBe('Jeton Google invalide ou expiré.');
+  });
+
+  it.each([
+    { email: 'admin@example.test' },
+    { identityToken: '' },
+    { identityToken: 123 },
+    { identityToken: 'x'.repeat(16385) },
+    { identityToken: 'ok', nonce: 'n'.repeat(257) },
+  ])('rejects an Apple login without valid input: %p', async (body) => {
+    await request(app.getHttpServer()).post('/auth/apple').send(body).expect(400);
+    expect(authService.loginWithApple).not.toHaveBeenCalled();
+  });
+
+  it('forwards only the token, nonce and cosmetic name to the Apple login', async () => {
+    authService.loginWithApple.mockResolvedValue({ access_token: 'jwt' });
+    await request(app.getHttpServer())
+      .post('/auth/apple')
+      .send({
+        identityToken: 'apple-token',
+        nonce: 'raw',
+        firstName: 'Jean',
+        lastName: 'Dupont',
+        email: 'admin@example.test',
+        role: 'admin',
+        appleSubject: 'forged',
+      })
+      .expect(201)
+      .expect({ access_token: 'jwt' });
+    expect(authService.loginWithApple).toHaveBeenCalledWith({
+      identityToken: 'apple-token',
+      nonce: 'raw',
+      firstName: 'Jean',
+      lastName: 'Dupont',
+    });
+  });
+
+  it('returns 401 when the Apple token is rejected', async () => {
+    authService.loginWithApple.mockRejectedValue(
+      new UnauthorizedException('Jeton Apple invalide ou expiré.'),
+    );
+    const response = await request(app.getHttpServer())
+      .post('/auth/apple')
+      .send({ identityToken: 'forged' })
+      .expect(401);
+    expect(response.body.message).toBe('Jeton Apple invalide ou expiré.');
   });
 });

@@ -10,6 +10,7 @@ import { StripeService } from 'src/stripe/stripe.service';
 import * as bcrypt from 'bcryptjs';
 import { UnauthorizedException } from '@nestjs/common';
 import { GoogleIdentityService } from './google-identity.service';
+import { AppleIdentityService } from './apple-identity.service';
 
 jest.mock('bcryptjs', () => ({
   compare: jest.fn(() => true),
@@ -66,6 +67,7 @@ describe('AuthService', () => {
   let stripe: ReturnType<typeof createStripeMock>;
   let jwt: { sign: jest.Mock };
   let googleIdentity: { verify: jest.Mock };
+  let appleIdentity: { verify: jest.Mock };
 
   beforeEach(async () => {
     prisma = createPrismaMock();
@@ -74,6 +76,7 @@ describe('AuthService', () => {
     stripe = createStripeMock();
     jwt = { sign: jest.fn(() => 'jwt-token') };
     googleIdentity = { verify: jest.fn() };
+    appleIdentity = { verify: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -84,6 +87,7 @@ describe('AuthService', () => {
         { provide: SaasService, useValue: { getPlanConfiguration: jest.fn().mockReturnValue({}) } },
         { provide: StripeService, useValue: stripe },
         { provide: GoogleIdentityService, useValue: googleIdentity },
+        { provide: AppleIdentityService, useValue: appleIdentity },
       ],
     }).compile();
 
@@ -1093,6 +1097,197 @@ describe('AuthService', () => {
         googleSubject: identity.subject,
       });
       await service.loginWithGoogle({ idToken: 'signed', role: 'admin' } as any);
+      expect(jwt.sign).toHaveBeenCalledWith({
+        userId: existing.id,
+        role: 'client',
+      });
+    });
+  });
+
+  // ============================================================================
+  // TESTS POUR LA CONNEXION APPLE
+  // ============================================================================
+
+  describe('loginWithApple()', () => {
+    const identity = {
+      subject: 'apple-subject',
+      email: 'client@example.test',
+      isEmailAuthoritative: true,
+    };
+    const existing = {
+      id: 'existing-client',
+      email: identity.email,
+      role: 'client',
+      emailVerified: new Date(),
+      appleSubject: null,
+      clientProfile: { id: 'profile', userId: 'existing-client' },
+    };
+
+    beforeEach(() => {
+      appleIdentity.verify.mockResolvedValue(identity);
+    });
+
+    it('never reads accounts or issues a JWT when Apple verification fails', async () => {
+      appleIdentity.verify.mockRejectedValue(new UnauthorizedException());
+      await expect(
+        service.loginWithApple({ identityToken: 'forged' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
+      expect(prisma.user.create).not.toHaveBeenCalled();
+      expect(jwt.sign).not.toHaveBeenCalled();
+    });
+
+    it('forwards the token and nonce to the verifier', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        ...existing,
+        appleSubject: identity.subject,
+      });
+      await service.loginWithApple({ identityToken: 'signed', nonce: 'n' });
+      expect(appleIdentity.verify).toHaveBeenCalledWith('signed', 'n');
+    });
+
+    it('looks up the Apple subject first, even with a relay email change', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        ...existing,
+        email: 'relay@privaterelay.appleid.com',
+        appleSubject: identity.subject,
+      });
+      const result = await service.loginWithApple({ identityToken: 'signed' });
+      expect(prisma.user.findUnique).toHaveBeenCalledTimes(1);
+      expect(prisma.user.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { appleSubject: identity.subject } }),
+      );
+      expect(result).toMatchObject({ id: existing.id, access_token: 'jwt-token' });
+    });
+
+    it('refuses a linked account that is not a client', async () => {
+      prisma.user.findUnique.mockResolvedValue({
+        ...existing,
+        role: 'user_tatoueur',
+        appleSubject: identity.subject,
+      });
+      await expect(
+        service.loginWithApple({ identityToken: 'signed' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(jwt.sign).not.toHaveBeenCalled();
+    });
+
+    it('refuses to link a non-client account matched by email', async () => {
+      prisma.user.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ ...existing, role: 'user_salon' });
+      await expect(
+        service.loginWithApple({ identityToken: 'signed' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(prisma.user.updateMany).not.toHaveBeenCalled();
+      expect(jwt.sign).not.toHaveBeenCalled();
+    });
+
+    it('links an existing client only after Apple establishes email ownership', async () => {
+      prisma.user.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(existing);
+      prisma.user.updateMany.mockResolvedValue({ count: 1 });
+      const result = await service.loginWithApple({ identityToken: 'signed' });
+      expect(prisma.user.updateMany).toHaveBeenCalledWith({
+        where: { id: existing.id, appleSubject: null },
+        data: { appleSubject: identity.subject },
+      });
+      expect(result).toMatchObject({ id: existing.id, role: 'client' });
+    });
+
+    it('resets the password of a previously unverified local email on link', async () => {
+      prisma.user.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ ...existing, emailVerified: null });
+      prisma.user.updateMany.mockResolvedValue({ count: 1 });
+      await service.loginWithApple({ identityToken: 'signed' });
+      expect(prisma.user.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: {
+            appleSubject: identity.subject,
+            emailVerified: expect.any(Date),
+            password: '',
+          },
+        }),
+      );
+    });
+
+    it('refuses email-only linking when the email is not authoritative (relay/unverified)', async () => {
+      appleIdentity.verify.mockResolvedValue({
+        ...identity,
+        isEmailAuthoritative: false,
+      });
+      prisma.user.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(existing);
+      await expect(
+        service.loginWithApple({ identityToken: 'signed' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(prisma.user.updateMany).not.toHaveBeenCalled();
+      expect(jwt.sign).not.toHaveBeenCalled();
+    });
+
+    it('never replaces a different linked Apple identity', async () => {
+      prisma.user.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ ...existing, appleSubject: 'different' });
+      await expect(
+        service.loginWithApple({ identityToken: 'signed' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(prisma.user.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('does not issue a JWT if another request already linked the account', async () => {
+      prisma.user.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(existing);
+      prisma.user.updateMany.mockResolvedValue({ count: 0 });
+      await expect(
+        service.loginWithApple({ identityToken: 'signed' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(jwt.sign).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unknown Apple subject that has no email', async () => {
+      appleIdentity.verify.mockResolvedValue({
+        ...identity,
+        email: null,
+        isEmailAuthoritative: false,
+      });
+      prisma.user.findUnique.mockResolvedValue(null);
+      await expect(
+        service.loginWithApple({ identityToken: 'signed' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('creates a client from verified claims, using the supplied name only cosmetically', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.user.create.mockResolvedValue({
+        ...existing,
+        appleSubject: identity.subject,
+      });
+      await service.loginWithApple({
+        identityToken: 'signed',
+        firstName: ' Jean ',
+        lastName: 'Dupont',
+        email: 'admin@example.test',
+        role: 'admin',
+      } as any);
+      expect(prisma.user.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            email: identity.email,
+            appleSubject: identity.subject,
+            firstName: 'Jean',
+            lastName: 'Dupont',
+            role: 'client',
+            password: '',
+            emailVerified: expect.any(Date),
+          }),
+        }),
+      );
       expect(jwt.sign).toHaveBeenCalledWith({
         userId: existing.id,
         role: 'client',

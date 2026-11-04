@@ -17,6 +17,7 @@ import { StripeService } from 'src/stripe/stripe.service';
 import { AgendaMode, SaasPlan, SaasPlanStatus } from '@prisma/client';
 import { CacheService } from 'src/redis/cache.service';
 import { GoogleIdentityService } from './google-identity.service';
+import { AppleIdentityService } from './apple-identity.service';
 
 interface AuthenticatedUser {
   id: string;
@@ -83,6 +84,7 @@ export class AuthService {
     private readonly saasService: SaasService,
     private readonly stripeService: StripeService,
     private readonly googleIdentity: GoogleIdentityService,
+    private readonly appleIdentity: AppleIdentityService,
     @Optional() private readonly cacheService?: CacheService,
   ) {}
 
@@ -850,7 +852,43 @@ export class AuthService {
     idToken: string;
   }): Promise<AuthTokenResponse> {
     const user = await this.validateGoogleUser(payload);
+    return this.authenticateSocialUser(user);
+  }
 
+  // APPLE SIGN IN - réservé aux comptes client
+  async loginWithApple(payload: {
+    identityToken: string;
+    nonce?: string;
+    firstName?: string;
+    lastName?: string;
+  }): Promise<AuthTokenResponse> {
+    const user = await this.validateAppleUser(payload);
+    return this.authenticateSocialUser(user);
+  }
+
+  private authenticateSocialUser(user: {
+    id: string;
+    role: string;
+    salonName?: string | null;
+    email: string;
+    firstName?: string | null;
+    lastName?: string | null;
+    image?: string | null;
+    saasPlan?: string | null;
+    saasPlanDetails?: { agendaMode?: string | null } | null;
+    phone?: string | null;
+    address?: string | null;
+    verifiedSalon?: boolean | null;
+    salonHours?: string | null;
+    clientProfile?: {
+      id: string;
+      userId: string;
+      pseudo?: string | null;
+      birthDate?: Date | null;
+      city?: string | null;
+      postalCode?: string | null;
+    } | null;
+  }): AuthTokenResponse {
     return this.authenticateUser({
       id: user.id,
       role: user.role,
@@ -951,5 +989,89 @@ export class AuthService {
     });
 
     return newUser;
+  }
+
+  //! APPLE SIGN IN - Validation et création d'utilisateur (rôle client uniquement)
+  private async validateAppleUser({
+    identityToken,
+    nonce,
+    firstName,
+    lastName,
+  }: {
+    identityToken: string;
+    nonce?: string;
+    firstName?: string;
+    lastName?: string;
+  }) {
+    const { subject, email, isEmailAuthoritative } =
+      await this.appleIdentity.verify(identityToken, nonce);
+    const include = {
+      clientProfile: true,
+      saasPlanDetails: { select: { agendaMode: true } },
+    } as const;
+    const clientOnly = () =>
+      new UnauthorizedException(
+        "La connexion avec Apple est réservée aux comptes client.",
+      );
+
+    // Once linked, the stable Apple subject identifies the account (email may be a relay).
+    const linkedUser = await this.prisma.user.findUnique({
+      where: { appleSubject: subject },
+      include,
+    });
+    if (linkedUser) {
+      if (linkedUser.role !== 'client') throw clientOnly();
+      return linkedUser;
+    }
+
+    // Apple omits the email in some flows; without it we can neither link nor create.
+    if (!email) {
+      throw new UnauthorizedException(
+        "Apple n'a pas fourni d'adresse email pour ce compte.",
+      );
+    }
+
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email },
+      include,
+    });
+
+    if (existingUser) {
+      if (existingUser.role !== 'client') throw clientOnly();
+      if (existingUser.appleSubject || !isEmailAuthoritative) {
+        throw new UnauthorizedException(
+          'Connectez-vous avec votre mot de passe pour cette adresse email.',
+        );
+      }
+      // Compare-and-set prevents a simultaneous login from replacing another Apple identity.
+      const linked = await this.prisma.user.updateMany({
+        where: { id: existingUser.id, appleSubject: null },
+        data: {
+          appleSubject: subject,
+          // Do not activate a password chosen before email ownership was proven.
+          ...(!existingUser.emailVerified
+            ? { emailVerified: new Date(), password: '' }
+            : {}),
+        },
+      });
+      if (linked.count !== 1) {
+        throw new UnauthorizedException('Connexion Apple à réessayer.');
+      }
+      return { ...existingUser, appleSubject: subject };
+    }
+
+    return await this.prisma.user.create({
+      data: {
+        email,
+        appleSubject: subject,
+        firstName: firstName?.trim() || '',
+        lastName: lastName?.trim() || '',
+        password: '', // Pas de mot de passe pour Apple
+        role: 'client',
+        emailVerified: new Date(), // Email vérifié par Apple
+        clientProfile: { create: {} },
+      },
+      include,
+    });
   }
 }
