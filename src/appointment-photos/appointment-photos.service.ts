@@ -6,7 +6,7 @@ import { AddAppointmentPhotosDto } from './dto/add-appointment-photos.dto';
 export class AppointmentPhotosService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private async authorize(appointmentId: string, userId: string) {
+  async authorize(appointmentId: string, userId: string) {
     const appointment = await this.prisma.appointment.findUnique({ where: { id: appointmentId } });
     if (!appointment) throw new NotFoundException('Rendez-vous introuvable.');
     if (appointment.userId !== userId && appointment.performerUserId !== userId) {

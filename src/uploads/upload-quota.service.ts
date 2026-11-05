@@ -57,6 +57,37 @@ export class UploadQuotaService {
     private readonly jwt: JwtService,
   ) {}
 
+  /**
+   * Signe une demande « interne » avec le même contrat que le frontend web (HMAC sur action + payload).
+   * Permet à un endpoint du backend (ex. envoi de photos depuis l'app mobile) de réutiliser prepare / complete / deleted
+   * sans dupliquer la logique de quota ni l'enregistrement des fichiers.
+   */
+  sign(
+    action: 'prepare' | 'complete' | 'deleted',
+    payload: Record<string, unknown>,
+  ): { body: SignedUploadDto; signature: string } {
+    const secret = process.env.UPLOAD_OWNERSHIP_PRO_SECRET;
+    if (!secret || Buffer.byteLength(secret) < 32)
+      throw new ServiceUnavailableException('Upload authorization unavailable');
+    const body: SignedUploadDto = {
+      application: 'pro',
+      payload: JSON.stringify(payload),
+      timestamp: Date.now(),
+    };
+    const signature = createHmac('sha256', secret)
+      .update(
+        JSON.stringify([
+          'upload-v2',
+          action,
+          body.application,
+          body.payload,
+          body.timestamp,
+        ]),
+      )
+      .digest('hex');
+    return { body, signature };
+  }
+
   private unpack(
     action: string,
     body: SignedUploadDto,

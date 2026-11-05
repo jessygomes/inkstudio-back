@@ -10,5 +10,6 @@ import { UploadQuotaController } from './upload-quota.controller';
   imports: [SecurityThrottleModule],
   controllers: [UploadsController, UploadQuotaController],
   providers: [PrismaService, UploadsService, UploadQuotaService],
+  exports: [UploadQuotaService],
 })
 export class UploadsModule {}
