@@ -504,7 +504,7 @@ export class SaasService {
           hasEmailReminders: true,
           hasCustomBranding: true,
           hasApiAccess: true,
-          monthlyPrice: businessPlan, // 89.99
+          monthlyPrice: businessPlan, // 95.99
         };
       
       default:
