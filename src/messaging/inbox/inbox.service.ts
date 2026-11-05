@@ -175,6 +175,29 @@ export class InboxService {
     return { ...thread, contactBlocked };
   }
 
+  /**
+   * Fil d'inbox d'une conversation Inkera : l'app mobile ouvre une conversation par son identifiant.
+   * Le fil est créé s'il n'existe pas encore (anciennes conversations), comme à la création d'une conversation.
+   */
+  async getThreadByConversation(userId: string, conversationId: string) {
+    let existing = await this.prisma.inboxThread.findUnique({ where: { conversationId }, select: { id: true } });
+    if (!existing) {
+      const conversation = await this.prisma.conversation.findUnique({
+        where: { id: conversationId }, select: { id: true, salonId: true, lastMessageAt: true },
+      });
+      if (!conversation) throw new NotFoundException('Conversation introuvable');
+      // Seul le salon propriétaire crée le fil ; un indépendant lié n'y accède que sur affectation (vérifié par getThread).
+      if (conversation.salonId !== userId) throw new ForbiddenException('Conversation non attribuée à votre compte');
+      existing = await this.prisma.inboxThread.upsert({
+        where: { conversationId },
+        create: { ownerUserId: conversation.salonId, channel: InboxChannel.INKERA, conversationId, lastMessageAt: conversation.lastMessageAt },
+        update: {},
+        select: { id: true },
+      });
+    }
+    return this.getThread(userId, existing.id);
+  }
+
   async getMessages(userId: string, threadId: string, page = 1, limit = 50) {
     const thread = await this.assertAccess(userId, threadId);
     const currentPage = Math.max(1, Number(page) || 1);

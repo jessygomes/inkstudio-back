@@ -20,7 +20,7 @@ function createMock() {
   return {
     professionalBlock: { findUnique: jest.fn().mockResolvedValue(null) },
     user: { findUnique: jest.fn() },
-    inboxThread: { findMany: jest.fn(), findUnique: jest.fn(), count: jest.fn(), update: jest.fn() },
+    inboxThread: { findMany: jest.fn(), findUnique: jest.fn(), count: jest.fn(), update: jest.fn(), upsert: jest.fn() },
     inboxMemberPermission: { findUnique: jest.fn(), upsert: jest.fn() },
     tatoueur: { findUnique: jest.fn() },
     client: { findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn() },
@@ -32,7 +32,7 @@ function createMock() {
     savedReply: { findMany: jest.fn(), create: jest.fn() },
     message: { create: jest.fn(), findMany: jest.fn(), count: jest.fn(), updateMany: jest.fn() },
     externalMessage: { findMany: jest.fn(), count: jest.fn() },
-    conversation: { update: jest.fn() },
+    conversation: { update: jest.fn(), findUnique: jest.fn() },
   };
 }
 
@@ -349,5 +349,50 @@ describe('InboxService: droits, fonctionnalités et non-régression', () => {
     expect(prisma.savedReply.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ ownerUserId: 'artist-a', createdByUserId: 'artist-a' }),
     }));
+  });
+});
+
+describe('InboxService.getThreadByConversation', () => {
+  let prisma: ReturnType<typeof createMock>;
+  let service: InboxService;
+  const conversation = { id: 'conversation-a', salonId: 'salon-a', lastMessageAt: new Date('2026-10-22') };
+
+  beforeEach(() => {
+    prisma = createMock();
+    service = new InboxService(prisma as unknown as PrismaService, {} as unknown as MessageNotificationService);
+    prisma.user.findUnique.mockImplementation(async ({ where }: any) => (where.id === 'salon-a' ? salon : where.id === 'salon-b' ? { ...salon, id: 'salon-b' } : null));
+    prisma.inboxMemberPermission.findUnique.mockResolvedValue(null);
+  });
+
+  it('retrouve le fil existant d\'une conversation sans rien créer', async () => {
+    prisma.inboxThread.findUnique.mockImplementation(async ({ where }: any) => (where.conversationId ? { id: 'thread-a' } : thread));
+    const result = await service.getThreadByConversation('salon-a', 'conversation-a');
+    expect(result.id).toBe('thread-a');
+    expect(prisma.inboxThread.upsert).not.toHaveBeenCalled();
+  });
+
+  it('crée le fil d\'une ancienne conversation pour le salon propriétaire', async () => {
+    prisma.inboxThread.findUnique.mockImplementation(async ({ where }: any) => (where.conversationId ? null : thread));
+    prisma.conversation.findUnique.mockResolvedValue(conversation);
+    prisma.inboxThread.upsert.mockResolvedValue({ id: 'thread-a' });
+    const result = await service.getThreadByConversation('salon-a', 'conversation-a');
+    expect(result.id).toBe('thread-a');
+    expect(prisma.inboxThread.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { conversationId: 'conversation-a' },
+      create: expect.objectContaining({ ownerUserId: 'salon-a', channel: InboxChannel.INKERA, conversationId: 'conversation-a' }),
+    }));
+  });
+
+  it('ne crée pas le fil pour un autre professionnel que le salon propriétaire', async () => {
+    prisma.inboxThread.findUnique.mockResolvedValue(null);
+    prisma.conversation.findUnique.mockResolvedValue(conversation);
+    await expect(service.getThreadByConversation('salon-b', 'conversation-a')).rejects.toThrow(ForbiddenException);
+    expect(prisma.inboxThread.upsert).not.toHaveBeenCalled();
+  });
+
+  it('signale une conversation inexistante', async () => {
+    prisma.inboxThread.findUnique.mockResolvedValue(null);
+    prisma.conversation.findUnique.mockResolvedValue(null);
+    await expect(service.getThreadByConversation('salon-a', 'inconnue')).rejects.toThrow(NotFoundException);
   });
 });

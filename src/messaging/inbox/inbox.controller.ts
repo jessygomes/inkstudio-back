@@ -39,6 +39,11 @@ export class InboxController {
     return this.inbox.setMemberPermission(req.user.userId, memberUserId, dto);
   }
 
+  @Get('by-conversation/:conversationId')
+  getThreadByConversation(@Request() req: RequestWithUser, @Param('conversationId') conversationId: string) {
+    return this.inbox.getThreadByConversation(req.user.userId, conversationId);
+  }
+
   @Get(':threadId')
   getThread(@Request() req: RequestWithUser, @Param('threadId') threadId: string) {
     return this.inbox.getThread(req.user.userId, threadId);
