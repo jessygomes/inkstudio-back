@@ -2201,8 +2201,12 @@ export class AppointmentsService {
               lastName: true,
               email: true,
               phone: true,
+              // Photo de profil du compte Inkera People lié à la fiche, s'il existe.
+              linkedUser: { select: { image: true } },
             },
           },
+          // Photo de profil du client connecté (compte Inkera People) auteur de la demande.
+          clientUser: { select: { image: true } },
           tattooDetail: true,
           tatoueur: {
             select: {
@@ -2395,8 +2399,12 @@ export class AppointmentsService {
                 lastName: true,
                 email: true,
                 phone: true,
+                // Photo de profil du compte Inkera People lié à la fiche, s'il existe.
+                linkedUser: { select: { image: true } },
               },
             },
+            // Photo de profil du client connecté (compte Inkera People) auteur de la demande.
+            clientUser: { select: { image: true } },
             conversation: {
               select: {
                 id: true,
@@ -2684,6 +2692,8 @@ export class AppointmentsService {
               salonName: true,
             },
           },
+          // Photo de profil du client connecté (compte Inkera People), s'il y en a un.
+          clientUser: { select: { image: true } },
           tattooDetail: true,
           appointmentConsumables: {
             orderBy: {
@@ -4087,8 +4097,12 @@ async cancelAppointmentByClient(appointmentId: string, clientUserId: string, rea
               lastName: true,
               email: true,
               phone: true,
+              // Photo de profil du compte Inkera People lié à la fiche, s'il existe.
+              linkedUser: { select: { image: true } },
             },
           },
+          // Photo de profil du client connecté (compte Inkera People) auteur de la demande.
+          clientUser: { select: { image: true } },
           moodboard: {
             select: { id: true, name: true, description: true },
           },
@@ -4631,8 +4645,12 @@ async cancelAppointmentByClient(appointmentId: string, clientUserId: string, rea
               lastName: true,
               email: true,
               phone: true,
+              // Photo de profil du compte Inkera People lié à la fiche, s'il existe.
+              linkedUser: { select: { image: true } },
             },
           },
+          // Photo de profil du client connecté (compte Inkera People) auteur de la demande.
+          clientUser: { select: { image: true } },
         },
         orderBy: {
           start: 'asc', // Trier par date croissante

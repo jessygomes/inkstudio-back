@@ -235,6 +235,8 @@ export class ClientsService {
           medicalHistory: true,
           tattooHistory: true,
           aftercareRecords: true,
+          // Photo de profil du compte Inkera People lié, s'il existe.
+          linkedUser: { select: { image: true } },
         },
       });
 
@@ -322,6 +324,8 @@ export class ClientsService {
             }
           },
           aftercareRecords: true,
+          // Photo de profil du compte Inkera People lié, s'il existe.
+          linkedUser: { select: { image: true } },
           FollowUpSubmission: {
             orderBy: { createdAt: 'desc' },
           },
@@ -416,6 +420,7 @@ async searchClients(query: string, userId: string) {
         tags: true,
         marketingConsent: true,
         linkedUserId: true,
+        linkedUser: { select: { image: true } },
         createdAt: true
       },
       take: 10,
@@ -437,6 +442,7 @@ async searchClients(query: string, userId: string) {
         lastName: true,
         email: true,
         phone: true,
+        image: true,
         clientProfile: {
           select: {
             birthDate: true,
@@ -462,6 +468,7 @@ async searchClients(query: string, userId: string) {
       lastName: userClient.lastName,
       email: userClient.email,
       phone: userClient.phone,
+      image: userClient.image,
       birthDate: userClient.clientProfile?.birthDate || null,
       consentSigned: false,
       consentSignedAt: null,
