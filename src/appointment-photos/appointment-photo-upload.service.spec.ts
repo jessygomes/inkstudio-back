@@ -117,4 +117,28 @@ describe('AppointmentPhotoUploadService', () => {
     await expect(service.upload('rdv', 'artist', [file(), file(png)], 'Bearer token')).rejects.toThrow('db down');
     expect(quota.deleted).not.toHaveBeenCalled();
   });
+
+  describe('storeImages / discard (shared with message attachments)', () => {
+    it('stores and confirms images without saving anything on an appointment', async () => {
+      quota.prepare.mockResolvedValue({ reservations: ['r1'], ownerUserId: 'artist' });
+      const images = await service.storeImages('artist', [file()], 'Bearer token');
+      expect(images).toEqual([{ key: 'key-0', url: 'https://utfs.io/f/key-0', size: 10, customId: 'r1', type: 'image/jpeg', name: 'photo-1.jpg' }]);
+      expect(quota.complete).toHaveBeenCalledTimes(1);
+      expect(photos.authorize).not.toHaveBeenCalled();
+      expect(photos.add).not.toHaveBeenCalled();
+    });
+
+    it('rejects a format outside the allowed list before reserving any quota', async () => {
+      await expect(service.storeImages('artist', [file(png), file()], 'Bearer token', ['jpeg'])).rejects.toThrow(BadRequestException);
+      expect(quota.prepare).not.toHaveBeenCalled();
+      expect(storage.upload).not.toHaveBeenCalled();
+    });
+
+    it('discard removes the stored files and releases the quota once deletion is confirmed', async () => {
+      await service.discard([{ key: 'key-0', url: 'https://utfs.io/f/key-0', size: 10 }]);
+      expect(storage.delete).toHaveBeenCalledWith(['key-0']);
+      expect(quota.sign).toHaveBeenCalledWith('deleted', { keys: ['key-0'] });
+      expect(quota.deleted).toHaveBeenCalled();
+    });
+  });
 });

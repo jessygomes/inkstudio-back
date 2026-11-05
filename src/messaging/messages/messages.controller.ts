@@ -11,7 +11,18 @@ import {
   Request,
   HttpCode,
   HttpStatus,
+  Headers,
+  UploadedFiles,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FilesInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
+import { SecurityThrottle } from '../../auth/security-throttle';
+import {
+  AppointmentPhotoUploadService,
+  MAX_PHOTO_BYTES,
+  MAX_PHOTOS_PER_UPLOAD,
+} from '../../appointment-photos/appointment-photo-upload.service';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { MessagesService } from './messages.service';
 import { MessageAccessGuard } from './guards/message-access.guard';
@@ -24,7 +35,10 @@ import { RequestWithUser } from '../../auth/jwt.strategy';
 @Controller('messaging')
 @UseGuards(JwtAuthGuard)
 export class MessagesController {
-  constructor(private readonly messagesService: MessagesService) {}
+  constructor(
+    private readonly messagesService: MessagesService,
+    private readonly imageUploads: AppointmentPhotoUploadService,
+  ) {}
 
   /**
    * POST /messaging/conversations/:conversationId/messages
@@ -40,6 +54,36 @@ export class MessagesController {
     // S'assurer que le conversationId du DTO correspond au param
     dto.conversationId = conversationId;
     return this.messagesService.sendMessage(req.user.userId, dto);
+  }
+
+  /**
+   * POST /messaging/conversations/:conversationId/attachments/upload
+   * Envoi d'images (multipart, champ « files ») pour l'app mobile : stockage UploadThing avec le quota du site.
+   * Renvoie les pièces jointes à passer ensuite au message (socket `send-message`) ; le web, lui, passe par UploadThing.
+   */
+  @Post('conversations/:conversationId/attachments/upload')
+  @UseGuards(ConversationAccessGuard)
+  @SecurityThrottle('upload')
+  @UseInterceptors(
+    FilesInterceptor('files', MAX_PHOTOS_PER_UPLOAD, {
+      storage: memoryStorage(),
+      limits: { fileSize: MAX_PHOTO_BYTES, files: MAX_PHOTOS_PER_UPLOAD },
+    }),
+  )
+  async uploadAttachments(
+    @Request() req: RequestWithUser,
+    @UploadedFiles() files: Express.Multer.File[],
+    @Headers('authorization') authorization?: string,
+  ) {
+    // Mêmes formats que la validation des pièces jointes (MessageAttachmentDto).
+    const images = await this.imageUploads.storeImages(req.user.userId, files ?? [], authorization, ['jpeg', 'png', 'webp', 'gif']);
+    return images.map((image) => ({
+      fileName: image.name,
+      fileUrl: image.url,
+      fileType: image.type,
+      fileSize: image.size,
+      uploadThingKey: image.key,
+    }));
   }
 
   /**

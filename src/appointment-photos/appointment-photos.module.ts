@@ -10,5 +10,6 @@ import { UploadStorage } from './upload-storage';
   imports: [UploadsModule],
   controllers: [AppointmentPhotosController],
   providers: [AppointmentPhotosService, AppointmentPhotoUploadService, UploadStorage, PrismaService],
+  exports: [AppointmentPhotoUploadService],
 })
 export class AppointmentPhotosModule {}

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bull';
 import { PrismaModule } from '../database/prisma.module';
+import { AppointmentPhotosModule } from '../appointment-photos/appointment-photos.module';
 import { RedisModule } from '../redis/redis.module';
 import { ConversationsController } from './conversations/conversations.controller';
 import { ConversationsService } from './conversations/conversations.service';
@@ -31,6 +32,7 @@ import { InstagramController } from './instagram/instagram.controller';
 @Module({
   imports: [
     PrismaModule,
+    AppointmentPhotosModule,
     RedisModule,
     JwtModule.register({
       secret: process.env.JWT_SECRET || 'secret',

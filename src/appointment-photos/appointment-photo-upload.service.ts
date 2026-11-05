@@ -6,7 +6,7 @@ import { StoredFile, UploadStorage } from './upload-storage';
 export const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 export const MAX_PHOTOS_PER_UPLOAD = 5;
 
-type Kind = 'jpeg' | 'png' | 'webp' | 'gif' | 'heif' | 'avif';
+export type Kind = 'jpeg' | 'png' | 'webp' | 'gif' | 'heif' | 'avif';
 const MIME: Record<Kind, { type: string; ext: string }> = {
   jpeg: { type: 'image/jpeg', ext: 'jpg' },
   png: { type: 'image/png', ext: 'png' },
@@ -31,7 +31,8 @@ export function detectImageKind(buffer: Buffer): Kind | null {
   return null;
 }
 
-type UploadedPart = { buffer: Buffer; size: number };
+export type UploadedPart = { buffer: Buffer; size: number };
+export type StoredImage = StoredFile & { type: string; name: string };
 
 /**
  * Envoi de photos de rendez-vous depuis l'app mobile (multipart) : réutilise le quota d'envoi existant
@@ -47,14 +48,30 @@ export class AppointmentPhotoUploadService {
     private readonly storage: UploadStorage,
   ) {}
 
+  /** Photos d'un RDV : vérifie l'accès au RDV, stocke les images puis les enregistre sur le RDV. */
   async upload(appointmentId: string, userId: string, files: UploadedPart[], authorization?: string) {
     await this.photos.authorize(appointmentId, userId);
+    const images = await this.storeImages(userId, files, authorization);
+    try {
+      return await this.photos.add(appointmentId, userId, { photos: images.map((image) => ({ url: image.url })) });
+    } catch (error) {
+      await this.discard(images);
+      throw error;
+    }
+  }
 
+  /**
+   * Valide les images (type réel, 8 Mo, 5 max), réserve le quota, les envoie à UploadThing puis confirme le quota.
+   * N'enregistre rien en base : l'appelant (photos de RDV, pièces jointes de messages…) le fait ensuite et appelle
+   * `discard` si cette étape échoue. `kinds` restreint les formats acceptés.
+   */
+  async storeImages(userId: string, files: UploadedPart[], authorization?: string, kinds?: Kind[]): Promise<StoredImage[]> {
     if (!files?.length) throw new BadRequestException('Aucune photo reçue.');
     if (files.length > MAX_PHOTOS_PER_UPLOAD) throw new BadRequestException(`${MAX_PHOTOS_PER_UPLOAD} photos maximum par envoi.`);
     const checked = files.map((file) => {
       const kind = detectImageKind(file.buffer);
       if (!kind || file.size < 1 || file.size > MAX_PHOTO_BYTES) throw new BadRequestException('Image invalide ou trop lourde (8 Mo maximum).');
+      if (kinds && !kinds.includes(kind)) throw new BadRequestException('Format non pris en charge (JPG, PNG, WebP ou GIF).');
       return { buffer: file.buffer, size: file.size, ...MIME[kind] };
     });
 
@@ -64,7 +81,7 @@ export class AppointmentPhotoUploadService {
     if (reserved.ownerUserId !== userId) throw new UnauthorizedException('Invalid upload credentials');
     if (reserved.reservations.length !== checked.length) throw new ServiceUnavailableException('Réservation d’envoi incohérente.');
 
-    // 2. Envoi, confirmation du quota, puis enregistrement des photos. En cas d'échec, on retire ce qui a été envoyé.
+    // 2. Envoi puis confirmation du quota. En cas d'échec, on retire ce qui a été envoyé.
     let stored: (StoredFile | null)[] = [];
     try {
       stored = await this.storage.upload(
@@ -76,11 +93,16 @@ export class AppointmentPhotoUploadService {
         const complete = this.quota.sign('complete', { id: reserved.reservations[i], key: done[i].key, size: done[i].size });
         await this.quota.complete(complete.body, complete.signature);
       }
-      return await this.photos.add(appointmentId, userId, { photos: done.map((s) => ({ url: s.url })) });
+      return done.map((s, i) => ({ ...s, type: checked[i].type, name: `photo-${i + 1}.${checked[i].ext}` }));
     } catch (error) {
       await this.cleanup(stored.filter((s): s is StoredFile => !!s));
       throw error;
     }
+  }
+
+  /** Retire des images déjà stockées (échec de l'enregistrement qui suit). */
+  async discard(images: StoredFile[]) {
+    await this.cleanup(images);
   }
 
   // Ne libère le quota qu'après suppression physique confirmée (comme finishUpload côté web).
