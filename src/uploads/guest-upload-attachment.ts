@@ -32,7 +32,7 @@ export async function attachGuestUploads(
     .map(storageKey)
     .filter((key): key is string => Boolean(key));
   if (!keys.length) return;
-  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'upload-quota:guest-pool'}, 0))`;
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'upload-quota:guest-pool'}, 0))`;
   const rows = await tx.uploadReservation.findMany({
     where: { key: { in: keys }, ownerUserId: null },
   });

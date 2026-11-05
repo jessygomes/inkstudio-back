@@ -49,7 +49,7 @@ function fixture() {
     });
   let tail = Promise.resolve();
   const db: any = {
-    $queryRaw: jest.fn(),
+    $executeRaw: jest.fn(),
     user: {
       findUnique: jest.fn(
         async ({ where }: any) =>
@@ -257,7 +257,7 @@ describe('Upload authorization, budgets and callbacks', () => {
     expect(result.reservations).toHaveLength(1);
     expect(f.rows[0].bytes).toBe(8 * MB);
     expect(f.rows[0].ownerUserId).toBe('owner');
-    expect(f.db.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(f.db.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
       f.db.uploadReservation.aggregate.mock.invocationCallOrder[0],
     );
   });

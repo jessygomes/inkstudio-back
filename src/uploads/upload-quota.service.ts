@@ -127,7 +127,7 @@ export class UploadQuotaService {
   }
 
   private async lock(tx: Tx, key: string) {
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`upload-quota:${key}`}, 0))`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`upload-quota:${key}`}, 0))`;
   }
 
   private async bookingProfile(tx: Tx, id: string) {
