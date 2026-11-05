@@ -58,7 +58,33 @@ function buildAllowedOrigins(): string[] {
   return Array.from(new Set(expanded));
 }
 
-export const ALLOWED_ORIGINS = buildAllowedOrigins();
+// Origine du backend lui-même. React Native l'envoie comme en-tête `Origin` à l'ouverture d'un websocket (http[s]://hôte du
+// serveur) et engine.io applique ce contrôle CORS aussi à l'upgrade websocket : sans elle, la messagerie mobile ne peut pas
+// utiliser le websocket (elle retombe sur le polling). Seule une page servie par le backend lui-même émet cette origine :
+// ce n'est pas une ouverture à d'autres sites. En local (téléphone sur le Wi-Fi), renseigner BACKEND_URL (ex. http://192.168.1.52:4000).
+const BACKEND_PRODUCTION_ORIGIN = 'https://inkstudio-back-production.up.railway.app';
+
+function originOf(value?: string): string | null {
+  if (!value || !value.trim()) return null;
+  try {
+    const trimmed = value.trim();
+    return new URL(/^https?:\/\//.test(trimmed) ? trimmed : `https://${trimmed}`).origin;
+  } catch {
+    return null;
+  }
+}
+
+function buildBackendOrigins(): string[] {
+  return [
+    BACKEND_PRODUCTION_ORIGIN,
+    originOf(process.env.BACKEND_URL),
+    originOf(process.env.RAILWAY_PUBLIC_DOMAIN),
+  ].filter((origin): origin is string => Boolean(origin));
+}
+
+export const ALLOWED_ORIGINS = Array.from(
+  new Set([...buildAllowedOrigins(), ...buildBackendOrigins()]),
+);
 
 export function isAllowedOrigin(origin?: string): boolean {
   if (!origin) {
