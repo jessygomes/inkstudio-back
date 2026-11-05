@@ -63,6 +63,29 @@ export class InboxService {
     appointments: { select: { appointmentId: true } },
   } as const;
 
+  // Liste : même contenu que le détail, plus le dernier message de chaque fil (aperçu des cartes).
+  private readonly listInclude = {
+    ...this.threadInclude,
+    conversation: {
+      select: {
+        ...this.threadInclude.conversation.select,
+        messages: {
+          where: { archivedAt: null }, orderBy: { createdAt: 'desc' }, take: 1,
+          select: { content: true, senderId: true, type: true, createdAt: true },
+        },
+      },
+    },
+    externalConversation: {
+      select: {
+        ...this.threadInclude.externalConversation.select,
+        messages: {
+          orderBy: [{ providerCreatedAt: 'desc' }, { createdAt: 'desc' }], take: 1,
+          select: { contentText: true, direction: true, createdAt: true, providerCreatedAt: true },
+        },
+      },
+    },
+  } satisfies Prisma.InboxThreadInclude;
+
   private async assertAccess(userId: string, threadId: string, action: 'view' | 'reply' | 'owner' = 'view') {
     const user = await this.getProfessional(userId);
     const thread = await this.prisma.inboxThread.findUnique({
@@ -136,7 +159,7 @@ export class InboxService {
     const limit = Math.min(100, Math.max(1, Number(filters.limit) || 20));
     const [data, total] = await Promise.all([
       this.prisma.inboxThread.findMany({
-        where, include: this.threadInclude,
+        where, include: this.listInclude,
         orderBy: [{ lastMessageAt: 'desc' }, { createdAt: 'desc' }],
         skip: (page - 1) * limit, take: limit,
       }),
@@ -164,7 +187,26 @@ export class InboxService {
       const newerThanRead = Boolean(item.lastMessageAt && state?.lastReadAt && item.lastMessageAt > state.lastReadAt);
       const memberUnread = item.ownerUserId !== userId && (!state?.lastReadAt || newerThanRead);
       const unreadCount = Math.max(legacyCount, state?.forceUnread || (memberUnread && Boolean(item.lastMessageAt)) ? 1 : 0);
-      return { ...item, unreadCount };
+      // Aperçu du dernier message (Inkera ou canal externe) ; la liste brute des messages n'est pas renvoyée.
+      const inkeraLast = item.conversation?.messages?.[0];
+      const externalLast = item.externalConversation?.messages?.[0];
+      const lastMessage = inkeraLast
+        ? { content: inkeraLast.content, senderId: inkeraLast.senderId, direction: null, type: inkeraLast.type, createdAt: inkeraLast.createdAt }
+        : externalLast
+          ? { content: externalLast.contentText ?? '', senderId: null, direction: externalLast.direction, type: 'TEXT', createdAt: externalLast.providerCreatedAt ?? externalLast.createdAt }
+          : null;
+      const withoutMessages = <T extends { messages?: unknown } | null>(value: T) => {
+        if (!value) return value;
+        const { messages: _messages, ...rest } = value;
+        return rest;
+      };
+      return {
+        ...item,
+        conversation: withoutMessages(item.conversation),
+        externalConversation: withoutMessages(item.externalConversation),
+        lastMessage,
+        unreadCount,
+      };
     });
     return { data: withUnread, total, page, limit, totalPages: Math.ceil(total / limit) };
   }

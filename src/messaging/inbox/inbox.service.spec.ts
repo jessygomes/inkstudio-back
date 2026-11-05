@@ -396,3 +396,45 @@ describe('InboxService.getThreadByConversation', () => {
     await expect(service.getThreadByConversation('salon-a', 'inconnue')).rejects.toThrow(NotFoundException);
   });
 });
+
+describe('InboxService.listThreads: aperçu du dernier message', () => {
+  let prisma: ReturnType<typeof createMock>;
+  let service: InboxService;
+
+  beforeEach(() => {
+    prisma = createMock();
+    service = new InboxService(prisma as unknown as PrismaService, {} as unknown as MessageNotificationService);
+    prisma.user.findUnique.mockResolvedValue(salon);
+    prisma.inboxThread.count.mockResolvedValue(2);
+    prisma.inboxReadState.findMany.mockResolvedValue([]);
+    prisma.messageNotification.findMany.mockResolvedValue([]);
+  });
+
+  it('renvoie lastMessage pour un fil Inkera et pour un canal externe, sans exposer la liste brute', async () => {
+    const inkera = { ...thread, conversation: { ...thread.conversation, messages: [{ content: 'Bonjour', senderId: 'client-inkera', type: 'TEXT', createdAt: new Date('2026-10-23') }] } };
+    const external = {
+      ...thread, id: 'thread-ig', channel: InboxChannel.INSTAGRAM, conversationId: null, externalConversationId: 'ext-1', conversation: null,
+      externalConversation: { id: 'ext-1', messages: [{ contentText: 'Salut', direction: 'INBOUND', createdAt: new Date('2026-10-24'), providerCreatedAt: new Date('2026-10-24T10:00:00Z') }] },
+    };
+    prisma.inboxThread.findMany.mockResolvedValue([inkera, external]);
+    const result = await service.listThreads('salon-a', {});
+    expect(result.data[0].lastMessage).toEqual({ content: 'Bonjour', senderId: 'client-inkera', direction: null, type: 'TEXT', createdAt: new Date('2026-10-23') });
+    expect(result.data[1].lastMessage).toMatchObject({ content: 'Salut', direction: 'INBOUND', senderId: null, createdAt: new Date('2026-10-24T10:00:00Z') });
+    expect(result.data[0].conversation).not.toHaveProperty('messages');
+    expect(result.data[1].externalConversation).not.toHaveProperty('messages');
+  });
+
+  it('renvoie lastMessage null pour un fil sans message', async () => {
+    prisma.inboxThread.findMany.mockResolvedValue([thread]);
+    const result = await service.listThreads('salon-a', {});
+    expect(result.data[0].lastMessage).toBeNull();
+  });
+
+  it('demande à la base le dernier message de chaque fil', async () => {
+    prisma.inboxThread.findMany.mockResolvedValue([thread]);
+    await service.listThreads('salon-a', {});
+    const include = prisma.inboxThread.findMany.mock.calls[0][0].include;
+    expect(include.conversation.select.messages).toMatchObject({ take: 1 });
+    expect(include.externalConversation.select.messages).toMatchObject({ take: 1 });
+  });
+});
