@@ -115,6 +115,9 @@ Important:
 - `STRIPE_WEBHOOK_SECRET`
 - `STRIPE_PRICE_PRO`
 - `STRIPE_PRICE_BUSINESS`
+
+Variables optionnelles (changement de tarif) :
+- `STRIPE_PRICE_PRO_LEGACY` / `STRIPE_PRICE_BUSINESS_LEGACY` : anciens identifiants de prix (séparés par des virgules) encore portés par des abonnements existants. Les variables `STRIPE_PRICE_PRO` / `STRIPE_PRICE_BUSINESS` ne contiennent que le prix proposé aujourd'hui ; sans les variables LEGACY, le webhook ignore les abonnés restés sur l'ancien prix (« Price ID Stripe non reconnu »).
 - `FRONTEND_URL` (ou `FRONT_URL`)
 
 ## Reponses utiles pour le frontend

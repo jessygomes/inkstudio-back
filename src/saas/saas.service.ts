@@ -490,7 +490,7 @@ export class SaasService {
           hasEmailReminders: true,
           hasCustomBranding: false,
           hasApiAccess: false,
-          monthlyPrice: proPlan, // 29.99
+          monthlyPrice: proPlan, // 35.99
         };
       
       case SaasPlan.BUSINESS:
@@ -504,7 +504,7 @@ export class SaasService {
           hasEmailReminders: true,
           hasCustomBranding: true,
           hasApiAccess: true,
-          monthlyPrice: businessPlan, // 59.99
+          monthlyPrice: businessPlan, // 89.99
         };
       
       default:

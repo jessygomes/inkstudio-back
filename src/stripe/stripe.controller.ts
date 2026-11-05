@@ -28,6 +28,7 @@ import { MailService } from 'src/email/mailer.service';
 import {
   CheckoutPlan,
   STRIPE_API_VERSION,
+  checkoutPlanFromPriceId,
   isCheckoutPlan,
   resolveStripeSecretKey,
 } from './stripe.constants';
@@ -346,18 +347,7 @@ export class StripeController {
   }
 
   private getCheckoutPlanFromPriceId(priceId: string): CheckoutPlan | null {
-    const proPriceId = process.env.STRIPE_PRICE_PRO;
-    const businessPriceId = process.env.STRIPE_PRICE_BUSINESS;
-
-    if (proPriceId && priceId === proPriceId) {
-      return 'PRO';
-    }
-
-    if (businessPriceId && priceId === businessPriceId) {
-      return 'BUSINESS';
-    }
-
-    return null;
+    return checkoutPlanFromPriceId(priceId);
   }
 
   /**

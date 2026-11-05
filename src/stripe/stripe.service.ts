@@ -12,6 +12,7 @@ import { readStripeAdminGift, StripeGiftPreview } from './admin-gift';
 import {
   CheckoutPlan,
   STRIPE_API_VERSION,
+  checkoutPlanFromPriceId,
   resolveStripeSecretKey,
 } from './stripe.constants';
 
@@ -239,18 +240,7 @@ export class StripeService {
   }
 
   private getCheckoutPlanFromPriceId(priceId: string): CheckoutPlan | null {
-    const businessPriceId = process.env.STRIPE_PRICE_BUSINESS;
-    const proPriceId = process.env.STRIPE_PRICE_PRO;
-
-    if (businessPriceId && priceId === businessPriceId) {
-      return 'BUSINESS';
-    }
-
-    if (proPriceId && priceId === proPriceId) {
-      return 'PRO';
-    }
-
-    return null;
+    return checkoutPlanFromPriceId(priceId);
   }
 
   private getCheckoutPlanFromSubscription(
