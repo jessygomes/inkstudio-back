@@ -1,6 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { UserController } from './user.controller';
 import { UserService } from './user.service';
+import { SalonPhotosService } from './salon-photos.service';
+import { SecurityRateLimiter } from '../auth/security-throttle';
 import { PublicContactThrottleGuard } from './public-contact-throttle.guard';
 import { PublicContactRateLimiterService } from './public-contact-rate-limiter.service';
 
@@ -12,6 +14,8 @@ describe('UserController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [UserController],
       providers: [
+        { provide: SalonPhotosService, useValue: { add: jest.fn(), remove: jest.fn() } },
+        { provide: SecurityRateLimiter, useValue: {} },
         {
           provide: UserService,
           useValue: {

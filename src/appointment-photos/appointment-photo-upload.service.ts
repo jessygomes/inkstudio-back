@@ -31,7 +31,15 @@ export function detectImageKind(buffer: Buffer): Kind | null {
   return null;
 }
 
-export type UploadedPart = { buffer: Buffer; size: number };
+/** Clé UploadThing d'une URL de fichier (/f/<clé>), comme lib/utils/uploadImg/extractKeyFromUrl du site. */
+export function keyFromUrl(url: string): string | null {
+  const match = url.match(/\/f\/([^/?]+)/) ?? url.match(/uploadthing\.com\/([^/?]+)/);
+  if (match?.[1]) return match[1];
+  const last = url.split('/').pop();
+  return last && !last.includes('.') ? last : null;
+}
+
+export type UploadedPart ={ buffer: Buffer; size: number };
 export type StoredImage = StoredFile & { type: string; name: string };
 
 /**
@@ -103,6 +111,12 @@ export class AppointmentPhotoUploadService {
   /** Retire des images déjà stockées (échec de l'enregistrement qui suit). */
   async discard(images: StoredFile[]) {
     await this.cleanup(images);
+  }
+
+  /** Supprime des fichiers déjà enregistrés d'après leur URL UploadThing (même extraction de clé que le site). Ne lève jamais. */
+  async deleteByUrls(urls: string[]) {
+    const keys = urls.map(keyFromUrl).filter((k): k is string => !!k);
+    await this.cleanup(keys.map((key) => ({ key }) as StoredFile));
   }
 
   // Ne libère le quota qu'après suppression physique confirmée (comme finishUpload côté web).

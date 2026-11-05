@@ -7,12 +7,15 @@ import { MailModule } from 'src/email/mail.module';
 import { RedisModule } from 'src/redis/redis.module';
 import { PublicContactRateLimiterService } from './public-contact-rate-limiter.service';
 import { PublicContactThrottleGuard } from './public-contact-throttle.guard';
+import { AppointmentPhotosModule } from '../appointment-photos/appointment-photos.module';
+import { SalonPhotosService } from './salon-photos.service';
 
 @Module({
-  imports: [PrismaModule, MailModule, RedisModule], //! Importer le module PrismaModule dans le module UserModule pour pouvoir utiliser le service PrismaService dans le service UserService
+  imports: [PrismaModule, MailModule, RedisModule, AppointmentPhotosModule], //! Importer le module PrismaModule dans le module UserModule pour pouvoir utiliser le service PrismaService dans le service UserService
   controllers: [UserController],
   providers: [
     UserService,
+    SalonPhotosService,
     CacheService,
     PublicContactRateLimiterService,
     PublicContactThrottleGuard,

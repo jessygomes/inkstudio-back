@@ -10,6 +10,8 @@ import { CacheService } from '../redis/cache.service';
 import { MailService } from '../email/mailer.service';
 import { UserController } from './user.controller';
 import { UserService } from './user.service';
+import { SalonPhotosService } from './salon-photos.service';
+import { SecurityRateLimiter } from '../auth/security-throttle';
 import { PublicContactRateLimiterService } from './public-contact-rate-limiter.service';
 import { PublicProfileAccessModule } from './public-profile-access';
 import {
@@ -84,6 +86,8 @@ describe('SEC-05 public/private profile boundary', () => {
       providers: [
         JwtStrategy,
         UserService,
+        { provide: SalonPhotosService, useValue: { add: jest.fn(), remove: jest.fn() } },
+        { provide: SecurityRateLimiter, useValue: {} },
         { provide: PrismaService, useValue: prisma },
         { provide: CacheService, useValue: cache },
         { provide: MailService, useValue: {} },

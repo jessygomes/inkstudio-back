@@ -1,5 +1,11 @@
 import { PublicProfile } from '../user/public-profile-access';
-import { Body, Controller, ForbiddenException, Get, Header, NotFoundException, Param, Patch, Post, Query, UseGuards, Request } from '@nestjs/common';
+import { Body, Controller, Delete, ForbiddenException, Get, Header, Headers, NotFoundException, Param, Patch, Post, Query, UploadedFile, UploadedFiles, UseGuards, UseInterceptors, Request } from '@nestjs/common';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
+import { SecurityThrottle } from '../auth/security-throttle';
+import { MAX_PHOTO_BYTES, MAX_PHOTOS_PER_UPLOAD } from '../appointment-photos/appointment-photo-upload.service';
+import { SalonPhotosService } from './salon-photos.service';
+import { RemoveSalonPhotoDto } from './dto/remove-salon-photo.dto';
 import { UserService } from './user.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateAppointmentBookingDto, UpdateConfirmationSettingDto } from './dto/update-confirmation-setting.dto';
@@ -13,7 +19,7 @@ import { PublicContactThrottleGuard } from './public-contact-throttle.guard';
 
 @Controller('users')
 export class UserController {
-  constructor(private userService: UserService) {}
+  constructor(private userService: UserService, private salonPhotos: SalonPhotosService) {}
 
   //! 1️⃣ ROUTES STATIQUES SPÉCIFIQUES EN PREMIER
   //! RECUPERER LES VILLES
@@ -239,6 +245,68 @@ export class UserController {
       requesterUserId: req.user.userId,
       salonPhotos,
     });
+  }
+
+  // Envoi direct de photos du salon (multipart, champ « photos ») pour l'app mobile ; le web passe par UploadThing + le PATCH ci-dessus.
+  @UseGuards(JwtAuthGuard)
+  @SecurityThrottle('upload')
+  @Post(":userId/photos/upload")
+  @UseInterceptors(FilesInterceptor('photos', MAX_PHOTOS_PER_UPLOAD, { storage: memoryStorage(), limits: { fileSize: MAX_PHOTO_BYTES, files: MAX_PHOTOS_PER_UPLOAD } }))
+  uploadPhotosSalon(
+    @Param('userId') userId: string,
+    @Request() req: RequestWithUser,
+    @UploadedFiles() files: Express.Multer.File[],
+    @Headers('authorization') authorization?: string,
+  ) {
+    if (req.user.userId !== userId) {
+      throw new ForbiddenException('Vous ne pouvez modifier que vos propres photos.');
+    }
+    return this.salonPhotos.add(userId, files ?? [], authorization);
+  }
+
+  // Envoi d'une seule image (profil, couverture, photo de tatoueur) : renvoie son URL, à enregistrer ensuite par la route concernée.
+  @UseGuards(JwtAuthGuard)
+  @SecurityThrottle('upload')
+  @Post(":userId/images/upload")
+  @UseInterceptors(FileInterceptor('image', { storage: memoryStorage(), limits: { fileSize: MAX_PHOTO_BYTES, files: 1 } }))
+  uploadImage(
+    @Param('userId') userId: string,
+    @Request() req: RequestWithUser,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Headers('authorization') authorization?: string,
+  ) {
+    if (req.user.userId !== userId) {
+      throw new ForbiddenException('Vous ne pouvez envoyer des images que pour votre compte.');
+    }
+    return this.salonPhotos.uploadImage(userId, file, authorization);
+  }
+
+  // Supprime une image envoyée par l'utilisateur qui n'est plus utilisée.
+  @UseGuards(JwtAuthGuard)
+  @Delete(":userId/images")
+  deleteImage(
+    @Param('userId') userId: string,
+    @Request() req: RequestWithUser,
+    @Body() body: RemoveSalonPhotoDto,
+  ) {
+    if (req.user.userId !== userId) {
+      throw new ForbiddenException('Vous ne pouvez supprimer que vos propres images.');
+    }
+    return this.salonPhotos.deleteImage(userId, body.url);
+  }
+
+  // Retire une photo de la galerie du salon (et supprime le fichier stocké).
+  @UseGuards(JwtAuthGuard)
+  @Delete(":userId/photos")
+  removePhotoSalon(
+    @Param('userId') userId: string,
+    @Request() req: RequestWithUser,
+    @Body() body: RemoveSalonPhotoDto,
+  ) {
+    if (req.user.userId !== userId) {
+      throw new ForbiddenException('Vous ne pouvez modifier que vos propres photos.');
+    }
+    return this.salonPhotos.remove(userId, body.url);
   }
 
   @UseGuards(JwtAuthGuard)
