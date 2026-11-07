@@ -1,3 +1,4 @@
+import { NotificationsService } from '../notifications/notifications.service';
 import { linkedArtistBookingHref, publicDisplayName } from '../user/public-profile.utils';
 import { Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
@@ -13,7 +14,8 @@ export class TatoueursService {
   constructor(
     private readonly prisma: PrismaService,
     private cacheService: CacheService,
-    @Optional() private readonly residencies?: ResidenciesService
+    @Optional() private readonly residencies?: ResidenciesService,
+    @Optional() private readonly notifications?: NotificationsService,
   ) {}
 
   private normalizeStyles(styleInput: unknown): string[] {
@@ -231,6 +233,17 @@ export class TatoueursService {
           },
         },
       });
+
+      void (async () => {
+        const name = await this.notifications?.displayName(salonUserId);
+        await this.notifications?.notify({
+          userId: tatoueurUserId,
+          type: 'team.invitation_received',
+          title: 'Invitation à rejoindre une équipe',
+          body: `${name || 'Un salon'} vous invite à rejoindre son équipe`,
+          data: { requestId: request.id },
+        });
+      })();
 
       return {
         error: false,

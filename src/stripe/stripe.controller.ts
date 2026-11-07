@@ -9,8 +9,10 @@ import {
   RawBodyRequest,
   BadRequestException,
   Logger,
+  Optional,
   UseGuards,
 } from '@nestjs/common';
+import { NotificationsService } from '../notifications/notifications.service';
 import { SaasPlan } from '@prisma/client';
 import { Request } from 'express';
 import Stripe from 'stripe';
@@ -87,6 +89,7 @@ export class StripeController {
     private prisma: PrismaService,
     private saasService: SaasService,
     private mailService: MailService,
+    @Optional() private readonly notifications?: NotificationsService,
   ) {}
 
   // Méthode pour vérifier si un événement Stripe a déjà été traité (idempotence)
@@ -797,6 +800,14 @@ export class StripeController {
       ...(gift ? { isGift: true } : {}),
     });
 
+    void this.notifications?.notify({
+      userId: user.id,
+      type: 'account.trial_ending',
+      title: 'Votre essai se termine bientôt',
+      body: `Fin de l’essai le ${trialEndDate.toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris', day: 'numeric', month: 'long' })}`,
+      dedupeKey: `trial_ending:${subscription.id}:${subscription.trial_end}`,
+    });
+
     this.logger.log(`Rappel de fin d'essai envoyé au salon ${user.id}`);
   }
 
@@ -836,6 +847,14 @@ export class StripeController {
 
     await this.syncPlanFromStripeSubscription(user.id, subscription);
 
+    void this.notifications?.notify({
+      userId: user.id,
+      type: 'account.payment_failed',
+      title: 'Paiement échoué',
+      body: 'Le paiement de votre abonnement a échoué. Mettez à jour votre moyen de paiement pour conserver vos fonctionnalités.',
+      dedupeKey: `payment_failed:${invoice.id}`,
+    });
+
     this.logger.log(`Compte ${user.id} marqué en past_due`);
   }
 
@@ -874,6 +893,16 @@ export class StripeController {
     });
 
     await this.syncPlanFromStripeSubscription(user.id, subscription);
+
+    if (invoice.amount_paid > 0) {
+      void this.notifications?.notify({
+        userId: user.id,
+        type: 'account.invoice',
+        title: 'Facture disponible',
+        body: `Paiement de ${(invoice.amount_paid / 100).toLocaleString('fr-FR', { style: 'currency', currency: (invoice.currency || 'eur').toUpperCase() })} reçu. Votre facture est disponible dans Paramètres.`,
+        dedupeKey: `invoice:${invoice.id}`,
+      });
+    }
 
     this.logger.log(`Paiement confirmé et plan synchronisé pour ${user.id}`);
   }

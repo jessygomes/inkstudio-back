@@ -1,17 +1,19 @@
 import { attachGuestUploads } from '../uploads/guest-upload-attachment';
 
-import { BadRequestException, Body, Controller, ForbiddenException, Get, Param, Post, Query, Request, ServiceUnavailableException, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, ForbiddenException, Get, Optional, Param, Post, Query, Request, ServiceUnavailableException, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { RequestWithUser } from 'src/auth/jwt.strategy';
 import { PrismaService } from 'src/database/prisma.service';
 import { MailService } from 'src/email/mailer.service';
 import { SubmitFollowUpDto } from './dto/submit-follow-up.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Controller('follow-up')
 export class FollowupsController {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly mailService: MailService
+    private readonly mailService: MailService,
+    @Optional() private readonly notifications?: NotificationsService,
   ) {}
 
   /**
@@ -122,7 +124,17 @@ export class FollowupsController {
     });
 
     // 🎉 Succès - Le suivi est maintenant complet
-    return { ok: true };
+    return { ok: true, notify: { userId: req.appointment.userId, appointmentId: req.appointmentId, rating: body.rating, title: req.appointment.title } };
+    }).then((result) => {
+      // Centre de notifications : après validation de la transaction, sans rien changer à la réponse.
+      void this.notifications?.notify({
+        userId: result.notify.userId,
+        type: 'followup.reply',
+        title: 'Nouveau suivi de cicatrisation',
+        body: `${result.notify.title ? `${result.notify.title} · ` : ''}Note ${result.notify.rating}/5`,
+        data: { appointmentId: result.notify.appointmentId },
+      });
+      return { ok: true };
     });
   }
 

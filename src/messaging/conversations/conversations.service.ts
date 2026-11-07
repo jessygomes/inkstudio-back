@@ -1,8 +1,10 @@
+import { NotificationsService } from '../../notifications/notifications.service';
 import {
   Injectable,
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateConversationDto } from './dto/create-conversation.dto';
@@ -23,6 +25,7 @@ export class ConversationsService {
   constructor(
     private prisma: PrismaService,
     private notificationService: MessageNotificationService,
+    @Optional() private readonly appNotifications?: NotificationsService,
   ) {}
 
   /**
@@ -68,7 +71,22 @@ export class ConversationsService {
       throw new ForbiddenException('La messagerie est réservée aux professionnels abonnés');
     }
 
-    return this.createConversation(professionalUserId, { clientUserId });
+    const alreadyKnown = await this.prisma.conversation.findFirst({
+      where: { salonId: professionalUserId, clientUserId },
+      select: { id: true },
+    });
+    const created = await this.createConversation(professionalUserId, { clientUserId });
+    if (!alreadyKnown) {
+      const name = [client.firstName, client.lastName].filter(Boolean).join(' ');
+      void this.appNotifications?.notify({
+        userId: professionalUserId,
+        type: 'contact.new',
+        title: 'Nouveau contact',
+        body: `${name || 'Un client'} vous a contacté pour la première fois`,
+        data: { conversationId: created.id },
+      });
+    }
+    return created;
   }
 
   /**

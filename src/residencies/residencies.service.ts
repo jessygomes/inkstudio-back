@@ -5,8 +5,10 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma, SalonResidency, SaasPlan } from '@prisma/client';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from 'src/database/prisma.service';
 import { CacheService } from 'src/redis/cache.service';
 import { minutes, parisDate, parisTime } from './presence';
@@ -46,6 +48,7 @@ export class ResidenciesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
+    @Optional() private readonly notifications?: NotificationsService,
   ) {}
 
   private async invalidate() {
@@ -221,6 +224,18 @@ export class ResidenciesService {
       where: { id },
       data: Object.fromEntries(keys.map((k) => [k, values[k]])),
     });
+    if (actorId !== member.salonId && keys.length) {
+      void (async () => {
+        const name = await this.notifications?.displayName(actorId);
+        await this.notifications?.notify({
+          userId: member.salonId,
+          type: 'team.permission_request',
+          title: 'Autorisations modifiées',
+          body: `${name || 'Un tatoueur'} a modifié les autorisations accordées à votre salon`,
+          data: { residencyId: id },
+        });
+      })();
+    }
     await this.invalidate();
     return result;
   }
@@ -432,7 +447,7 @@ export class ResidenciesService {
       throw new ConflictException(
         'Une demande est déjà en attente pour ce rattachement.',
       );
-    return this.prisma.salonTatoueurTeamRequest.create({
+    const created = await this.prisma.salonTatoueurTeamRequest.create({
       data: {
         salonId,
         tatoueurUserId: artistId,
@@ -441,6 +456,17 @@ export class ResidenciesService {
         status: 'PENDING',
       },
     });
+    void (async () => {
+      const name = await this.notifications?.displayName(artistId);
+      await this.notifications?.notify({
+        userId: salonId,
+        type: 'team.invitation_received',
+        title: 'Demande de rattachement',
+        body: `${name || 'Un tatoueur'} souhaite rejoindre votre équipe`,
+        data: { requestId: created.id },
+      });
+    })();
+    return created;
   }
 
   async requests(actorId: string) {
@@ -534,6 +560,19 @@ export class ResidenciesService {
             },
           });
         else await tx.salonResidency.create({ data });
+      }
+      if (action === 'accept') {
+        const initiator = request.initiatedById || request.salonId;
+        void (async () => {
+          const name = await this.notifications?.displayName(actorId);
+          await this.notifications?.notify({
+            userId: initiator,
+            type: 'team.invitation_accepted',
+            title: 'Invitation acceptée',
+            body: `${name || 'Le destinataire'} a rejoint l’équipe`,
+            data: { requestId },
+          });
+        })();
       }
       return {
         error: false,

@@ -1,3 +1,4 @@
+import { NotificationsService } from '../../notifications/notifications.service';
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InboxChannel, InboxThreadStatus, MessageType, Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
@@ -23,6 +24,7 @@ export class InboxService {
     private readonly notification: MessageNotificationService,
     @Optional() private readonly gateway?: MessagesGateway,
     @Optional() private readonly instagram?: InstagramService,
+    @Optional() private readonly notifications?: NotificationsService,
   ) {}
 
   private async getProfessional(userId: string) {
@@ -309,6 +311,7 @@ export class InboxService {
         throw new BadRequestException('Ce tatoueur interne ne fait pas partie du salon');
       }
     }
+    void this.notifyAssignment(thread, userId, dto.assignedUserId || null);
     return this.prisma.inboxThread.update({
       where: { id: threadId },
       data: {
@@ -317,6 +320,19 @@ export class InboxService {
         assignedByUserId: userId,
         assignedAt: dto.assignedUserId || dto.assignedTatoueurId ? new Date() : null,
       },
+    });
+  }
+
+  /** Prévient le tatoueur lié à qui on vient d'attribuer un fil (les tatoueurs internes n'ont pas de compte). */
+  private async notifyAssignment(thread: { id: string; conversationId?: string | null; ownerUserId: string }, byUserId: string, assignedUserId: string | null) {
+    if (!assignedUserId || assignedUserId === byUserId || !this.notifications) return;
+    const name = await this.notifications.displayName(byUserId);
+    await this.notifications.notify({
+      userId: assignedUserId,
+      type: 'thread.assigned',
+      title: 'Conversation attribuée',
+      body: `${name || 'Le salon'} vous a attribué une conversation`,
+      data: { threadId: thread.id, ...(thread.conversationId ? { conversationId: thread.conversationId } : {}) },
     });
   }
 

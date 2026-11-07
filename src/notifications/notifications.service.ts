@@ -115,6 +115,17 @@ export class NotificationsService {
     }
   }
 
+  /** Nom affichable d'un compte : salon, sinon prénom + nom. */
+  async displayName(userId: string | null | undefined): Promise<string> {
+    if (!userId) return '';
+    try {
+      const u = await this.prisma.user.findUnique({ where: { id: userId }, select: { salonName: true, firstName: true, lastName: true } });
+      return u?.salonName || [u?.firstName, u?.lastName].filter(Boolean).join(' ') || '';
+    } catch {
+      return '';
+    }
+  }
+
   /** Notifie plusieurs destinataires (doublons d'identifiants retirés). */
   async notifyMany(userIds: Array<string | null | undefined>, input: Omit<NotifyInput, 'userId'>): Promise<void> {
     const unique = [...new Set(userIds.filter((id): id is string => !!id))];
