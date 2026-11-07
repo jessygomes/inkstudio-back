@@ -1,5 +1,6 @@
 import { Injectable, Optional } from '@nestjs/common';
 import { NotificationsService } from '../notifications/notifications.service';
+import { notifyStockLow } from '../notifications/stock-notifications';
 import { PrismaService } from 'src/database/prisma.service';
 import { SaasService } from 'src/saas/saas.service';
 import { CacheService } from 'src/redis/cache.service';
@@ -14,18 +15,6 @@ export class StocksService {
     @Optional() private readonly notifications?: NotificationsService,
   ) {}
 
-  /** Notifie le salon quand une quantité passe sous le seuil d'alerte (une seule fois par passage). */
-  private notifyIfLow(before: { quantity: number }, after: { id: string; userId: string; name: string; quantity: number; unit: string | null; minQuantity: number | null }) {
-    const min = after.minQuantity;
-    if (min == null || after.quantity > min || before.quantity <= min) return;
-    void this.notifications?.notify({
-      userId: after.userId,
-      type: 'stock.low',
-      title: after.quantity <= 0 ? 'Rupture de stock' : 'Stock bas',
-      body: `${after.name} · il reste ${after.quantity}${after.unit ? ` ${after.unit}` : ''}`,
-      data: { stockItemId: after.id },
-    });
-  }
 
   async createItemStock({ stockBody, userId }: { stockBody: CreateStockDto, userId: string }) {
     try {
@@ -323,7 +312,7 @@ export class StocksService {
         where: { id },
         data: { quantity },
       });
-      this.notifyIfLow(existingItem, updatedStockItem);
+      void notifyStockLow(this.notifications, existingItem.quantity, updatedStockItem);
 
       // Invalider le cache de l'élément spécifique
       await this.cacheService.del(`stockitem:${updatedStockItem.userId}:${id}`);

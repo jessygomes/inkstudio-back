@@ -19,7 +19,7 @@ import { SKIN_REQUIRED_PRESTATIONS, SKIN_TONE_OPTIONS, SkinTone } from './consta
 import { CreateAppointmentByClientResponse } from './dto/create-appointment-by-client.dto';
 import { assertProfessionalCanMessage } from '../messaging/plan-access';
 import { NotificationsService } from '../notifications/notifications.service';
-import { notifyClientCancelled, notifyClientCancelledBySalon, notifyClientConfirmed, notifyClientRescheduled, notifyNewBooking } from '../notifications/appointment-notifications';
+import { notifyClientCancelled, notifyClientCancelledBySalon, notifyClientConfirmed, notifyClientRescheduled, notifyClientRescheduledByClient, notifyNewBooking, notifyPerformerAssigned } from '../notifications/appointment-notifications';
 
 @Injectable()
 export class AppointmentsService {
@@ -1051,6 +1051,7 @@ export class AppointmentsService {
         },
         { timeout: 20000 },
       );
+      void notifyPerformerAssigned(this.notifications, newAppointment, userId, `${client.firstName} ${client.lastName}`.trim());
       try {
         try {
           await this.mailService.sendAppointmentConfirmation(
@@ -3132,6 +3133,8 @@ export class AppointmentsService {
           tatoueur: true,
         },
       }, userId, undefined, true));
+
+      void notifyClientRescheduledByClient(this.notifications, updatedAppointment, `${updatedAppointment.client?.firstName || ''} ${updatedAppointment.client?.lastName || ''}`.trim());
 
       // Envoyer un email de confirmation au client
       if (updatedAppointment.client) {

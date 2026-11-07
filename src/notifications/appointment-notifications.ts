@@ -79,3 +79,25 @@ export function notifyClientRescheduled(n: NotificationsService | undefined, rdv
     data: link(rdv),
   });
 }
+
+/** Le client a déplacé son rendez-vous. */
+export function notifyClientRescheduledByClient(n: NotificationsService | undefined, rdv: Rdv, clientName: string) {
+  return n?.notifyMany(proIds(rdv), {
+    type: 'appointment.updated',
+    title: 'Rendez-vous modifié par le client',
+    body: `${clientName || 'Un client'} · nouvel horaire : ${formatRdvWhen(rdv.start)}`,
+    data: link(rdv),
+  });
+}
+
+/** Un rendez-vous a été créé par le salon pour un artiste lié (compte Pro) : l'artiste est prévenu. */
+export function notifyPerformerAssigned(n: NotificationsService | undefined, rdv: Rdv, createdBy: string, clientName: string) {
+  if (!rdv.performerUserId || rdv.performerUserId === createdBy) return undefined;
+  return n?.notify({
+    userId: rdv.performerUserId,
+    type: 'appointment.created',
+    title: 'Nouveau rendez-vous dans votre agenda',
+    body: `${clientName || 'Client'} · ${formatRdvWhen(rdv.start)}`,
+    data: link(rdv),
+  });
+}
