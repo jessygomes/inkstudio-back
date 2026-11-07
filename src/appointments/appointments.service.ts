@@ -18,6 +18,8 @@ import { ConversationsService } from 'src/messaging/conversations/conversations.
 import { SKIN_REQUIRED_PRESTATIONS, SKIN_TONE_OPTIONS, SkinTone } from './constants/skin-tone.constants';
 import { CreateAppointmentByClientResponse } from './dto/create-appointment-by-client.dto';
 import { assertProfessionalCanMessage } from '../messaging/plan-access';
+import { NotificationsService } from '../notifications/notifications.service';
+import { notifyClientCancelled, notifyClientCancelledBySalon, notifyClientConfirmed, notifyClientRescheduled, notifyNewBooking } from '../notifications/appointment-notifications';
 
 @Injectable()
 export class AppointmentsService {
@@ -30,7 +32,8 @@ export class AppointmentsService {
     private readonly videoCallService: VideoCallService,
     private cacheService: CacheService,
     private readonly conversationsService: ConversationsService,
-    @Optional() private readonly residencies?: ResidenciesService
+    @Optional() private readonly residencies?: ResidenciesService,
+    @Optional() private readonly notifications?: NotificationsService,
   ) {}
 
   private persistAppointment(
@@ -1647,6 +1650,7 @@ export class AppointmentsService {
         );
 
       // Side effects run only after commit and cannot turn a persisted booking into a reported failure.
+      void notifyNewBooking(this.notifications, newAppointment, `${client.firstName} ${client.lastName}`.trim(), !!salonConfig.addConfirmationEnabled);
       try {
         // Gestion des emails selon le statut
         if (salonConfig.addConfirmationEnabled) {
@@ -2951,6 +2955,10 @@ export class AppointmentsService {
       const newStart = new Date(start).toISOString();
       const newEnd = new Date(end).toISOString();
 
+      if (originalStart !== newStart || originalEnd !== newEnd) {
+        void notifyClientRescheduled(this.notifications, { ...existingAppointment, start: new Date(start) });
+      }
+
       // Envoi d'un mail de confirmation si les horaires ont changé
       if ((originalStart !== newStart || originalEnd !== newEnd) && existingAppointment.client?.email) {
         // Récupérer les informations du salon
@@ -3338,6 +3346,8 @@ export class AppointmentsService {
         }
       }
 
+      void notifyClientConfirmed(this.notifications, appointment);
+
       // Envoi d'un mail de confirmation au client (si le client existe)
       if (appointment.client) {
         await this.mailService.sendAppointmentConfirmation(
@@ -3441,6 +3451,8 @@ export class AppointmentsService {
       tatoueur: true,
     },
   });
+
+  void notifyClientCancelledBySalon(this.notifications, appointment, existingAppointment.status === 'PENDING');
 
   // Gérer la conversation associée au RDV annulé
   try {
@@ -3656,6 +3668,8 @@ async cancelAppointmentByClient(appointmentId: string, clientUserId: string, rea
       console.error('⚠️ Erreur lors de la gestion de la conversation:', conversationError);
       // Ne pas bloquer l'annulation du RDV si la conversation échoue
     }
+
+    void notifyClientCancelled(this.notifications, appointment, `${appointment.client?.firstName || ''} ${appointment.client?.lastName || ''}`.trim(), reason);
 
     // Envoyer un email au salon pour l'informer de l'annulation
     try {

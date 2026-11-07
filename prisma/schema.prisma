@@ -155,6 +155,8 @@ model User {
   messagesSent              Message[]
   messageNotifications      MessageNotification[]
   notificationPreference    NotificationPreference?
+  appNotifications          AppNotification[]
+  notificationCategoryPrefs NotificationCategoryPreference[]
 
   // Messagerie multicanale : propriété et délégation, indépendantes des RDV
   inboxThreadsOwned         InboxThread[]         @relation("InboxOwner")
@@ -1236,6 +1238,42 @@ model NotificationPreference {
 
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
+}
+
+//! MODEL CENTRE DE NOTIFICATIONS (dans l app, base du push)
+model AppNotification {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type        String    // ex. appointment.created (voir src/notifications/notification-catalog.ts)
+  category    String    // famille pour les preferences (appointments, messages, stock...)
+  title       String
+  body        String
+  data        Json?     // identifiants pour ouvrir le bon ecran (appointmentId, conversationId...)
+  dedupeKey   String?   // evite les doublons (rappels, resumes)
+
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
+  @@index([createdAt])
+}
+
+//! MODEL PREFERENCES PAR CATEGORIE DE NOTIFICATION
+model NotificationCategoryPreference {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category  String
+  inApp     Boolean  @default(true)
+  push      Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, category])
+  @@index([userId])
 }
 
 //! MODEL QUEUE EMAIL NOTIFICATIONS

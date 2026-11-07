@@ -1,9 +1,13 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { NotificationsService } from '../../notifications/notifications.service';
 
 @Injectable()
 export class MessageNotificationService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    @Optional() private readonly appNotifications?: NotificationsService,
+  ) {}
 
   /**
    * Incrémente le compteur de messages non lus pour un utilisateur dans une conversation
@@ -32,6 +36,36 @@ export class MessageNotificationService {
         lastUnreadAt: new Date(),
       },
     });
+    void this.notifyRecipient(conversationId, userId);
+  }
+
+  /** Centre de notifications : un message de plus, regroupé par conversation tant qu'il n'est pas lu. */
+  private async notifyRecipient(conversationId: string, userId: string): Promise<void> {
+    if (!this.appNotifications) return;
+    try {
+      const last = await this.prisma.message.findFirst({
+        where: { conversationId, NOT: { senderId: userId } },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          content: true,
+          type: true,
+          attachments: { select: { id: true }, take: 1 },
+          sender: { select: { firstName: true, lastName: true, salonName: true, role: true } },
+        },
+      });
+      if (!last) return;
+      const s = last.sender;
+      const name = (s?.role === 'client' ? [s.firstName, s.lastName].filter(Boolean).join(' ') : s?.salonName || [s?.firstName, s?.lastName].filter(Boolean).join(' ')) || 'Nouveau message';
+      const preview = last.content?.trim() ? last.content.trim().slice(0, 140) : last.attachments.length ? '📷 Photo' : 'Nouveau message';
+      await this.appNotifications.notifyGrouped(
+        { userId, type: 'message.new', title: name, body: preview, data: { conversationId } },
+        'conversationId',
+        (count, latest) => (count > 1 ? `${count} nouveaux messages · ${latest}` : latest),
+        preview,
+      );
+    } catch {
+      // Une notification ratée ne doit jamais bloquer l'envoi du message.
+    }
   }
 
   /**

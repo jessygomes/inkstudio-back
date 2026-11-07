@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateSalonReviewDto } from './dto/create-salon-review.dto';
 // import { UpdateSalonReviewDto } from './dto/update-salon-review.dto';
 import { PrismaService } from 'src/database/prisma.service';
@@ -7,7 +8,8 @@ import { CacheService } from 'src/redis/cache.service';
 @Injectable()
 export class SalonReviewService {
    constructor(private prisma: PrismaService, 
-      private cacheService: CacheService) {}
+      private cacheService: CacheService,
+      @Optional() private readonly notifications?: NotificationsService) {}
 
 //! ------------------------------------------------------------------------------
 //! CRÉER UN AVIS SUR UN SALON (CLIENT CONNECTÉ)
@@ -188,6 +190,14 @@ async createReview(createSalonReviewDto: CreateSalonReviewDto, clientUserId: str
           }
         }
       }
+    });
+
+    void this.notifications?.notify({
+      userId: salonId,
+      type: 'review.new',
+      title: `Nouvel avis · ${'★'.repeat(rating)}${'☆'.repeat(Math.max(0, 5 - rating))}`,
+      body: `${[review.author.firstName, review.author.lastName].filter(Boolean).join(' ') || 'Un client'}${review.title ? ` · ${review.title}` : review.comment ? ` · ${review.comment.slice(0, 100)}` : ''}`,
+      data: { reviewId: review.id },
     });
 
     // 8. Invalider les caches liés au salon
@@ -981,6 +991,14 @@ async findAllReviewBySalon(
             }
           }
         }
+      });
+
+      void this.notifications?.notify({
+        userId: review.authorId,
+        type: 'client.review_reply',
+        title: 'Le salon a répondu à votre avis',
+        body: response.trim().slice(0, 140),
+        data: { reviewId },
       });
 
       // 5. Invalider les caches liés au salon et au client auteur

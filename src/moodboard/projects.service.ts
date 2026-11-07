@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { assertProfessionalCanMessage } from 'src/messaging/plan-access';
@@ -14,6 +15,7 @@ import {
 } from './dto/project.dto';
 import { MessageNotificationService } from 'src/messaging/notifications/message-notification.service';
 import { ProjectProposalEmailService } from './project-proposal-email.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PROJECT_PROPOSAL_EMAIL_THRESHOLDS } from 'src/email/project-proposal-email';
 
 @Injectable()
@@ -22,7 +24,31 @@ export class ProjectsService {
     private prisma: PrismaService,
     private notifications: MessageNotificationService,
     private proposalEmails: ProjectProposalEmailService,
+    @Optional() private appNotifications?: NotificationsService,
   ) {}
+
+  private async displayName(userId: string): Promise<string> {
+    const u = await this.prisma.user.findUnique({ where: { id: userId }, select: { salonName: true, firstName: true, lastName: true } });
+    return u?.salonName || [u?.firstName, u?.lastName].filter(Boolean).join(' ') || '';
+  }
+
+  /** Centre de notifications : sans effet sur le résultat, les erreurs sont ignorées. */
+  private notifyProposal(kind: 'sent' | 'reply', proposal: { id: string; moodboardId: string; professionalId: string; clientUserId: string }, status?: string) {
+    if (!this.appNotifications) return;
+    void (async () => {
+      try {
+        if (kind === 'sent') {
+          const name = await this.displayName(proposal.professionalId);
+          await this.appNotifications!.notify({ userId: proposal.clientUserId, type: 'client.explorer_proposal', title: 'Nouvelle proposition pour votre projet', body: name ? `${name} vous propose ses services` : 'Un professionnel vous propose ses services', data: { proposalId: proposal.id, moodboardId: proposal.moodboardId } });
+        } else {
+          const accepted = status === 'ACCEPTED';
+          await this.appNotifications!.notify({ userId: proposal.professionalId, type: 'explorer.proposal_reply', title: accepted ? 'Proposition acceptée' : 'Proposition refusée', body: accepted ? 'Le client a accepté votre proposition : vous pouvez lui écrire.' : 'Le client a décliné votre proposition.', data: { proposalId: proposal.id, moodboardId: proposal.moodboardId } });
+        }
+      } catch {
+        // ignoré
+      }
+    })();
+  }
 
   async options() {
     const [styles, categories] = await Promise.all([
@@ -276,6 +302,10 @@ export class ProjectsService {
       return { proposal, emailQueued };
     });
     if (result.emailQueued) await this.proposalEmails.requestDelivery();
+    void this.prisma.projectProposal
+      .findUnique({ where: { id: result.proposal.id }, select: { id: true, moodboardId: true, professionalId: true, clientUserId: true } })
+      .then((p) => p && this.notifyProposal('sent', p))
+      .catch(() => undefined);
     return result.proposal;
   }
 
@@ -405,6 +435,7 @@ export class ProjectsService {
         result.conversationId,
         proposal.professionalId,
       );
+    this.notifyProposal('reply', proposal, status);
     return result;
   }
 

@@ -39,6 +39,7 @@ import { SalonReviewModule } from './salon-review/salon-review.module';
 import { SalonVerificationModule } from './salon-verification/salon-verification.module';
 import { AdminModule } from './admin/admin.module';
 import { MessagingModule } from './messaging/messaging.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { StripeModule } from './stripe/stripe.module';
 import { FlashModule } from './flash/flash.module';
 import { ArticlesModule } from './articles/articles.module';
@@ -88,6 +89,7 @@ import { AppointmentPhotosModule } from './appointment-photos/appointment-photos
     SalonVerificationModule,
     AdminModule,
     MessagingModule,
+    NotificationsModule,
     SalonAnalyticsModule,
     SuiviModule,
     AppointmentPhotosModule,

@@ -19,6 +19,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { RedisService } from '../../redis/redis.service';
 import { RedisOnlineStatusService } from '../../redis/redis-online-status.service';
 import { WebSocketAuthService } from './websocket-auth.service';
+import { NotificationsService } from '../../notifications/notifications.service';
 import { corsOriginDelegate } from '../../config/cors.config';
 import {
   CreateMessagePayload,
@@ -82,7 +83,11 @@ export class MessagesGateway
     private redisService: RedisService,
     private readonly redisOnlineStatusService: RedisOnlineStatusService,
     private webSocketAuthService: WebSocketAuthService,
-  ) {}
+    private readonly appNotifications: NotificationsService,
+  ) {
+    // Les notifications du centre de notifications partent dans la salle de l'utilisateur.
+    this.appNotifications.registerEmitter((userId, event, payload) => this.notifyUser(userId, event, payload));
+  }
 
   /**
    * Obtenir un message d'erreur à partir d'une valeur inconnue
