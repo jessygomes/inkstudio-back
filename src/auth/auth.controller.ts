@@ -16,6 +16,7 @@ import { RegistrationThrottleGuard } from './registration-throttle.guard';
 import { invitationTokenHash } from './invitation-policy';
 import { GoogleLoginDto } from './dto/google-login.dto';
 import { AppleLoginDto } from './dto/apple-login.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
 // import { GoogleAuthGuard } from './guards/google-auth/google-auth.guard';
 
 
@@ -34,6 +35,29 @@ export class AuthController {
   @Post('login') // POST /auth/login
   async login(@Body() authBody: LoginUserDto) {
     return await this.authService.login({ authBody });
+  }
+
+  // Renouvelle la session avec un jeton de rafraîchissement (rotation : l'ancien jeton est remplacé).
+  @SecurityThrottle('refresh')
+  @Post('refresh') // POST /auth/refresh
+  @Header('Cache-Control', 'private, no-store')
+  async refresh(@Body() body: RefreshTokenDto, @Request() request: { headers?: Record<string, string | string[] | undefined> }) {
+    const agent = request.headers?.['user-agent'];
+    return await this.authService.refresh(body.refreshToken, typeof agent === 'string' ? agent : undefined);
+  }
+
+  // Déconnexion de cet appareil : la session du jeton présenté est révoquée.
+  @SecurityThrottle('refresh')
+  @Post('logout') // POST /auth/logout
+  async logout(@Body() body: RefreshTokenDto) {
+    return await this.authService.logout(body.refreshToken);
+  }
+
+  // Déconnexion de tous les appareils.
+  @UseGuards(JwtAuthGuard)
+  @Post('logout-all') // POST /auth/logout-all
+  async logoutAll(@Request() request: RequestWithUser) {
+    return await this.authService.logoutAll(request.user.userId);
   }
 
   @SecurityThrottle('google')

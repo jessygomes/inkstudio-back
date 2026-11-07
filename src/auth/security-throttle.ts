@@ -97,6 +97,7 @@ const policies = {
   login: { ip: [120, 900], email: [10, 900] },
   google: { ip: [120, 900] },
   apple: { ip: [120, 900] },
+  refresh: { ip: [300, 900] },
   verify: { ip: [60, 900], email: [10, 900] },
   forgot: { ip: [10, 900], email: [3, 3600] },
   reset: { ip: [20, 900], email: [5, 900] },

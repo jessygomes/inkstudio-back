@@ -8,6 +8,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { LoginUserDto } from './dto/login-user.dto';
 import { MailService } from 'src/email/mailer.service';
 import { createHash, randomBytes } from 'crypto';
+import { RefreshTokenService } from './refresh-token.service';
 import { SaasService } from 'src/saas/saas.service';
 import { nativeTrialEndDate } from '../saas/trial-policy';
 import { invitationEndDate, invitationTokenHash } from './invitation-policy';
@@ -46,6 +47,9 @@ interface AuthenticatedUser {
 
 export type AuthTokenResponse = {
   access_token: string;
+  /** Jeton de rafraîchissement (à garder dans un stockage sécurisé) et sa date d'expiration. */
+  refresh_token?: string;
+  refresh_expires_at?: string;
   id: string;
   role: string;
   email: string;
@@ -86,6 +90,7 @@ export class AuthService {
     private readonly googleIdentity: GoogleIdentityService,
     private readonly appleIdentity: AppleIdentityService,
     @Optional() private readonly cacheService?: CacheService,
+    @Optional() private readonly refreshTokens?: RefreshTokenService,
   ) {}
 
   private getTatoueurTrialMonths(): number {
@@ -168,7 +173,7 @@ export class AuthService {
         };
       }
   
-      return this.authenticateUser({
+      return await this.authenticateUser({
         ...existingUser,
         agendaMode:
           existingUser.role === 'user_salon'
@@ -672,6 +677,11 @@ export class AuthService {
       );
     const hashedPassword = await this.hashPassword({ password });
     await this.consumeEmailToken(email, token, 'reset', hashedPassword);
+    // Mot de passe réinitialisé : toutes les sessions ouvertes (jetons de rafraîchissement) sont fermées.
+    if (this.refreshTokens) {
+      const account = await this.prisma.user.findUnique({ where: { email }, select: { id: true } });
+      if (account) await this.refreshTokens.revokeAllForUser(account.id);
+    }
     return { message: 'Mot de passe mis \u00e0 jour avec succ\u00e8s.' };
   }
 
@@ -779,6 +789,8 @@ export class AuthService {
       where: { id: userId },
       data: { password: hashedNewPassword },
     });
+    // Mot de passe changé : toutes les sessions ouvertes (jetons de rafraîchissement) sont fermées.
+    await this.refreshTokens?.revokeAllForUser(userId);
 
     // Envoi d'un email de confirmation
     await this.mailService.sendPasswordChangeConfirmation(
@@ -810,15 +822,53 @@ export class AuthService {
     return isPasswordValid;
   }
 
+  /**
+   * Renouvelle la session : échange un jeton de rafraîchissement valide contre un nouveau jeton d'accès et un nouveau
+   * jeton de rafraîchissement (rotation). 401 si le jeton est inconnu, expiré, révoqué ou si le compte n'existe plus.
+   */
+  async refresh(rawToken: string, userAgent?: string) {
+    if (!this.refreshTokens) throw new UnauthorizedException('Session expirée.');
+    const rotated = await this.refreshTokens.rotate(rawToken, userAgent);
+    const user = await this.prisma.user.findUnique({ where: { id: rotated.userId }, select: { id: true, role: true } });
+    if (!user) {
+      await this.refreshTokens.revokeAllForUser(rotated.userId);
+      throw new UnauthorizedException('Session expirée.');
+    }
+    const payload: UserPayload = { userId: user.id, role: user.role };
+    const access_token = this.jwtService.sign(payload);
+    const decoded = this.jwtService.decode<{ exp?: number } | null>(access_token);
+    return {
+      access_token,
+      access_expires_at: decoded?.exp ? new Date(decoded.exp * 1000).toISOString() : undefined,
+      refresh_token: rotated.refreshToken,
+      refresh_expires_at: rotated.refreshExpiresAt.toISOString(),
+    };
+  }
+
+  /** Déconnexion d'un appareil : révoque la session (toute la famille de jetons) du jeton présenté. */
+  async logout(rawToken: string) {
+    await this.refreshTokens?.revokeByToken(rawToken);
+    return { success: true };
+  }
+
+  /** Déconnexion de tous les appareils. */
+  async logoutAll(userId: string) {
+    await this.refreshTokens?.revokeAllForUser(userId);
+    return { success: true };
+  }
+
   // Méthode pour générer un token d'authentification
-  private authenticateUser(user: AuthenticatedUser): AuthTokenResponse {
+  private async authenticateUser(user: AuthenticatedUser, userAgent?: string): Promise<AuthTokenResponse> {
     const payload: UserPayload = {userId: user.id, role: user.role}
     
     const access_token = this.jwtService.sign(payload);
+    const issued = await this.refreshTokens?.issue(user.id, { userAgent });
+    const refresh = issued ? { refresh_token: issued.refreshToken, refresh_expires_at: issued.refreshExpiresAt.toISOString() } : {};
 
     if (user.role === 'client') {
       return {
         access_token,
+        ...refresh,
         id: user.id,
         role: user.role,
         firstName: user.firstName,
@@ -832,6 +882,7 @@ export class AuthService {
     
     return {
       access_token,
+      ...refresh,
       id: user.id,
       salonName: user.salonName,
       role: user.role,
@@ -866,7 +917,7 @@ export class AuthService {
     return this.authenticateSocialUser(user);
   }
 
-  private authenticateSocialUser(user: {
+  private async authenticateSocialUser(user: {
     id: string;
     role: string;
     salonName?: string | null;
@@ -888,7 +939,7 @@ export class AuthService {
       city?: string | null;
       postalCode?: string | null;
     } | null;
-  }): AuthTokenResponse {
+  }): Promise<AuthTokenResponse> {
     return this.authenticateUser({
       id: user.id,
       role: user.role,

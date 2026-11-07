@@ -11,6 +11,7 @@ datasource db {
 }
 
 model User {
+  refreshTokens RefreshToken[]
   uploadedFiles UploadedFile[]
   projectProposalsSent ProjectProposal[] @relation("ProjectProfessional")
   projectProposalsReceived ProjectProposal[] @relation("ProjectClient")
@@ -177,6 +178,26 @@ model User {
 
   // Index historiques créés en SQL, désormais suivis par Prisma.
   @@index([saasPlan, saasPlanUntil], map: "idx_user_saasPlan_saasPlanUntil")
+}
+
+// Jeton de rafraîchissement : seul son empreinte (SHA-256) est stockée, jamais le jeton lui-même.
+// Les jetons issus d'une même connexion partagent un familyId : réutiliser un jeton déjà remplacé révoque toute la famille.
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  familyId  String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  // Date du remplacement par rotation ; effacée si la session est ensuite révoquée à la main (plus de fenêtre de grâce).
+  rotatedAt DateTime?
+  createdAt DateTime  @default(now())
+  userAgent String?
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@index([expiresAt])
 }
 
 // Ownership is recorded only by signed server callbacks, never by client URLs.
