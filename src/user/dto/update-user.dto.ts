@@ -1,4 +1,5 @@
 import { Transform } from 'class-transformer';
+import { TattooPracticesDto } from './tattoo-practices.dto';
 import {
   IsArray,
   IsNotEmpty,
@@ -7,7 +8,7 @@ import {
   MaxLength,
 } from 'class-validator';
 
-export class UpdateUserDto {
+export class UpdateUserDto extends TattooPracticesDto {
   @IsString()
   @IsNotEmpty()
   @Transform(({ value }: { value: unknown }) =>

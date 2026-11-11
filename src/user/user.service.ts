@@ -1,3 +1,4 @@
+import { TattooPracticesDto } from './dto/tattoo-practices.dto';
 import { publicProfessionalRoles, publicUserProfile, publicUserProfileSelect } from './public-user-profile';
 import { AgendaMode, SaasPlan } from '@prisma/client';
 import { styleKey } from '../portfolio/style.utils';
@@ -129,6 +130,7 @@ export class UserService {
   private buildAppointmentBookingSettings({
     role,
     agendaMode,
+    allowSameDayBooking,
     projectAppointmentDurationMinutes,
     projectAppointmentIsFree,
     projectAppointmentPrice,
@@ -137,6 +139,7 @@ export class UserService {
   }: {
     role?: string | null;
     agendaMode?: AgendaMode | null;
+    allowSameDayBooking?: boolean;
     projectAppointmentDurationMinutes?: number | null;
     projectAppointmentIsFree?: boolean | null;
     projectAppointmentPrice?: number | null;
@@ -173,6 +176,7 @@ export class UserService {
 
     return {
       agendaMode: effectiveAgendaMode,
+      allowSameDayBooking: allowSameDayBooking ?? true,
       projectAppointmentDurationMinutes: canConfigureProjectSettings ? normalizedDuration : null,
       projectAppointmentIsFree: canConfigureProjectSettings ? normalizedIsFree : true,
       projectAppointmentPrice: canConfigureProjectSettings ? normalizedPrice : null,
@@ -289,6 +293,7 @@ export class UserService {
             salonHours: true,
             prestations: true,
             style: true,
+            tattooPractices: true, tattooPracticeDetails: true,
             appointmentBookingEnabled: true,
             Tatoueur: {
               select: {
@@ -300,6 +305,7 @@ export class UserService {
                 hours: true,
                 instagram: true,
                 style: true,
+            tattooPractices: true, tattooPracticeDetails: true,
                 skills: true,
                 rdvBookingEnabled: true
               },
@@ -381,6 +387,7 @@ export class UserService {
         salonHours: true,
         prestations: true,
         style: true,
+            tattooPractices: true, tattooPracticeDetails: true,
         Tatoueur: {
           select: {
             id: true,
@@ -390,6 +397,7 @@ export class UserService {
             phone: true,
             hours: true,
             style: true,
+            tattooPractices: true, tattooPracticeDetails: true,
             skills: true,
             rdvBookingEnabled: true
           }
@@ -742,6 +750,7 @@ export class UserService {
         website: true,
         description: true,
         style: true,
+            tattooPractices: true, tattooPracticeDetails: true,
         prestations: true,
         appointmentBookingEnabled: true,
       },
@@ -877,6 +886,8 @@ export class UserService {
           verifiedSalon: true,
           prestations: true,
           style: true,
+            tattooPractices: true, tattooPracticeDetails: true,
+          allowSameDayBooking: true,
           projectAppointmentDurationMinutes: true,
           projectAppointmentIsFree: true,
           projectAppointmentPrice: true,
@@ -894,6 +905,7 @@ export class UserService {
               hours: true,
               instagram: true,
               style: true,
+            tattooPractices: true, tattooPracticeDetails: true,
               skills: true,
               rdvBookingEnabled: true
             }
@@ -976,6 +988,7 @@ export class UserService {
           role: true,
           verifiedSalon: true,
           isInspirationSalon: true,
+          allowSameDayBooking: true,
           projectAppointmentDurationMinutes: true,
           projectAppointmentIsFree: true,
           projectAppointmentPrice: true,
@@ -1048,7 +1061,7 @@ export class UserService {
   //! -------------------------------------------------
   //! UPDATE USER
   //! -------------------------------------------------
-  async updateUser({userId, userBody} : {userId: string; userBody: { salonName: string; nickname?: string; firstName: string; lastName: string; phone: string; address: string; city: string; postalCode: string; instagram: string; facebook: string; tiktok: string; website: string; description: string; image: string; profileImage?: string; prestations?: string[]; style?: string[] | string | null; }}): Promise<Record<string, any>> {
+  async updateUser({userId, userBody} : {userId: string; userBody: { salonName: string; nickname?: string; firstName: string; lastName: string; phone: string; address: string; city: string; postalCode: string; instagram: string; facebook: string; tiktok: string; website: string; description: string; image: string; profileImage?: string; prestations?: string[]; style?: string[] | string | null; } & TattooPracticesDto }): Promise<Record<string, any>> {
     
     // Vérifier que userId est défini
     if (!userId) {
@@ -1060,6 +1073,10 @@ export class UserService {
       if (owner?.role !== 'user_tatoueur') throw new ForbiddenException('Le pseudo public est réservé aux comptes indépendants.');
     }
 
+    if (userBody.tattooPractices !== undefined || userBody.tattooPracticeDetails !== undefined) {
+      const professional = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+      if (!professional || !['user', 'user_salon', 'user_tatoueur'].includes(professional.role)) throw new ForbiddenException('Compte professionnel requis.');
+    }
     const allowed = new Set(["TATTOO", "RETOUCHE", "PROJET", "PIERCING"]);
     const safePrestations = Array.isArray(userBody.prestations)
       ? userBody.prestations
@@ -1085,6 +1102,8 @@ export class UserService {
         id: userId,
       },
       data: {
+        tattooPractices: userBody.tattooPractices,
+        ...(userBody.tattooPracticeDetails !== undefined ? { tattooPracticeDetails: userBody.tattooPracticeDetails?.trim() || null } : {}),
         salonName: userBody.salonName,
         ...(userBody.nickname !== undefined ? { nickname: userBody.nickname?.trim() || null } : {}),
         firstName: userBody.firstName,
@@ -1375,12 +1394,13 @@ export class UserService {
   //! ------------------------------------------------------------------------------
   async getAppointmentBooking({userId}: {userId: string}) {
     try {
-      const cacheKey = `user:appointment-booking:${userId}`;
+      const cacheKey = `user:appointment-booking:v2:${userId}`;
 
       // 1. Vérifier dans Redis
       const cachedSetting = await this.cacheService.get<{
         agendaMode: AgendaMode;
-        projectAppointmentDurationMinutes: number | null;
+        allowSameDayBooking: boolean;
+    projectAppointmentDurationMinutes: number | null;
         projectAppointmentIsFree: boolean;
         projectAppointmentPrice: number | null;
         followUpEmailDelayDays: number;
@@ -1401,6 +1421,7 @@ export class UserService {
         },
         select: {
           role: true,
+          allowSameDayBooking: true,
           projectAppointmentDurationMinutes: true,
           projectAppointmentIsFree: true,
           projectAppointmentPrice: true,
@@ -1416,7 +1437,8 @@ export class UserService {
 
       const typedUser = user as {
         role?: string | null;
-        projectAppointmentDurationMinutes?: number | null;
+        allowSameDayBooking?: boolean;
+    projectAppointmentDurationMinutes?: number | null;
         projectAppointmentIsFree?: boolean | null;
         projectAppointmentPrice?: number | null;
         followUpEmailDelayDays?: number | null;
@@ -1430,6 +1452,7 @@ export class UserService {
         ? this.buildAppointmentBookingSettings({
             role: typedUser.role,
             agendaMode: typedUser.saasPlanDetails?.agendaMode,
+            allowSameDayBooking: typedUser.allowSameDayBooking,
             projectAppointmentDurationMinutes: typedUser.projectAppointmentDurationMinutes,
             projectAppointmentIsFree: typedUser.projectAppointmentIsFree,
             projectAppointmentPrice: typedUser.projectAppointmentPrice,
@@ -1464,6 +1487,7 @@ export class UserService {
   async updateAppointmentBooking({
     userId,
     agendaMode,
+    allowSameDayBooking,
     projectAppointmentDurationMinutes,
     projectAppointmentIsFree,
     projectAppointmentPrice,
@@ -1472,6 +1496,7 @@ export class UserService {
   }: {
     userId: string;
     agendaMode?: AgendaMode;
+    allowSameDayBooking?: boolean;
     projectAppointmentDurationMinutes?: number;
     projectAppointmentIsFree?: boolean;
     projectAppointmentPrice?: number;
@@ -1486,6 +1511,7 @@ export class UserService {
         select: {
           role: true,
           saasPlan: true,
+          allowSameDayBooking: true,
           projectAppointmentDurationMinutes: true,
           projectAppointmentIsFree: true,
           projectAppointmentPrice: true,
@@ -1503,7 +1529,8 @@ export class UserService {
       const typedExistingUser = existingUser as {
         role?: string | null;
         saasPlan?: SaasPlan | null;
-        projectAppointmentDurationMinutes?: number | null;
+        allowSameDayBooking?: boolean;
+    projectAppointmentDurationMinutes?: number | null;
         projectAppointmentIsFree?: boolean | null;
         projectAppointmentPrice?: number | null;
         followUpEmailDelayDays?: number | null;
@@ -1534,6 +1561,7 @@ export class UserService {
       const nextSettings = this.buildAppointmentBookingSettings({
         role: typedExistingUser.role,
         agendaMode: agendaMode ?? typedExistingUser.saasPlanDetails?.agendaMode,
+        allowSameDayBooking: allowSameDayBooking ?? typedExistingUser.allowSameDayBooking,
         projectAppointmentDurationMinutes:
           projectAppointmentDurationMinutes ?? typedExistingUser.projectAppointmentDurationMinutes,
         projectAppointmentIsFree:
@@ -1569,6 +1597,7 @@ export class UserService {
       await this.prisma.user.update({
         where: { id: userId },
         data: {
+          allowSameDayBooking: nextSettings.allowSameDayBooking,
           projectAppointmentDurationMinutes: nextSettings.projectAppointmentDurationMinutes,
           projectAppointmentIsFree: nextSettings.projectAppointmentIsFree,
           projectAppointmentPrice: nextSettings.projectAppointmentPrice,
@@ -1579,7 +1608,7 @@ export class UserService {
 
       // Invalider le cache après update
       await this.cacheService.del(`user:${userId}`);
-      await this.cacheService.del(`user:appointment-booking:${userId}`);
+      await this.cacheService.del(`user:appointment-booking:v2:${userId}`);
       await this.cacheService.delPattern('user:slug:*');
 
       return {
@@ -1590,6 +1619,7 @@ export class UserService {
             : 'Paramètres projet mis à jour avec durée et prix.',
         user: {
           agendaMode: nextSettings.agendaMode,
+          allowSameDayBooking: nextSettings.allowSameDayBooking,
           projectAppointmentDurationMinutes: nextSettings.projectAppointmentDurationMinutes,
           projectAppointmentIsFree: nextSettings.projectAppointmentIsFree,
           projectAppointmentPrice: nextSettings.projectAppointmentPrice,
@@ -2087,6 +2117,8 @@ export class UserService {
                   city: true,
                   postalCode: true,
                   instagram: true,
+                  tattooPractices: true,
+                  tattooPracticeDetails: true,
                 },
               },
               tatoueur: {
@@ -2095,6 +2127,8 @@ export class UserService {
                   name: true,
                   img: true,
                   instagram: true,
+                  tattooPractices: true,
+                  tattooPracticeDetails: true,
                 },
               },
             },

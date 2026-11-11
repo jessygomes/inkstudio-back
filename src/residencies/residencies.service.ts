@@ -1,4 +1,5 @@
 import { validateInternalBooking, updateInternalBooking } from '../appointments/internal-booking-policy';
+import { assertSameDayBookingAllowed, isSameDayBookingBlocked } from '../appointments/same-day-booking';
 import {
   BadRequestException,
   ConflictException,
@@ -35,6 +36,7 @@ const salonFields = {
   city: true,
   postalCode: true,
   salonHours: true,
+  allowSameDayBooking: true, tattooPractices: true, tattooPracticeDetails: true,
   instagram: true,
   website: true,
   prestations: true,
@@ -676,6 +678,7 @@ export class ResidenciesService {
         throw new ForbiddenException('Le lieu doit correspondre au salon.');
       return this.snapshot(ownerId, tx);
     }
+    if (publicBooking) await this.assertClientBookingDay(artistId, ownerId, venueSalonId, start, tx);
     const members = await tx.salonResidency.findMany({
       where: { artistId, ...live },
     });
@@ -806,6 +809,10 @@ export class ResidenciesService {
     }
     if (parisTime(parisDate(date, 12 * 60)).date !== date)
       throw new BadRequestException('Date invalide.');
+    if (publicBooking) {
+      try { await this.assertClientBookingDay(artistId, artistId, salonId, parisDate(date, 720)); }
+      catch (error) { if (error instanceof ForbiddenException) return []; throw error; }
+    }
     if (
       publicBooking
         ? !member.salonAllowsPublicBooking || !member.artistAllowsPublicBooking
@@ -929,6 +936,34 @@ export class ResidenciesService {
     }));
   }
 
+  private async assertClientBookingDay(artistId: string, ownerId: string, venueId: string | undefined, start: Date, tx: Tx = this.prisma) {
+    if (!isSameDayBookingBlocked(start, false)) return;
+    for (const id of new Set([artistId, ownerId, venueId].filter((id): id is string => !!id))) {
+      const profile = await tx.user.findUnique({ where: { id }, select: { allowSameDayBooking: true } });
+      assertSameDayBookingAllowed(start, profile?.allowSameDayBooking);
+    }
+  }
+
+  /** Read-only availability check using the same venue and conflict rules as writes. */
+  async validateBookingLinkSlot(
+    data: { userId: string; tatoueurId: string | null; performerUserId: string | null; venueSalonId: string | null; prestation: string; start: Date; end: Date },
+    tx: Tx = this.prisma,
+  ) {
+    if (!data.performerUserId) {
+      await validateInternalBooking(tx, data, true, undefined, false);
+      return;
+    }
+    const artistId = data.performerUserId;
+    const artist = await tx.user.findUniqueOrThrow({ where: { id: artistId } });
+    if (artist.saasPlan === SaasPlan.FREE)
+      await this.businessSponsor(artistId, data.venueSalonId || undefined, true, tx);
+    if (!this.artistOpen(artist.salonHours, data.start, data.end))
+      throw new BadRequestException('En dehors des horaires du tatoueur.');
+    const snapshot = await this.venueSnapshot(artistId, data.userId, data.venueSalonId || undefined, null, true, data.start, data.end, tx);
+    if (await this.conflict(tx, artistId, snapshot.venueSalonId, data.start, data.end))
+      throw new ConflictException('Créneau indisponible.');
+  }
+
   async persistAppointment(
     args: Prisma.AppointmentCreateArgs,
     actorId: string | null,
@@ -971,6 +1006,8 @@ export class ResidenciesService {
     }
     const persist = async (tx: Tx) => {
       await this.lockArtist(tx, artistId);
+      const venueLockId = data.venueSalonId || (data.userId !== artistId ? data.userId : null);
+      if (venueLockId && venueLockId !== artistId) await this.lockArtist(tx, venueLockId);
       const artist = await tx.user.findUnique({
         where: { id: artistId },
         select: { saasPlan: true },
@@ -1065,6 +1102,7 @@ export class ResidenciesService {
           );
         const start = new Date((update.start || current.start) as string);
         const end = new Date((update.end || current.end) as string);
+        if (clientBooking) await this.assertClientBookingDay(current.performerUserId!, current.userId, venueSalonId || current.venueSalonId || undefined, start, tx);
         // Legacy appointments retain their historical location until explicitly moved.
         const snapshot =
           !venueSalonId && !current.venueSalonId

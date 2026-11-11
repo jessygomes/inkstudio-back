@@ -1,5 +1,6 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { bookingHoursWindow } from '../../utils/booking-hours';
+import { isSameDayBookingBlocked } from '../appointments/same-day-booking';
 import { AgendaMode } from '@prisma/client';
 import { addMinutes, isBefore } from 'date-fns';
 import { PrismaService } from 'src/database/prisma.service';
@@ -80,6 +81,10 @@ export class TimeSlotService {
   ): Promise<{ start: Date; end: Date }[]> {
     const window = bookingHoursWindow(date, salonHoursJson);
     if (!window) return [];
+    if (userId && isSameDayBookingBlocked(window.start, false)) {
+      const profile = await this.prisma.user.findUnique({ where: { id: userId }, select: { allowSameDayBooking: true } });
+      if (isSameDayBookingBlocked(window.start, profile?.allowSameDayBooking)) return [];
+    }
 
     const agendaMode =
       forcedAgendaMode ??
@@ -145,6 +150,7 @@ export class TimeSlotService {
           salonId: true,
           role: true,
           salonHours: true,
+          allowSameDayBooking: true,
         },
       });
 
@@ -155,6 +161,7 @@ export class TimeSlotService {
       ) {
         return [];
       }
+      if (isSameDayBookingBlocked(date, linkedTatoueur.allowSameDayBooking)) return [];
 
       // Cote public, les horaires affiches doivent toujours correspondre au tatoueur
       // selectionne. Pour un user_tatoueur lie, on utilise donc ses propres horaires.

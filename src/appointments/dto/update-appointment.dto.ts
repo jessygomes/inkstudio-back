@@ -1,3 +1,4 @@
+import { DesiredTattooPeriodDto } from './desired-tattoo-period.dto';
 import { Type } from 'class-transformer';
 import {
   IsDateString,
@@ -24,7 +25,7 @@ export enum AppointmentStatus {
   CANCELED = 'CANCELED',
 }
 
-export class UpdateAppointmentDto {
+export class UpdateAppointmentDto extends DesiredTattooPeriodDto {
   @IsOptional()
   @IsString()
   venueSalonId?: string;

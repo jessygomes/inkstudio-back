@@ -7,6 +7,9 @@ export class UpdateConfirmationSettingDto {
 }
 
 export class UpdateAppointmentBookingDto {
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsBoolean()
+  allowSameDayBooking?: boolean;
   @IsOptional()
   @IsEnum(AgendaMode)
   agendaMode?: AgendaMode;

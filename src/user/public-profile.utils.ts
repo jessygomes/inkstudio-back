@@ -1,13 +1,16 @@
 import type { Prisma } from '@prisma/client';
 
+export function publicNameSlug(value: string): string {
+  return value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
+
 /** Continue a salon booking on the selected artist's profile, keeping its venue. */
 export function linkedArtistBookingHref(
   artist: { salonName?: string | null; city?: string | null; postalCode?: string | null },
   salonId: string,
 ): string {
-  const slug = (value: string) => value.normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '').toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  const slug = publicNameSlug;
   const location = [artist.city, artist.postalCode]
     .filter((value): value is string => typeof value === 'string' && value.trim() !== '')
     .join('-');

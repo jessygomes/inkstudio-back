@@ -47,12 +47,16 @@ export class TatoueursService {
           instagram,
           hours,
           userId,
+          tattooPractices: tatoueurBody.tattooPractices,
+          ...(tatoueurBody.tattooPracticeDetails !== undefined ? { tattooPracticeDetails: tatoueurBody.tattooPracticeDetails?.trim() || null } : {}),
           style: normalizedStyles,
           skills,
         },
       });
 
       // Invalider le cache après création
+      await this.cacheService.delPattern('user:slug:*');
+      await this.cacheService.delPattern('user:public:*');
       await this.cacheService.del(`tatoueurs:all`);
       await this.cacheService.del(`tatoueurs:user:${userId}`);
       await this.cacheService.del(`tatoueurs:user:${userId}:appointment-enabled`);
@@ -1050,6 +1054,7 @@ export class TatoueursService {
           description: true,
           prestations: true,
           style: true,
+            tattooPractices: true, tattooPracticeDetails: true,
           appointmentBookingEnabled: true,
         },
       });
@@ -1179,6 +1184,7 @@ export class TatoueursService {
             description: true,
             prestations: true,
             style: true,
+            tattooPractices: true, tattooPracticeDetails: true,
             appointmentBookingEnabled: true,
           },
         }),
@@ -1573,6 +1579,8 @@ export class TatoueursService {
           phone,
           instagram,
           hours,
+          tattooPractices: tatoueurBody.tattooPractices,
+          ...(tatoueurBody.tattooPracticeDetails !== undefined ? { tattooPracticeDetails: tatoueurBody.tattooPracticeDetails?.trim() || null } : {}),
           style: normalizedStyles,
           skills,
           rdvBookingEnabled
@@ -1581,6 +1589,8 @@ export class TatoueursService {
 
       // Invalider le cache après mise à jour
       await this.cacheService.del(`tatoueur:${id}`);
+      await this.cacheService.delPattern('user:slug:*');
+      await this.cacheService.delPattern('user:public:*');
       await this.cacheService.del(`tatoueurs:all`);
       await this.cacheService.del(`tatoueurs:user:${updatedTatoueur.userId}`);
       await this.cacheService.del(`tatoueurs:user:${updatedTatoueur.userId}:appointment-enabled`);
@@ -1629,6 +1639,8 @@ export class TatoueursService {
 
       // Invalider le cache après suppression
       await this.cacheService.del(`tatoueur:${id}`);
+      await this.cacheService.delPattern('user:slug:*');
+      await this.cacheService.delPattern('user:public:*');
       await this.cacheService.del(`tatoueurs:all`);
       await this.cacheService.del(`tatoueurs:user:${deletedTatoueur.userId}`);
       await this.cacheService.del(`tatoueurs:user:${deletedTatoueur.userId}:appointment-enabled`);

@@ -1,3 +1,4 @@
+import { DesiredTattooPeriodDto } from './desired-tattoo-period.dto';
 import {
   IsBoolean,
   IsEmail,
@@ -18,7 +19,7 @@ export enum PrestationType {
   PROJET = 'PROJET',
 }
 
-export class CreateAppointmentDto {
+export class CreateAppointmentDto extends DesiredTattooPeriodDto {
   @IsOptional()
   @IsString()
   venueSalonId?: string;

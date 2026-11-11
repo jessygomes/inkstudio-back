@@ -1,4 +1,5 @@
 import { SecurityThrottle } from '../auth/security-throttle';
+import { DesiredTattooPeriodDto } from './dto/desired-tattoo-period.dto';
 import { Body, Controller, Delete, ForbiddenException, Get, Param, Patch, Post, Query, Request, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { AppointmentsService } from './appointments.service';
@@ -326,6 +327,18 @@ export class AppointmentsController {
     await this.appointmentsService.assertAppointmentAccess(appointmentId, req.user.userId, true);
     console.log('Updating appointment with ID:', appointmentId, 'and body:', rdvBody);
     return await this.appointmentsService.updateAppointment(appointmentId, rdvBody, req.user.userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('desired-tattoo-period/:id')
+  async updateDesiredTattooPeriod(@Request() req: RequestWithUser, @Param('id') id: string, @Body() body: DesiredTattooPeriodDto) {
+    return this.appointmentsService.updateDesiredTattooPeriod(id, req.user.userId, body);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('project-details/:id')
+  async updateProjectDetails(@Request() req: RequestWithUser, @Param('id') id: string, @Body() body: DesiredTattooPeriodDto) {
+    return this.appointmentsService.updateDesiredTattooPeriod(id, req.user.userId, body);
   }
 
   //! MODIFIER UN RDV PAR LE CLIENT ✅

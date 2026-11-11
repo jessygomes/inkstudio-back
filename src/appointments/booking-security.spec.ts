@@ -146,6 +146,10 @@ describe('SEC-06 booking HTTP identity', () => {
 });
 
 describe('SEC-06 identity and transaction persistence', () => {
+  // Booking fixtures are in November 2026; keep the future-date rule deterministic.
+  let clock: jest.SpyInstance;
+  beforeAll(() => { clock = jest.spyOn(Date, 'now').mockReturnValue(new Date('2026-11-01T00:00:00Z').getTime()); });
+  afterAll(() => clock.mockRestore());
   let service: AppointmentsService;
   let db: any;
   let tx: any;
@@ -344,6 +348,20 @@ describe('SEC-06 identity and transaction persistence', () => {
       rdvBody: { ...body, ...overrides },
       authenticatedClientUserId,
     });
+
+  it.each([
+    { desiredTattooPeriod: 'ASAP' },
+    { desiredTattooPeriod: 'FLEXIBLE' },
+    { desiredTattooPeriod: 'UNDECIDED' },
+    { desiredTattooPeriod: 'EXACT_DATE', desiredTattooDate: '2027-04-10' },
+    { desiredTattooPeriod: 'DATE_RANGE', desiredTattooStartDate: '2027-04-01', desiredTattooEndDate: '2027-04-30' },
+  ])('persists People project preference %j in the existing booking transaction', async preference => {
+    expect((await book('owner', preference)).error).toBe(false);
+    expect(state.appointments).toHaveLength(1);
+    expect(state.appointments[0].prestation).toBe('PROJET');
+    expect(state.appointments[0].desiredTattooPeriod).toBe(preference.desiredTattooPeriod);
+    expect(state.appointments[0].start).toEqual(new Date(body.start));
+  });
 
   it('does not link or reuse a victim CRM record when a guest supplies its email', async () => {
     state.clients.push({

@@ -1,4 +1,7 @@
 import { SecurityThrottleModule } from '../auth/security-throttle';
+import { BookingLinksController } from './booking-links.controller';
+import { BookingLinksService } from './booking-links.service';
+import { BookingLinkNotificationsService } from './booking-link-notifications.service';
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bull';
 import { AppointmentsController } from './appointments.controller';
@@ -26,9 +29,11 @@ import { AppointmentConsumablesModule } from 'src/appointment-consumables/appoin
     AppointmentConsumablesModule,
     BullModule.registerQueue({ name: 'post-appointment-email' }),
   ],
-  controllers: [AppointmentsController],
+  controllers: [BookingLinksController, AppointmentsController],
   providers: [
     AppointmentsService,
+    BookingLinksService,
+    BookingLinkNotificationsService,
     PrismaService,
     CacheService,
     PostAppointmentEmailService,

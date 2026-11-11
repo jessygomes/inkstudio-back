@@ -1,3 +1,6 @@
+import { emptyProjectClientInfo, projectClientInfoData, projectClientInfoSelect } from './project-client-info';
+import { desiredPeriodData, desiredPeriodSelect } from './desired-tattoo-period';
+import { DesiredTattooPeriodDto } from './dto/desired-tattoo-period.dto';
 import { attachGuestUploads } from '../uploads/guest-upload-attachment';
 import { validateInternalBooking, updateInternalBooking } from './internal-booking-policy';
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
@@ -96,6 +99,18 @@ export class AppointmentsService {
         ),
       { timeout: 20000 },
     );
+  }
+
+  async updateDesiredTattooPeriod(id: string, actorId: string, body: DesiredTattooPeriodDto) {
+    await this.assertAppointmentAccess(id, actorId, true);
+    const result = await this.prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM "Appointment" WHERE id = ${id} FOR UPDATE`;
+      const appointment = await tx.appointment.findUniqueOrThrow({ where: { id } });
+      const data = { ...desiredPeriodData(body, appointment.prestation), ...projectClientInfoData(body, appointment.prestation) };
+      return tx.appointment.update({ where: { id }, data, select: { id: true, ...desiredPeriodSelect, ...projectClientInfoSelect } });
+    });
+    await Promise.allSettled(['appointment:*', 'appointments:*', 'client:appointments:*'].map(pattern => this.cacheService.delPattern(pattern)));
+    return { error: false, appointment: result };
   }
 
   async assertAppointmentAccess(id: string, actorId: string, manage = false) {
@@ -921,6 +936,8 @@ export class AppointmentsService {
             {
               data: {
                 venueSalonId: rdvBody.venueSalonId,
+                ...desiredPeriodData(rdvBody, prestation),
+                  ...projectClientInfoData(rdvBody, prestation),
                 userId,
                 title: appointmentTitle,
                 prestation,
@@ -1520,6 +1537,8 @@ export class AppointmentsService {
               {
                 data: {
                   venueSalonId: rdvBody.venueSalonId,
+                ...desiredPeriodData(rdvBody, prestation),
+                  ...projectClientInfoData(rdvBody, prestation),
                   userId,
                   title: appointmentTitle,
                   prestation,
@@ -1886,6 +1905,7 @@ export class AppointmentsService {
             id: true,
             title: true,
             prestation: true,
+            ...desiredPeriodSelect, ...projectClientInfoSelect,
             start: true,
             end: true,
             status: true,
@@ -1995,6 +2015,7 @@ export class AppointmentsService {
         id: appointment.id,
         title: appointment.title,
         prestation: appointment.prestation,
+        ...Object.fromEntries(Object.keys({ ...desiredPeriodSelect, ...projectClientInfoSelect }).map(key => [key, appointment[key] ?? null])),
         start: appointment.start,
         end: appointment.end,
         status: appointment.status,
@@ -2626,6 +2647,7 @@ export class AppointmentsService {
           end: true,
           title: true,
           prestation: true,
+            ...desiredPeriodSelect, ...projectClientInfoSelect,
           skin: true,
           status: true,
           conversation: {
@@ -2808,6 +2830,9 @@ export class AppointmentsService {
       }
 
       const resolvedPrestation = prestation ?? existingAppointment.prestation;
+      const desiredPeriod = resolvedPrestation !== 'PROJET' && !Object.keys(desiredPeriodSelect).some(key => rdvBody[key] !== undefined)
+        ? { desiredTattooPeriod: null, desiredTattooDate: null, desiredTattooStartDate: null, desiredTattooEndDate: null }
+        : desiredPeriodData(rdvBody, resolvedPrestation);
       const existingSkin = 'skin' in existingAppointment ? (existingAppointment as { skin?: string | null }).skin : undefined;
       const resolvedSkin = skin ?? existingSkin;
       const skinValidationError = this.validateSkinToneForPrestation(resolvedPrestation, resolvedSkin);
@@ -2906,6 +2931,9 @@ export class AppointmentsService {
           performerUserId: selectedTatoueur.performerUserId,
           skin,
           drawingCardTattoo: drawingCardConnection,
+          ...desiredPeriod,
+          ...(resolvedPrestation !== 'PROJET' && !Object.keys(projectClientInfoSelect).some(key => rdvBody[key] !== undefined)
+            ? emptyProjectClientInfo : projectClientInfoData(rdvBody, resolvedPrestation)),
         } as any,
         include: {
           client: true,

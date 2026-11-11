@@ -90,6 +90,7 @@ function fixture() {
     {} as any,
     {} as any,
     {} as any,
+    {} as any,
   );
   const issue = async (purpose: 'verify' | 'reset') => {
     if (purpose === 'verify')

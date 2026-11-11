@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { AgendaMode, Prisma, SaasPlan, SaasPlanStatus } from '@prisma/client';
 import { bookingHoursWindow } from '../../utils/booking-hours';
+import { assertSameDayBookingAllowed } from './same-day-booking';
 
 export async function lockInternalCalendar(
   tx: Prisma.TransactionClient,
@@ -25,6 +26,7 @@ export async function validateInternalBooking(
   },
   publicBooking: boolean,
   excludedAppointmentId?: string,
+  lock = true,
 ) {
   const start = new Date(data.start);
   const end = new Date(data.end);
@@ -34,9 +36,9 @@ export async function validateInternalBooking(
     end <= start
   )
     throw new BadRequestException('Les dates du rendez-vous sont invalides.');
-  await lockInternalCalendar(tx, data.userId);
-  await tx.$queryRaw`SELECT id FROM "SaasPlanDetails" WHERE "userId" = ${data.userId} FOR UPDATE`;
-  if (data.tatoueurId)
+  if (lock) await lockInternalCalendar(tx, data.userId);
+  if (lock) await tx.$queryRaw`SELECT id FROM "SaasPlanDetails" WHERE "userId" = ${data.userId} FOR UPDATE`;
+  if (lock && data.tatoueurId)
     await tx.$queryRaw`SELECT id FROM "Tatoueur" WHERE id = ${data.tatoueurId} AND "userId" = ${data.userId} FOR UPDATE`;
   const salon = await tx.user.findUnique({
     where: { id: data.userId },
@@ -44,6 +46,7 @@ export async function validateInternalBooking(
       role: true,
       publicVisibility: true,
       salonHours: true,
+      allowSameDayBooking: true,
       prestations: true,
       saasPlan: true,
       saasPlanUntil: true,
@@ -72,6 +75,7 @@ export async function validateInternalBooking(
     (salon.role !== 'user_tatoueur' &&
       salon.saasPlanDetails?.agendaMode === AgendaMode.PAR_TATOUEUR);
   if (publicBooking) {
+    assertSameDayBookingAllowed(start, salon.allowSameDayBooking);
     const details = salon.saasPlanDetails;
     const expired = [
       salon.saasPlanUntil,

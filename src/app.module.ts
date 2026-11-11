@@ -7,7 +7,6 @@ import { PrismaService } from './database/prisma.service';
 import { AuthModule } from './auth/auth.module';
 import { ConfigModule } from '@nestjs/config';
 import { AppointmentsService } from './appointments/appointments.service';
-import { AppointmentsController } from './appointments/appointments.controller';
 import { AppointmentsModule } from './appointments/appointments.module';
 import { TatoueursModule } from './tatoueurs/tatoueurs.module';
 import { ClientsService } from './clients/clients.service';
@@ -95,7 +94,6 @@ import { AppointmentPhotosModule } from './appointment-photos/appointment-photos
     AppointmentPhotosModule,
   ],
   controllers: [
-    AppointmentsController,
     ClientsController,
     StocksController,
     TattooHistoryController,

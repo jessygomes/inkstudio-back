@@ -11,6 +11,14 @@ datasource db {
 }
 
 model User {
+  tattooPractices TattooPractice[] @default([])
+  tattooPracticeDetails String?
+  allowSameDayBooking Boolean @default(true)
+  bookingLinksOwned BookingLink[] @relation("BookingLinkOwner")
+  bookingLinksCreated BookingLink[] @relation("BookingLinkCreator")
+  bookingLinksPerformed BookingLink[] @relation("BookingLinkPerformer")
+  bookingLinksAsClient BookingLink[] @relation("BookingLinkClientUser")
+  bookingLinksAtVenue BookingLink[] @relation("BookingLinkVenue")
   refreshTokens RefreshToken[]
   uploadedFiles UploadedFile[]
   projectProposalsSent ProjectProposal[] @relation("ProjectProfessional")
@@ -423,6 +431,9 @@ model SalonProfileView {
 
 //! MODEL POUR LES TATOUEURS DANS LE SALON
 model Tatoueur {
+  tattooPractices TattooPractice[] @default([])
+  tattooPracticeDetails String?
+  bookingLinks BookingLink[]
   id                 String              @id @default(cuid())
   name               String
   hours              String?
@@ -450,6 +461,15 @@ model Tatoueur {
 
 //! MODEL POUR LES RDV
 model Appointment {
+  projectBudgetMinCents Int?
+  projectBudgetMaxCents Int?
+  isFirstTattoo Boolean?
+  desiredTattooPeriod DesiredTattooPeriod?
+  desiredTattooDate DateTime? @db.Date
+  desiredTattooStartDate DateTime? @db.Date
+  desiredTattooEndDate DateTime? @db.Date
+  projectBookingLinks BookingLink[] @relation("BookingLinkProject")
+  bookingLink BookingLink? @relation("BookingLinkResult")
   completedAt        DateTime?
   reminderDeliveries AppointmentReminderDelivery[]
   photos             AppointmentPhoto[]
@@ -654,6 +674,7 @@ model PiercingServicePrice {
 
 //! MODEL POUR LES CLIENTS DANS LA FICHE SALON
 model Client {
+  bookingLinks BookingLink[]
   id                 String               @id @default(cuid())
   userId             String
   firstName          String
@@ -1114,6 +1135,7 @@ model PasswordResetToken {
 
 //! MODEL CONVERSATION SIMPLIFIÉE (clients connectés uniquement)
 model Conversation {
+  bookingLinks BookingLink[]
   projectContactPending Boolean @default(false)
   projectProposals ProjectProposal[]
   id                String              @id @default(cuid())
@@ -1662,6 +1684,7 @@ model ExternalAttachment {
 }
 
 model InboxThread {
+  bookingLinks BookingLink[]
   id                     String             @id @default(cuid())
   ownerUserId            String             // Salon ou indépendant qui possède la conversation
   channel                InboxChannel
@@ -1802,4 +1825,73 @@ model AppointmentReminderDelivery {
   createdAt     DateTime    @default(now())
   appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
   @@unique([appointmentId, kind, channel])
+}
+
+enum DesiredTattooPeriod {
+  ASAP
+  EXACT_DATE
+  DATE_RANGE
+  FLEXIBLE
+  UNDECIDED
+}
+
+enum TattooPractice {
+  MACHINE
+  HANDPOKE
+  TRADITIONAL
+  OTHER
+}
+
+enum BookingLinkMode {
+  FIXED_START
+  AUTOMATIC
+}
+
+enum BookingLinkStatus {
+  ACTIVE
+  USED
+  EXPIRED
+  REVOKED
+}
+
+model BookingLink {
+  id String @id @default(cuid())
+  tokenHash String @unique
+  userId String
+  createdByUserId String
+  tatoueurId String?
+  performerUserId String?
+  venueSalonId String?
+  prestation PrestationType
+  durationMinutes Int
+  mode BookingLinkMode
+  fixedStartTime String?
+  allowedFrom DateTime @db.Date
+  allowedTo DateTime @db.Date
+  expiresAt DateTime?
+  status BookingLinkStatus @default(ACTIVE)
+  clientId String?
+  clientUserId String?
+  projectAppointmentId String?
+  conversationId String?
+  inboxThreadId String?
+  appointmentId String? @unique
+  createdAt DateTime @default(now())
+  usedAt DateTime?
+  revokedAt DateTime?
+  user User @relation("BookingLinkOwner", fields: [userId], references: [id], onDelete: Cascade)
+  creator User @relation("BookingLinkCreator", fields: [createdByUserId], references: [id], onDelete: Cascade)
+  performer User? @relation("BookingLinkPerformer", fields: [performerUserId], references: [id], onDelete: Cascade)
+  venue User? @relation("BookingLinkVenue", fields: [venueSalonId], references: [id], onDelete: Cascade)
+  tatoueur Tatoueur? @relation(fields: [tatoueurId], references: [id], onDelete: Cascade)
+  client Client? @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientUser User? @relation("BookingLinkClientUser", fields: [clientUserId], references: [id], onDelete: Cascade)
+  project Appointment? @relation("BookingLinkProject", fields: [projectAppointmentId], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  inboxThread InboxThread? @relation(fields: [inboxThreadId], references: [id], onDelete: Cascade)
+  appointment Appointment? @relation("BookingLinkResult", fields: [appointmentId], references: [id], onDelete: SetNull)
+  @@index([userId, createdAt])
+  @@index([performerUserId, createdAt])
+  @@index([venueSalonId, createdAt])
+  @@index([status, expiresAt])
 }

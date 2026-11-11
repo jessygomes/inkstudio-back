@@ -103,6 +103,7 @@ const policies = {
   reset: { ip: [20, 900], email: [5, 900] },
   change: { ip: [20, 900], user: [5, 900] },
   booking: { ip: [60, 900], email: [5, 900], user: [10, 900] },
+  bookingLinkRead: { ip: [120, 900] },
   upload: { ip: [240, 900] },
 } satisfies Record<
   string,

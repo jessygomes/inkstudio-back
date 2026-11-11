@@ -1,3 +1,4 @@
+import { TattooPracticesDto } from '../../user/dto/tattoo-practices.dto';
 import {
   IsArray,
   IsBoolean,
@@ -6,7 +7,7 @@ import {
   IsString,
 } from 'class-validator';
 
-export class CreateTatoueurDto {
+export class CreateTatoueurDto extends TattooPracticesDto {
   @IsString()
   @IsNotEmpty()
   name: string;
