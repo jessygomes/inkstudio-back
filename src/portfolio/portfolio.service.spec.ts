@@ -294,7 +294,7 @@ describe('PortfolioService', () => {
       prisma.portfolio.findMany.mockResolvedValue([]);
       const result = await service.getInspirationPortfolioPhotos({});
       expect(result.photos).toEqual([]);
-      expect(prisma.portfolio.count).toHaveBeenCalledWith({ where: { user: { isInspirationSalon: true, publicVisibility: { not: 'HIDDEN' } } } });
+      expect(prisma.portfolio.count).toHaveBeenCalledWith({ where: { user: { isInspirationSalon: true, publicVisibility: 'VISIBLE' } } });
     });
 
     it('fetches inspiration photos, caches them, and returns list', async () => {
@@ -310,7 +310,7 @@ describe('PortfolioService', () => {
       expect(result.photos).toHaveLength(2);
       expect(prisma.portfolio.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { user: { isInspirationSalon: true, publicVisibility: { not: 'HIDDEN' } } },
+          where: { user: { isInspirationSalon: true, publicVisibility: 'VISIBLE' } },
           skip: 0,
           take: 12,
         }),
@@ -337,7 +337,7 @@ describe('PortfolioService', () => {
       expect(prisma.portfolio.count).toHaveBeenCalledWith({
         where: {
           user: {
-            isInspirationSalon: true, publicVisibility: { not: 'HIDDEN' },
+            isInspirationSalon: true, publicVisibility: 'VISIBLE',
             city: {
               contains: 'Paris',
               mode: 'insensitive',
@@ -384,7 +384,7 @@ describe('PortfolioService', () => {
 
       expect(prisma.portfolio.count).toHaveBeenCalledWith({
         where: {
-          user: { isInspirationSalon: true, publicVisibility: { not: 'HIDDEN' } },
+          user: { isInspirationSalon: true, publicVisibility: 'VISIBLE' },
           hashtags: { hasSome: ['rose', 'floral'] },
           categories: { some: { slug: { in: ['walk-ins'] } } },
           pieceSize: { in: ['SMALL'] },

@@ -544,10 +544,11 @@ export class PortfolioService {
       const cacheKey = `portfolio:inspirations:page:${currentPage}:limit:${pageSize}:city:${normalizedCity || 'all'}:${filterKey}`;
 
       // Visibility must be enforced even when Redis invalidation is unavailable.
+      // Same rule as the public search list: only VISIBLE profiles (SEARCH_HIDDEN and HIDDEN are excluded).
       const whereClause: Record<string, any> = {
         user: {
           isInspirationSalon: true,
-          publicVisibility: { not: 'HIDDEN' },
+          publicVisibility: 'VISIBLE',
           ...(normalizedCity
             ? {
                 city: {
