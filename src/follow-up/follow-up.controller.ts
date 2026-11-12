@@ -7,6 +7,7 @@ import { PrismaService } from 'src/database/prisma.service';
 import { MailService } from 'src/email/mailer.service';
 import { SubmitFollowUpDto } from './dto/submit-follow-up.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import { findUnansweredFollowUps } from './unanswered-follow-ups';
 
 @Controller('follow-up')
 export class FollowupsController {
@@ -143,30 +144,7 @@ export class FollowupsController {
   @Get('unanswered')
   async getUnansweredFollowUps(@Request() req: RequestWithUser) {
     const userId = req.user.userId;
-    const followUps = await this.prisma.followUpSubmission.findMany({
-      where: { isAnswered: false, userId },
-      include: { appointment: {
-        select: {
-          id: true,
-          title: true,
-          start: true,
-          end: true,
-          client: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-            },
-          },
-          tatoueur: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
-        }
-      }},
-    });
+    const followUps = await findUnansweredFollowUps(this.prisma, userId);
     return { followUps };
   }
 

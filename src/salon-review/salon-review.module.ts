@@ -8,5 +8,6 @@ import { PrismaModule } from 'src/database/prisma.module';
   imports: [PrismaModule],
   controllers: [SalonReviewController],
   providers: [SalonReviewService, CacheService],
+  exports: [SalonReviewService],
 })
 export class SalonReviewModule {}

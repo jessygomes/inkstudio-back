@@ -40,5 +40,6 @@ import { AppointmentConsumablesModule } from 'src/appointment-consumables/appoin
     PostAppointmentEmailJob,
     PostAppointmentEmailScheduler,
   ],
+  exports: [AppointmentsService],
 })
 export class AppointmentsModule {}

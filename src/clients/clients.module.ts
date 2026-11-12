@@ -21,5 +21,6 @@ import { CacheService } from 'src/redis/cache.service';
     PrismaService,
     CacheService,
   ],
+  exports: [ClientsService],
 })
 export class ClientsModule {}
