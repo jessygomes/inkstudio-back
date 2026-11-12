@@ -657,6 +657,7 @@ export class AppointmentsService {
         skin,
         moodboardId,
         drawingCardId,
+        flashId,
       } = rdvBody;
 
       const skinValidationError = this.validateSkinToneForPrestation(
@@ -670,9 +671,29 @@ export class AppointmentsService {
         };
       }
 
+      // Flash choisi (prestation Tatouage) : doit appartenir au salon ou à l'un de ses tatoueurs liés.
+      let selectedFlash: { id: string; title: string; price: number; imageUrl: string } | null = null;
+      if (flashId) {
+        const owner = await this.prisma.user.findUnique({
+          where: { id: userId },
+          select: { role: true, linkedTatoueurs: { select: { id: true } } },
+        });
+        const flashOwnerIds = [
+          userId,
+          ...(owner?.role === 'user_salon' ? (owner.linkedTatoueurs ?? []).map((tatoueurUser) => tatoueurUser.id) : []),
+        ];
+        selectedFlash = await this.prisma.flash.findFirst({
+          where: { id: flashId, isAvailable: true, userId: { in: flashOwnerIds } },
+          select: { id: true, title: true, price: true, imageUrl: true },
+        });
+        if (!selectedFlash || prestation !== PrestationType.TATTOO) {
+          return { error: true, message: 'Flash introuvable ou indisponible pour ce profil.' };
+        }
+      }
+
       // S'assurer que title a toujours une valeur
       const appointmentTitle =
-        title || `${prestation} - ${clientFirstname} ${clientLastname}`;
+        title || (selectedFlash ? `FLASH - ${selectedFlash.title}` : `${prestation} - ${clientFirstname} ${clientLastname}`);
 
       // Convertir la date de naissance en objet Date si elle est fournie
       const parsedBirthdate = clientBirthdate
@@ -1087,8 +1108,9 @@ export class AppointmentsService {
                 colorStyle: rdvBody.colorStyle || '',
                 reference: rdvBody.reference,
                 sketch: rdvBody.sketch,
-                estimatedPrice: rdvBody.estimatedPrice || 0,
-                price: rdvBody.price || 0,
+                // Flash : son prix s'applique directement au rendez-vous.
+                estimatedPrice: selectedFlash ? Math.max(0, Number(selectedFlash.price)) : rdvBody.estimatedPrice || 0,
+                price: selectedFlash ? Math.max(0, Number(selectedFlash.price)) : rdvBody.price || 0,
               },
             });
 
@@ -1097,6 +1119,13 @@ export class AppointmentsService {
               where: { id: newAppointment.id },
               data: { tattooDetailId: tattooDetail.id },
             });
+
+            // Flash choisi : son visuel est ajouté aux photos du rendez-vous.
+            if (selectedFlash?.imageUrl) {
+              await tx.appointmentPhoto.create({
+                data: { appointmentId: newAppointment.id, url: selectedFlash.imageUrl, caption: `Flash : ${selectedFlash.title}` },
+              });
+            }
           }
 
           return { client, newAppointment };
@@ -1419,6 +1448,7 @@ export class AppointmentsService {
               title: true,
               price: true,
               appointmentDurationMinutes: true,
+              imageUrl: true,
             },
           })
         : null;
@@ -1696,6 +1726,17 @@ export class AppointmentsService {
                 where: { id: newAppointment.id },
                 data: { tattooDetailId: tattooDetail.id },
               });
+
+              // Flash choisi : son visuel est ajouté aux photos du rendez-vous (le prix est déjà dans le détail ci-dessus).
+              if (selectedFlash?.imageUrl) {
+                await tx.appointmentPhoto.create({
+                  data: {
+                    appointmentId: newAppointment.id,
+                    url: selectedFlash.imageUrl,
+                    caption: `Flash : ${selectedFlash.title}`,
+                  },
+                });
+              }
             }
 
             await attachGuestUploads(tx, [rdvBody.reference, rdvBody.sketch], 'booking', [userId, newAppointment.userId, newAppointment.performerUserId].filter((id): id is string => typeof id === 'string'));
