@@ -4,6 +4,7 @@ import { AppointmentsService } from '../appointments/appointments.service';
 import { AppointmentPhotosService } from '../appointment-photos/appointment-photos.service';
 import { SuiviService } from '../suivi/suivi.service';
 import type { DashboardSection } from '../dashboard/dashboard.service';
+import { findAccountImagesByEmail } from '../clients/client-account-images';
 
 @Injectable()
 export class AppointmentDetailsService {
@@ -44,7 +45,16 @@ export class AppointmentDetailsService {
         conversation: { select: { id: true } },
       },
     });
-    return { ...base, client: extra?.client ?? null, conversation: extra?.conversation ?? null };
+    // Photo du compte People : lié à la fiche, connecté (réservation en ligne) ou de même e-mail.
+    const client = extra?.client ?? null;
+    let accountImage: string | null = null;
+    if (client) {
+      accountImage = client.linkedUser?.image || (base.clientUser as { image?: string | null } | null | undefined)?.image || null;
+      if (!accountImage && client.email) {
+        try { accountImage = (await findAccountImagesByEmail(this.prisma, [client.email])).get(client.email.trim().toLowerCase()) ?? null; } catch { /* la photo est facultative */ }
+      }
+    }
+    return { ...base, client: client ? { ...client, accountImage } : null, conversation: extra?.conversation ?? null };
   }
 
   /**

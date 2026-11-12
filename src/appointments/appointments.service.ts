@@ -1,3 +1,4 @@
+import { findAccountImagesByEmail } from '../clients/client-account-images';
 import { emptyProjectClientInfo, projectClientInfoData, projectClientInfoSelect } from './project-client-info';
 import { desiredPeriodData, desiredPeriodSelect } from './desired-tattoo-period';
 import { DesiredTattooPeriodDto } from './dto/desired-tattoo-period.dto';
@@ -171,6 +172,40 @@ export class AppointmentsService {
 
   private normalizeAppointmentsTatoueur<T extends Record<string, any>>(appointments: T[]) {
     return appointments.map((appointment) => this.normalizeAppointmentTatoueur(appointment));
+  }
+
+  /**
+   * Ajoute `client.accountImage` : photo du compte Inkera People lié à la fiche, du client connecté qui a réservé,
+   * ou d'un compte client de même e-mail (une seule requête pour toute la liste), sinon null.
+   * Le site n'a plus à chercher la photo rendez-vous par rendez-vous. Sans effet bloquant : en cas d'échec la liste est renvoyée telle quelle.
+   */
+  private async withClientAccountImages<T extends Record<string, any>>(appointments: T[]): Promise<T[]> {
+    try {
+      const byEmail = await findAccountImagesByEmail(
+        this.prisma,
+        appointments.filter((a) => a.client?.email && !a.client.linkedUser?.image && !a.clientUser?.image).map((a) => a.client.email as string),
+      );
+      return appointments.map((a) => {
+        if (!a.client) return a;
+        const accountImage = a.client.linkedUser?.image || a.clientUser?.image || byEmail.get(String(a.client.email ?? '').trim().toLowerCase()) || null;
+        return { ...a, client: { ...a.client, accountImage } };
+      });
+    } catch {
+      return appointments;
+    }
+  }
+
+  /**
+   * Rendez-vous pris par un client connecté (en attente ou confirmés) depuis `since`, avec les mêmes règles de visibilité
+   * que la liste du salon. Id et date de création seulement : sert aux pastilles « nouveau » du site.
+   */
+  async findRecentClientBookings(userId: string, since: Date, take = 500) {
+    const where = await this.buildScopedAppointmentWhere(userId, {
+      clientUserId: { not: null },
+      status: { in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED] },
+      createdAt: { gte: since },
+    });
+    return this.prisma.appointment.findMany({ where, select: { id: true, createdAt: true }, orderBy: { createdAt: 'desc' }, take });
   }
 
   // Fonction pour construire la condition WHERE pour filtrer les rendez-vous visibles par un utilisateur donné
@@ -2263,7 +2298,7 @@ export class AppointmentsService {
 
       const result = {
         error: false,
-        appointments: this.normalizeAppointmentsTatoueur(appointments),
+        appointments: await this.withClientAccountImages(this.normalizeAppointmentsTatoueur(appointments)),
         pagination: {
           currentPage: page,
           totalPages,
@@ -2482,7 +2517,7 @@ export class AppointmentsService {
 
       const result = {
         error: false,
-        appointments: this.normalizeAppointmentsTatoueur(appointments),
+        appointments: await this.withClientAccountImages(this.normalizeAppointmentsTatoueur(appointments)),
         pagination: {
           currentPage: page,
           totalPages,
@@ -4168,7 +4203,7 @@ async cancelAppointmentByClient(appointmentId: string, clientUserId: string, rea
       // ==================== ÉTAPE 5: RETOUR DES RÉSULTATS ====================
       const result = {
         error: false,
-        appointments: this.normalizeAppointmentsTatoueur(appointments),
+        appointments: await this.withClientAccountImages(this.normalizeAppointmentsTatoueur(appointments)),
         selectedDate: dateKey,
         formattedDate,
         totalAppointments: appointments.length,
@@ -4703,7 +4738,7 @@ async cancelAppointmentByClient(appointmentId: string, clientUserId: string, rea
       });
       return {
         error: false,
-        appointments: this.normalizeAppointmentsTatoueur(pendingAppointments),
+        appointments: await this.withClientAccountImages(this.normalizeAppointmentsTatoueur(pendingAppointments)),
         totalAppointments: pendingAppointments.length,
       };
     } catch (error: unknown) {

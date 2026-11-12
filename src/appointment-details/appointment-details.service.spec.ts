@@ -29,6 +29,14 @@ describe('AppointmentDetailsService.get', () => {
     expect(res.drawingStatus).toEqual({ ok: true, data: { cardExists: false } });
   });
 
+  it('ajoute la photo du compte People au client (accountImage)', async () => {
+    const { service, prisma } = build();
+    // Pas de photo liée ni de client connecté : recherche par e-mail.
+    (prisma as unknown as { user: { findMany: jest.Mock } }).user = { findMany: jest.fn().mockResolvedValue([{ email: 'j@d.fr', image: 'https://img/j.webp' }]) };
+    const res = await service.get('salon-1', 'rdv-1');
+    expect(res.appointment).toEqual(expect.objectContaining({ ok: true, data: expect.objectContaining({ client: expect.objectContaining({ accountImage: 'https://img/j.webp' }) }) }));
+  });
+
   it("vérifie l'accès avant tout et le refuse globalement", async () => {
     const { service, appointments, photos, drawing } = build();
     appointments.assertAppointmentAccess.mockRejectedValue(new ForbiddenException('Accès refusé.'));

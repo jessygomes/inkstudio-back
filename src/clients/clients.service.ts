@@ -1,3 +1,4 @@
+import { findAccountImagesByEmail } from './client-account-images';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CreateClientDto } from './dto/create-client.dto';
@@ -264,17 +265,7 @@ export class ClientsService {
    * `accountImage` vaut null quand aucune photo n'existe : le site n'a plus à la chercher fiche par fiche.
    */
   private async attachAccountImages<T extends { email?: string | null; linkedUser?: { image?: string | null } | null }>(clients: T[]): Promise<(T & { accountImage: string | null })[]> {
-    const emails = [...new Set(clients.filter((c) => !c.linkedUser?.image && c.email?.trim()).map((c) => c.email!.trim().toLowerCase()))];
-    const byEmail = new Map<string, string>();
-    if (emails.length) {
-      const accounts = await this.prisma.user.findMany({
-        where: { role: 'client', image: { not: null }, OR: emails.map((email) => ({ email: { equals: email, mode: 'insensitive' as const } })) },
-        select: { email: true, image: true },
-      });
-      for (const account of accounts ?? []) {
-        if (account.email && account.image?.trim()) byEmail.set(account.email.toLowerCase(), account.image);
-      }
-    }
+    const byEmail = await findAccountImagesByEmail(this.prisma, clients.filter((c) => !c.linkedUser?.image).map((c) => c.email));
     return clients.map((c) => ({ ...c, accountImage: c.linkedUser?.image || byEmail.get(c.email?.trim().toLowerCase() ?? '') || null }));
   }
 
