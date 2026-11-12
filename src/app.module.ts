@@ -40,6 +40,7 @@ import { AdminModule } from './admin/admin.module';
 import { MessagingModule } from './messaging/messaging.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { AppointmentDetailsModule } from './appointment-details/appointment-details.module';
 import { StripeModule } from './stripe/stripe.module';
 import { FlashModule } from './flash/flash.module';
 import { ArticlesModule } from './articles/articles.module';
@@ -91,6 +92,7 @@ import { AppointmentPhotosModule } from './appointment-photos/appointment-photos
     MessagingModule,
     NotificationsModule,
     DashboardModule,
+    AppointmentDetailsModule,
     SalonAnalyticsModule,
     SuiviModule,
     AppointmentPhotosModule,
