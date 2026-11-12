@@ -77,3 +77,46 @@ describe('NotificationsService', () => {
     expect(Object.keys(NOTIFICATION_TYPES).length).toBeGreaterThan(40);
   });
 });
+
+describe('NotificationsService : push', () => {
+  function withPush(pref: { inApp: boolean; push: boolean } | null = null) {
+    const ctx = setup(pref);
+    const push = { send: jest.fn().mockResolvedValue(undefined) };
+    const svc = new NotificationsService(ctx.prisma, push as never);
+    svc.registerEmitter(ctx.emitter);
+    return { ...ctx, svc, push };
+  }
+
+  it('envoie aussi la notification en push, avec de quoi ouvrir le bon écran', async () => {
+    const { svc, push } = withPush();
+    await svc.notify({ userId: 'u1', type: 'stock.low', title: 'Stock bas', body: 'Encre noire', data: { stockItemId: 's1' } });
+    expect(push.send).toHaveBeenCalledWith('u1', { title: 't', body: 'b', data: expect.objectContaining({ notificationId: 'n1', type: 'stock.low', category: 'stock' }) });
+  });
+
+  it('n’envoie pas de push si la catégorie est coupée pour le push, mais garde la notification dans l’app', async () => {
+    const { svc, prisma, push } = withPush({ inApp: true, push: false });
+    expect(await svc.notify({ userId: 'u1', type: 'stock.low', title: 't', body: 'b' })).not.toBeNull();
+    expect(prisma.appNotification.create).toHaveBeenCalled();
+    expect(push.send).not.toHaveBeenCalled();
+  });
+
+  it('push seul quand la catégorie est coupée dans l’app mais pas pour le push (pas d’entrée dans le centre)', async () => {
+    const { svc, prisma, push } = withPush({ inApp: false, push: true });
+    expect(await svc.notify({ userId: 'u1', type: 'stock.low', title: 'Stock bas', body: 'x', data: { stockItemId: 's1' } })).toBeNull();
+    expect(prisma.appNotification.create).not.toHaveBeenCalled();
+    expect(push.send).toHaveBeenCalledWith('u1', expect.objectContaining({ title: 'Stock bas', data: expect.objectContaining({ stockItemId: 's1', type: 'stock.low', category: 'stock' }) }));
+  });
+
+  it('rien du tout quand les deux canaux sont coupés', async () => {
+    const { svc, prisma, push } = withPush({ inApp: false, push: false });
+    expect(await svc.notify({ userId: 'u1', type: 'stock.low', title: 't', body: 'b' })).toBeNull();
+    expect(prisma.appNotification.create).not.toHaveBeenCalled();
+    expect(push.send).not.toHaveBeenCalled();
+  });
+
+  it('une notification critique part toujours en push', async () => {
+    const { svc, push } = withPush({ inApp: false, push: false });
+    await svc.notify({ userId: 'u1', type: 'account.payment_failed', title: 't', body: 'b' });
+    expect(push.send).toHaveBeenCalledTimes(1);
+  });
+});

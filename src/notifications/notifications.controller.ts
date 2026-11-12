@@ -4,11 +4,18 @@ import { Transform } from 'class-transformer';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { NOTIFICATION_CATEGORIES, NotificationCategory } from './notification-catalog';
 import { NotificationsService } from './notifications.service';
+import { PUSH_PLATFORMS, PushPlatform, PushService } from './push.service';
 
 class ListQuery {
   @IsOptional() @IsString() cursor?: string;
   @IsOptional() @Transform(({ value }) => Number(value)) @IsInt() @Min(1) @Max(50) limit?: number;
   @IsOptional() @Transform(({ value }) => value === 'true' || value === true) @IsBoolean() unreadOnly?: boolean;
+}
+
+class RegisterDeviceDto {
+  @IsString() token: string;
+  @IsIn([...PUSH_PLATFORMS]) platform: PushPlatform;
+  @IsOptional() @IsIn(['studio', 'people']) app?: string;
 }
 
 class UpdatePreferenceDto {
@@ -27,7 +34,19 @@ const uid = (req: AuthedRequest): string => {
 @Controller('notifications')
 @UseGuards(JwtAuthGuard)
 export class NotificationsController {
-  constructor(private readonly service: NotificationsService) {}
+  constructor(private readonly service: NotificationsService, private readonly push: PushService) {}
+
+  /** Enregistre l'appareil pour recevoir les notifications push (à la connexion, une fois la permission accordée). */
+  @Post('devices')
+  registerDevice(@Req() req: AuthedRequest, @Body() dto: RegisterDeviceDto) {
+    return this.push.registerDevice(uid(req), dto.token, dto.platform, dto.app);
+  }
+
+  /** Retire l'appareil (déconnexion) : il ne reçoit plus les notifications de ce compte. */
+  @Delete('devices/:token')
+  unregisterDevice(@Req() req: AuthedRequest, @Param('token') token: string) {
+    return this.push.unregisterDevice(uid(req), token);
+  }
 
   @Get()
   list(@Req() req: AuthedRequest, @Query() q: ListQuery) {

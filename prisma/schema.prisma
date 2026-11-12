@@ -165,6 +165,7 @@ model User {
   notificationPreference    NotificationPreference?
   appNotifications          AppNotification[]
   notificationCategoryPrefs NotificationCategoryPreference[]
+  pushDevices               PushDevice[]
 
   // Messagerie multicanale : propriété et délégation, indépendantes des RDV
   inboxThreadsOwned         InboxThread[]         @relation("InboxOwner")
@@ -1285,6 +1286,20 @@ model AppNotification {
 }
 
 //! MODEL PREFERENCES PAR CATEGORIE DE NOTIFICATION
+/// Appareil enregistré pour les notifications push (jeton Expo ; un jeton appartient à un seul compte).
+model PushDevice {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token      String   @unique
+  platform   String
+  app        String   @default("studio")
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+
+  @@index([userId])
+}
+
 model NotificationCategoryPreference {
   id        String   @id @default(cuid())
   userId    String

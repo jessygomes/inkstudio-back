@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
+import { PushService } from './push.service';
 import {
   NOTIFICATION_TYPES,
   NotificationCategory,
@@ -38,7 +39,11 @@ export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
   private emitter: RealtimeEmitter | null = null;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // Facultatif : sans lui (tests, scripts), seules les notifications dans l'app sont créées.
+    @Optional() private readonly push?: PushService,
+  ) {}
 
   /** La passerelle temps réel s'enregistre ici (évite une dépendance circulaire avec la messagerie). */
   registerEmitter(emitter: RealtimeEmitter): void {
@@ -54,7 +59,15 @@ export class NotificationsService {
     try {
       const def = NOTIFICATION_TYPES[input.type] as NotificationTypeDef | undefined;
       if (!def) return null;
-      if (!def.critical && !(await this.isEnabled(input.userId, def.category, 'inApp'))) return null;
+      // Canaux indépendants : dans l'app et push (les types critiques partent toujours).
+      const wantInApp = def.critical || (await this.isEnabled(input.userId, def.category, 'inApp'));
+      const wantPush = !!this.push && (def.critical || (await this.isEnabled(input.userId, def.category, 'push')));
+      if (!wantInApp && !wantPush) return null;
+      if (!wantInApp) {
+        // Push seul : pas d'entrée dans le centre de notifications.
+        void this.push!.send(input.userId, { title: input.title, body: input.body, data: { ...input.data, type: input.type, category: def.category } });
+        return null;
+      }
 
       let row;
       try {
@@ -77,6 +90,7 @@ export class NotificationsService {
       const dto = this.toDto(row);
       this.emit(input.userId, 'notification-created', dto);
       void this.emitUnread(input.userId);
+      if (wantPush) void this.sendPush(input.userId, dto);
       return dto;
     } catch (e) {
       this.logger.error(`Notification ${input.type} non créée : ${e instanceof Error ? e.message : String(e)}`);
@@ -105,6 +119,7 @@ export class NotificationsService {
           });
           const dto = this.toDto(row);
           this.emit(input.userId, 'notification-created', dto);
+          void this.pushIfEnabled(input.userId, dto);
           return dto;
         }
       }
@@ -209,6 +224,21 @@ export class NotificationsService {
       select: { inApp: true, push: true },
     });
     return pref ? pref[channel] : true;
+  }
+
+  // ---------- Push ----------
+
+  /** Envoie la notification en push (les données ouvrent le bon écran au toucher). */
+  private sendPush(userId: string, dto: NotificationDto): Promise<void> {
+    if (!this.push) return Promise.resolve();
+    return this.push.send(userId, { title: dto.title, body: dto.body, data: { ...(dto.data ?? {}), notificationId: dto.id, type: dto.type, category: dto.category } });
+  }
+
+  /** Push d'une notification groupée mise à jour : seulement si le destinataire l'a activé pour cette catégorie. */
+  private async pushIfEnabled(userId: string, dto: NotificationDto): Promise<void> {
+    const def = NOTIFICATION_TYPES[dto.type as NotificationType] as NotificationTypeDef | undefined;
+    if (!def || !this.push) return;
+    if (def.critical || (await this.isEnabled(userId, def.category, 'push'))) await this.sendPush(userId, dto);
   }
 
   // ---------- Interne ----------
