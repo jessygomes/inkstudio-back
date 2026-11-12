@@ -55,6 +55,7 @@ export class PortfolioController {
     @Query('hashtag') hashtag?: string,
     @Query('category') category?: string,
     @Query('pieceSize') pieceSize?: string,
+    @Query('type') type?: string,
   ) {
     const pageNumber = page ? Number.parseInt(page, 10) : 1;
     const limitNumber = limit ? Number.parseInt(limit, 10) : 12;
@@ -66,6 +67,7 @@ export class PortfolioController {
       hashtag,
       category,
       pieceSize,
+      type,
     });
   }
 

@@ -45,6 +45,8 @@ export class FlashService {
   }
 
   private async invalidateFlashCacheForUser(userId: string) {
+    // Le fil Inspirations affiche les flashs disponibles : il doit refléter une création, une modification ou une indisponibilité.
+    await this.cacheService.delPattern('portfolio:inspirations:*');
     await this.cacheService.delPattern(`flashs:salon:${userId}:available:*`);
     await this.cacheService.delPattern(`flashs:salon:${userId}:all:*`);
 

@@ -17,6 +17,10 @@ const createPrismaMock = () => ({
   tatoueur: {
     findFirst: jest.fn(),
   },
+  flash: {
+    count: jest.fn().mockResolvedValue(0),
+    findMany: jest.fn().mockResolvedValue([]),
+  },
   portfolio: {
     create: jest.fn(),
     count: jest.fn(),
@@ -316,7 +320,7 @@ describe('PortfolioService', () => {
         }),
       );
       expect(cache.set).toHaveBeenCalledWith(
-        'portfolio:inspirations:page:1:limit:12:city:all:s:all:h:all:c:all:z:all',
+        'portfolio:inspirations:page:1:limit:12:city:all:type:all:s:all:h:all:c:all:z:all',
         result,
         900,
       );
@@ -365,8 +369,8 @@ describe('PortfolioService', () => {
         }),
       );
       expect(cache.set).toHaveBeenCalledWith(
-        'portfolio:inspirations:page:1:limit:12:city:Paris:s:FINE LINE|MINIMALIST:h:all:c:all:z:all',
-        expect.objectContaining({ photos: [{ id: 'p1' }] }),
+        'portfolio:inspirations:page:1:limit:12:city:Paris:type:all:s:FINE LINE|MINIMALIST:h:all:c:all:z:all',
+        expect.objectContaining({ photos: [{ id: 'p1', kind: 'photo' }] }),
         900,
       );
     });
@@ -389,6 +393,85 @@ describe('PortfolioService', () => {
           categories: { some: { slug: { in: ['walk-ins'] } } },
           pieceSize: { in: ['SMALL'] },
         },
+      });
+      // Les flashs n'ont ni hashtags, ni catégories, ni taille de pièce : exclus du fil mélangé quand l'un de ces filtres est actif.
+      expect(prisma.flash.count).not.toHaveBeenCalled();
+      expect(prisma.flash.findMany).not.toHaveBeenCalled();
+    });
+
+    describe('flashs', () => {
+      const userRow = { id: 'u1', salonName: 'Studio', nickname: null, publicVisibility: 'VISIBLE', image: null, city: 'Paris', postalCode: '75001', instagram: null, isInspirationSalon: true, saasPlan: 'PRO', role: 'user_salon', profileImage: null, firstName: null, lastName: null, salon: null };
+      const photo = (id: string, date: string) => ({ id, title: id, description: 'd', imageUrl: 'i', style: [], pieceSize: null, categories: [], hashtags: [], createdAt: new Date(date), updatedAt: new Date(date), user: userRow, tatoueur: null });
+      const flash = (id: string, date: string) => ({ id, title: id, description: null, imageUrl: 'i', style: ['FINE LINE'], dimension: '10 cm', appointmentDurationMinutes: 90, price: 80, isAvailable: true, createdAt: new Date(date), updatedAt: new Date(date), user: userRow, tatoueur: null });
+
+      beforeEach(() => cache.get.mockResolvedValue(null));
+
+      it('mélange photos et flashs par date, avec le prix et la durée des flashs', async () => {
+        prisma.portfolio.count.mockResolvedValue(2);
+        prisma.portfolio.findMany.mockResolvedValue([photo('p1', '2026-11-10'), photo('p2', '2026-11-01')]);
+        prisma.flash.count.mockResolvedValue(1);
+        prisma.flash.findMany.mockResolvedValue([flash('f1', '2026-11-05')]);
+
+        const result = await service.getInspirationPortfolioPhotos({ page: 1, limit: 12 });
+
+        expect(result.photos.map((item) => [item.id, item.kind])).toEqual([['p1', 'photo'], ['f1', 'flash'], ['p2', 'photo']]);
+        expect(result.photos[1]).toMatchObject({ kind: 'flash', price: 80, appointmentDurationMinutes: 90, dimension: '10 cm', description: '', hashtags: [], categories: [], pieceSize: null });
+        expect(result.pagination.total).toBe(3);
+        // Seuls les flashs disponibles des profils visibles et inscrits aux inspirations.
+        expect(prisma.flash.findMany).toHaveBeenCalledWith(expect.objectContaining({
+          where: { isAvailable: true, user: { isInspirationSalon: true, publicVisibility: 'VISIBLE' } },
+        }));
+      });
+
+      it('lit chaque source jusqu\'à la fin de la page demandée puis découpe (page 2)', async () => {
+        prisma.portfolio.count.mockResolvedValue(3);
+        prisma.portfolio.findMany.mockResolvedValue([photo('p1', '2026-11-10'), photo('p2', '2026-11-08'), photo('p3', '2026-11-02')]);
+        prisma.flash.count.mockResolvedValue(2);
+        prisma.flash.findMany.mockResolvedValue([flash('f1', '2026-11-09'), flash('f2', '2026-11-01')]);
+
+        const result = await service.getInspirationPortfolioPhotos({ page: 2, limit: 2 });
+
+        // Ordre global : p1, f1, p2, p3, f2 → la page 2 (taille 2) contient p2 et p3.
+        expect(result.photos.map((item) => item.id)).toEqual(['p2', 'p3']);
+        expect(prisma.portfolio.findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 0, take: 4 }));
+        expect(prisma.flash.findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 0, take: 4 }));
+        expect(result.pagination).toMatchObject({ page: 2, total: 5, totalPages: 3, hasNextPage: true });
+      });
+
+      it('type=flash : uniquement les flashs, hashtags / catégories / taille ignorés, style appliqué', async () => {
+        prisma.flash.count.mockResolvedValue(1);
+        prisma.flash.findMany.mockResolvedValue([flash('f1', '2026-11-05')]);
+
+        const result = await service.getInspirationPortfolioPhotos({ type: 'flash', hashtag: 'rose', category: 'x', pieceSize: 'small', style: 'Fine line', city: 'Paris' });
+
+        expect(prisma.portfolio.count).not.toHaveBeenCalled();
+        expect(prisma.portfolio.findMany).not.toHaveBeenCalled();
+        expect(result.photos.map((item) => item.id)).toEqual(['f1']);
+        expect(prisma.flash.findMany).toHaveBeenCalledWith(expect.objectContaining({
+          where: { isAvailable: true, user: { isInspirationSalon: true, publicVisibility: 'VISIBLE', city: { contains: 'Paris', mode: 'insensitive' } }, style: { hasSome: ['FINE LINE'] } },
+          skip: 0,
+          take: 12,
+        }));
+        expect(cache.set).toHaveBeenCalledWith(expect.stringContaining(':type:flash:'), expect.anything(), 900);
+      });
+
+      it('type=photos : aucun flash', async () => {
+        prisma.portfolio.count.mockResolvedValue(1);
+        prisma.portfolio.findMany.mockResolvedValue([photo('p1', '2026-11-10')]);
+
+        const result = await service.getInspirationPortfolioPhotos({ type: 'photos' });
+
+        expect(prisma.flash.count).not.toHaveBeenCalled();
+        expect(prisma.flash.findMany).not.toHaveBeenCalled();
+        expect(result.photos.map((item) => item.kind)).toEqual(['photo']);
+      });
+
+      it('une valeur de type inconnue revient au fil mélangé', async () => {
+        prisma.portfolio.count.mockResolvedValue(0);
+        prisma.portfolio.findMany.mockResolvedValue([]);
+        await service.getInspirationPortfolioPhotos({ type: 'n-importe-quoi' });
+        expect(prisma.portfolio.count).toHaveBeenCalled();
+        expect(prisma.flash.count).toHaveBeenCalled();
       });
     });
 

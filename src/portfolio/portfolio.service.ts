@@ -4,7 +4,7 @@ import { PrismaService } from 'src/database/prisma.service';
 import { AddPhotoDto } from './dto/add-photo.dto';
 import { AddPhotosBatchDto } from './dto/add-photos-batch.dto';
 import { CacheService } from 'src/redis/cache.service';
-import { PieceSize } from '@prisma/client';
+import { PieceSize, Prisma } from '@prisma/client';
 import { findClosestStyle, levenshtein, styleKey, typoTolerance } from './style.utils';
 
 export interface PortfolioFilters {
@@ -521,6 +521,7 @@ export class PortfolioService {
     hashtag,
     category,
     pieceSize,
+    type,
   }: {
     page?: number;
     limit?: number;
@@ -529,104 +530,174 @@ export class PortfolioService {
     hashtag?: string;
     category?: string;
     pieceSize?: string;
+    /** `photos` : photos de portfolio seulement ; `flash` : flashs seulement ; sinon (défaut) les deux, mélangés par date. */
+    type?: string;
   }) {
     try {
       const pageSize = Math.min(50, Math.max(1, Number(limit) || 12));
       const currentPage = Number.isNaN(page) || page < 1 ? 1 : page;
       const skip = (currentPage - 1) * pageSize;
       const normalizedCity = city?.trim() || '';
+      const kind: 'all' | 'photos' | 'flash' = type === 'photos' || type === 'flash' ? type : 'all';
       const { where: filterWhere, cacheKey: filterKey } = this.buildPhotoFilters({
         style,
         hashtag,
         category,
         pieceSize,
       });
-      const cacheKey = `portfolio:inspirations:page:${currentPage}:limit:${pageSize}:city:${normalizedCity || 'all'}:${filterKey}`;
+      const cacheKey = `portfolio:inspirations:page:${currentPage}:limit:${pageSize}:city:${normalizedCity || 'all'}:type:${kind}:${filterKey}`;
 
       // Visibility must be enforced even when Redis invalidation is unavailable.
       // Same rule as the public search list: only VISIBLE profiles (SEARCH_HIDDEN and HIDDEN are excluded).
-      const whereClause: Record<string, any> = {
-        user: {
-          isInspirationSalon: true,
-          publicVisibility: 'VISIBLE',
-          ...(normalizedCity
-            ? {
-                city: {
-                  contains: normalizedCity,
-                  mode: 'insensitive' as const,
-                },
-              }
-            : {}),
-        },
-        ...filterWhere,
+      const userWhere = {
+        isInspirationSalon: true,
+        publicVisibility: 'VISIBLE' as const,
+        ...(normalizedCity
+          ? {
+              city: {
+                contains: normalizedCity,
+                mode: 'insensitive' as const,
+              },
+            }
+          : {}),
+      };
+      const whereClause: Record<string, any> = { user: userWhere, ...filterWhere };
+
+      // Les flashs n'ont ni hashtags, ni catégories, ni taille de pièce : si l'un de ces filtres est actif, ils sont exclus du fil mélangé
+      // (en mode « flash seulement », ces filtres sont ignorés). Le style, lui, s'applique aux deux.
+      const photoOnlyFilters = Object.keys(filterWhere).some((key) => key !== 'style');
+      const includePhotos = kind !== 'flash';
+      const includeFlashs = kind === 'flash' || (kind === 'all' && !photoOnlyFilters);
+      const styles = this.parseCsv(style, (v) => v.toUpperCase());
+      const flashWhere: Record<string, any> = {
+        isAvailable: true,
+        user: userWhere,
+        ...(styles.length ? { style: { hasSome: styles } } : {}),
       };
 
-      const total = await this.prisma.portfolio.count({
-        where: whereClause,
-      });
+      const [photoTotal, flashTotal] = await Promise.all([
+        includePhotos ? this.prisma.portfolio.count({ where: whereClause }) : 0,
+        includeFlashs ? this.prisma.flash.count({ where: flashWhere }) : 0,
+      ]);
+      const total = photoTotal + flashTotal;
 
-      const photos = await this.prisma.portfolio.findMany({
-        where: whereClause,
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: pageSize,
-        select: {
-          id: true,
-          title: true,
-          description: true,
-          imageUrl: true,
-          style: true,
-          pieceSize: true,
-          categories: { select: { id: true, slug: true, name: true } },
-          hashtags: true,
-          createdAt: true,
-          updatedAt: true,
-          user: {
-            select: {
-              id: true,
-              salonName: true, nickname: true, publicVisibility: true,
-              image: true,
-              city: true,
-              postalCode: true,
-              instagram: true,
-              isInspirationSalon: true,
-              saasPlan: true,
-              role: true,
-              profileImage: true,
-              firstName: true,
-              lastName: true,
-              salon: {
-                select: {
-                  id: true,
-                  salonName: true, nickname: true, publicVisibility: true,
-                  image: true,
-                  profileImage: true,
-                  city: true,
-                  postalCode: true,
-                  instagram: true,
-                  saasPlan: true,
-                },
-              },
-            },
-          },
-          tatoueur: {
-            select: {
-              id: true,
-              name: true,
-              img: true,
-              description: true,
-              instagram: true,
-            },
+      const userSelect = {
+        id: true,
+        salonName: true, nickname: true, publicVisibility: true,
+        image: true,
+        city: true,
+        postalCode: true,
+        instagram: true,
+        isInspirationSalon: true,
+        saasPlan: true,
+        role: true,
+        profileImage: true,
+        firstName: true,
+        lastName: true,
+        salon: {
+          select: {
+            id: true,
+            salonName: true, nickname: true, publicVisibility: true,
+            image: true,
+            profileImage: true,
+            city: true,
+            postalCode: true,
+            instagram: true,
+            saasPlan: true,
           },
         },
+      } satisfies Prisma.UserSelect;
+      const tatoueurSelect = {
+        id: true,
+        name: true,
+        img: true,
+        description: true,
+        instagram: true,
+      } satisfies Prisma.TatoueurSelect;
+
+      // Fil mélangé : chaque source est lue jusqu'à la fin de la page demandée, puis fusionnée par date (la plus récente d'abord).
+      const mixed = includePhotos && includeFlashs;
+      const take = mixed ? skip + pageSize : pageSize;
+      const offset = mixed ? 0 : skip;
+      const order = [{ createdAt: 'desc' as const }, { id: 'desc' as const }];
+
+      const [photoRows, flashRows] = await Promise.all([
+        includePhotos
+          ? this.prisma.portfolio.findMany({
+              where: whereClause,
+              orderBy: order,
+              skip: offset,
+              take,
+              select: {
+                id: true,
+                title: true,
+                description: true,
+                imageUrl: true,
+                style: true,
+                pieceSize: true,
+                categories: { select: { id: true, slug: true, name: true } },
+                hashtags: true,
+                createdAt: true,
+                updatedAt: true,
+                user: { select: userSelect },
+                tatoueur: { select: tatoueurSelect },
+              },
+            })
+          : [],
+        includeFlashs
+          ? this.prisma.flash.findMany({
+              where: flashWhere,
+              orderBy: order,
+              skip: offset,
+              take,
+              select: {
+                id: true,
+                title: true,
+                description: true,
+                imageUrl: true,
+                style: true,
+                dimension: true,
+                appointmentDurationMinutes: true,
+                price: true,
+                isAvailable: true,
+                createdAt: true,
+                updatedAt: true,
+                user: { select: userSelect },
+                tatoueur: { select: tatoueurSelect },
+              },
+            })
+          : [],
+      ]);
+
+      const shapeUser = <U extends Parameters<typeof publicDisplayName>[0] & { salon?: { publicVisibility?: string | null } | null }>(user: U) => ({
+        ...withPublicName(user),
+        salon: user.salon?.publicVisibility === 'HIDDEN' ? null : user.salon,
       });
+      const items = [
+        ...photoRows.map((photo) => ({
+          ...photo,
+          kind: 'photo' as const,
+          user: photo.user ? shapeUser(photo.user) : photo.user,
+        })),
+        ...flashRows.map((flash) => ({
+          ...flash,
+          kind: 'flash' as const,
+          // Même forme que les photos pour que le fil les affiche de la même façon.
+          description: flash.description ?? '',
+          pieceSize: null,
+          categories: [] as Array<{ id: string; slug: string; name: string }>,
+          hashtags: [] as string[],
+          user: flash.user ? shapeUser(flash.user) : flash.user,
+        })),
+      ];
+      // Fil mélangé : la plus récente d'abord ; une seule source : l'ordre de la base est déjà le bon.
+      const time = (date?: Date | null) => (date ? new Date(date).getTime() : 0);
+      if (mixed) items.sort((x, y) => time(y.createdAt) - time(x.createdAt) || (x.id < y.id ? 1 : -1));
+      const pageItems = mixed ? items.slice(skip, skip + pageSize) : items;
 
       const totalPages = Math.max(1, Math.ceil(total / pageSize));
       const response = {
-        photos: photos.map((photo) => photo.user ? ({
-          ...photo,
-          user: { ...withPublicName(photo.user), salon: photo.user.salon?.publicVisibility === 'HIDDEN' ? null : photo.user.salon },
-        }) : photo),
+        photos: pageItems,
         pagination: {
           page: currentPage,
           pageSize,
