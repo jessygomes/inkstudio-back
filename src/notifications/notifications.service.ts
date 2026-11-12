@@ -19,6 +19,8 @@ export type NotifyInput = {
   data?: Record<string, unknown>;
   /** Une seule notification par (utilisateur, clé) : pour les rappels et résumés. */
   dedupeKey?: string;
+  /** Limite la notification à un seul canal : `push` (rien dans le centre) ou `inApp` (pas de push). Par défaut : les deux, selon les préférences. */
+  only?: 'push' | 'inApp';
 };
 
 export type RealtimeEmitter = (userId: string, event: string, payload: unknown) => void;
@@ -60,8 +62,8 @@ export class NotificationsService {
       const def = NOTIFICATION_TYPES[input.type] as NotificationTypeDef | undefined;
       if (!def) return null;
       // Canaux indépendants : dans l'app et push (les types critiques partent toujours).
-      const wantInApp = def.critical || (await this.isEnabled(input.userId, def.category, 'inApp'));
-      const wantPush = !!this.push && (def.critical || (await this.isEnabled(input.userId, def.category, 'push')));
+      const wantInApp = input.only !== 'push' && (def.critical || (await this.isEnabled(input.userId, def.category, 'inApp')));
+      const wantPush = !!this.push && input.only !== 'inApp' && (def.critical || (await this.isEnabled(input.userId, def.category, 'push')));
       if (!wantInApp && !wantPush) return null;
       if (!wantInApp) {
         // Push seul : pas d'entrée dans le centre de notifications.

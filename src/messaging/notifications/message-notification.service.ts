@@ -2,6 +2,9 @@ import { Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 
+/** Nombres de messages non lus (par conversation) qui déclenchent une notification dans le centre. */
+const UNREAD_THRESHOLDS = [5, 10, 20];
+
 @Injectable()
 export class MessageNotificationService {
   constructor(
@@ -16,7 +19,7 @@ export class MessageNotificationService {
     conversationId: string,
     userId: string,
   ): Promise<void> {
-    await this.prisma.messageNotification.upsert({
+    const row = await this.prisma.messageNotification.upsert({
       where: {
         conversationId_userId: {
           conversationId,
@@ -36,11 +39,14 @@ export class MessageNotificationService {
         lastUnreadAt: new Date(),
       },
     });
-    void this.notifyRecipient(conversationId, userId);
+    void this.notifyRecipient(conversationId, userId, row?.unreadCount ?? 1);
   }
 
-  /** Centre de notifications : un message de plus, regroupé par conversation tant qu'il n'est pas lu. */
-  private async notifyRecipient(conversationId: string, userId: string): Promise<void> {
+  /**
+   * Chaque message reçu part en push seulement (pas d'entrée dans le centre de notifications, pour ne pas le saturer).
+   * Le centre reçoit une entrée quand le nombre de messages non lus de la conversation atteint un seuil (5, 10, 20).
+   */
+  private async notifyRecipient(conversationId: string, userId: string, unreadCount: number): Promise<void> {
     if (!this.appNotifications) return;
     try {
       const last = await this.prisma.message.findFirst({
@@ -57,12 +63,17 @@ export class MessageNotificationService {
       const s = last.sender;
       const name = (s?.role === 'client' ? [s.firstName, s.lastName].filter(Boolean).join(' ') : s?.salonName || [s?.firstName, s?.lastName].filter(Boolean).join(' ')) || 'Nouveau message';
       const preview = last.content?.trim() ? last.content.trim().slice(0, 140) : last.attachments.length ? '📷 Photo' : 'Nouveau message';
-      await this.appNotifications.notifyGrouped(
-        { userId, type: 'message.new', title: name, body: preview, data: { conversationId } },
-        'conversationId',
-        (count, latest) => (count > 1 ? `${count} nouveaux messages · ${latest}` : latest),
-        preview,
-      );
+      await this.appNotifications.notify({ userId, type: 'message.new', title: name, body: preview, data: { conversationId }, only: 'push' });
+      if (UNREAD_THRESHOLDS.includes(unreadCount)) {
+        await this.appNotifications.notify({
+          userId,
+          type: 'message.unread_threshold',
+          title: name,
+          body: unreadCount >= 20 ? '20 messages non lus ou plus' : `${unreadCount} messages non lus`,
+          data: { conversationId, count: unreadCount },
+          only: 'inApp',
+        });
+      }
     } catch {
       // Une notification ratée ne doit jamais bloquer l'envoi du message.
     }

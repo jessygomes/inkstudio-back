@@ -61,7 +61,10 @@ export const NOTIFICATION_TYPES = {
   'account.weekly_report': { category: 'account', audience: 'studio' },
 
   // ---- Commun
+  // Chaque message reçu : push seulement (pas d'entrée dans le centre).
   'message.new': { category: 'messages', audience: 'both' },
+  // Seuils de messages non lus dans une conversation (5, 10, 20) : entrée dans le centre de notifications.
+  'message.unread_threshold': { category: 'messages', audience: 'both' },
 
   // ---- People
   'client.appointment_confirmed': { category: 'appointments', audience: 'people' },
