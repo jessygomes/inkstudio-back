@@ -243,6 +243,35 @@ describe('ClientsService', () => {
     expect(cache.set).toHaveBeenCalledWith(expect.any(String), result, 300);
   });
 
+  it("ajoute la photo du compte People de chaque fiche en une seule requête (accountImage)", async () => {
+    cache.get.mockResolvedValue(null);
+    prisma.client.count.mockResolvedValue(4);
+    prisma.client.findMany.mockResolvedValue([
+      { id: 'c1', email: 'lie@example.com', linkedUser: { image: 'https://img/lie.webp' } },
+      { id: 'c2', email: 'Henry@Gmail.com', linkedUser: null },
+      { id: 'c3', email: 'sans-compte@example.com', linkedUser: null },
+      { id: 'c4', email: null, linkedUser: null },
+    ]);
+    prisma.user.findMany.mockResolvedValue([{ email: 'henry@gmail.com', image: 'https://img/henry.webp' }]);
+
+    const result = (await service.getClientsBySalon('u1', 1, 5, '')) as { clients: Array<{ id: string; accountImage: string | null }> };
+
+    expect(result.clients.map((c) => [c.id, c.accountImage])).toEqual([
+      ['c1', 'https://img/lie.webp'],
+      ['c2', 'https://img/henry.webp'],
+      ['c3', null],
+      ['c4', null],
+    ]);
+    // Une seule requête, uniquement pour les fiches sans photo liée, sur les comptes clients.
+    expect(prisma.user.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.user.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ role: 'client', OR: [
+        { email: { equals: 'henry@gmail.com', mode: 'insensitive' } },
+        { email: { equals: 'sans-compte@example.com', mode: 'insensitive' } },
+      ] }),
+    }));
+  });
+
   it('returns error when no clients found for salon', async () => {
     cache.get.mockResolvedValue(null);
     prisma.client.count.mockResolvedValue(0);

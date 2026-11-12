@@ -258,6 +258,26 @@ export class ClientsService {
   }
 
   //! VOIR TOUS LES CLIENTS D'UN SALON
+  /**
+   * Photo du compte Inkera People pour chaque fiche, en une seule requête pour toute la page.
+   * Une fiche liée (`linkedUser`) garde sa photo ; sinon on cherche un compte client de même e-mail.
+   * `accountImage` vaut null quand aucune photo n'existe : le site n'a plus à la chercher fiche par fiche.
+   */
+  private async attachAccountImages<T extends { email?: string | null; linkedUser?: { image?: string | null } | null }>(clients: T[]): Promise<(T & { accountImage: string | null })[]> {
+    const emails = [...new Set(clients.filter((c) => !c.linkedUser?.image && c.email?.trim()).map((c) => c.email!.trim().toLowerCase()))];
+    const byEmail = new Map<string, string>();
+    if (emails.length) {
+      const accounts = await this.prisma.user.findMany({
+        where: { role: 'client', image: { not: null }, OR: emails.map((email) => ({ email: { equals: email, mode: 'insensitive' as const } })) },
+        select: { email: true, image: true },
+      });
+      for (const account of accounts ?? []) {
+        if (account.email && account.image?.trim()) byEmail.set(account.email.toLowerCase(), account.image);
+      }
+    }
+    return clients.map((c) => ({ ...c, accountImage: c.linkedUser?.image || byEmail.get(c.email?.trim().toLowerCase() ?? '') || null }));
+  }
+
   async getClientsBySalon(userId: string, page: number, limit: number, search: string) {
     try {
       const skip = (page - 1) * limit;
@@ -348,7 +368,7 @@ export class ClientsService {
 
       const result = {
         error : false,
-        clients,
+        clients: await this.attachAccountImages(clients),
         pagination: {
           currentPage: page,
           totalPages,
