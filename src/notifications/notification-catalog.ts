@@ -45,6 +45,8 @@ export const NOTIFICATION_TYPES = {
   'stock.expiring': { category: 'stock', audience: 'studio' },
   // ---- Studio : clients et suivis
   'followup.reply': { category: 'followups', audience: 'studio' },
+  // Suivi où le client signale une rougeur, un gonflement ou une inquiétude : toujours envoyé.
+  'followup.concern': { category: 'followups', audience: 'studio', critical: true },
   'drawing.client_feedback': { category: 'followups', audience: 'studio' },
   // Le client a accepté l'invitation du salon ou créé son compte depuis elle (fiche reliée à son compte People).
   'client.account_linked': { category: 'followups', audience: 'studio' },

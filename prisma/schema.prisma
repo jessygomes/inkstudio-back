@@ -1025,9 +1025,13 @@ model FollowUpSubmission {
   clientId        String?
   rating          Int
   review          String?
-  photoUrl        String
+  photoUrl        String // première photo (compatibilité) ; toutes les photos dans photoUrls
+  photoUrls       String[]         @default([]) // 1 à 3 photos
+  healingStatus   String? // GOOD | NORMAL | REDNESS | WORRIED (cicatrisation, distincte de la note de satisfaction)
   isAnswered      Boolean          @default(false)
   response        String?
+  respondedAt     DateTime?
+  responseChannels String? // EMAIL | EMAIL_AND_INKERA
   isPhotoPublic   Boolean          @default(false)
   createdAt       DateTime         @default(now())
   userId          String

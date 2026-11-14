@@ -297,8 +297,9 @@ export class UploadQuotaService {
           : null;
         if (ownerUserId && !user) throw new UnauthorizedException();
         if (input.followUpToken) {
+          // Le lien de suivi (jeton) est la preuve : la page de suivi est servie par le site People (et encore
+          // par le site Studio pour les liens envoyés avant le 2026-11-14).
           if (
-            body.application !== 'pro' ||
             input.route !== 'imageUploader' ||
             input.bookingSalonId ||
             input.consentClientId

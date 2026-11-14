@@ -2092,6 +2092,24 @@ export class AppointmentsService {
                 }
               }
             },
+            // Suivi de cicatrisation : envoyé (avec la réponse du salon) ou encore à envoyer (lien personnel du client).
+            FollowUpSubmission: {
+              select: {
+                id: true,
+                rating: true,
+                healingStatus: true,
+                review: true,
+                photoUrl: true,
+                photoUrls: true,
+                response: true,
+                isAnswered: true,
+                respondedAt: true,
+                createdAt: true,
+              },
+            },
+            FollowUpRequest: {
+              select: { token: true, status: true, expiresAt: true },
+            },
             conversation: {
               select: {
                 id: true,
@@ -2218,7 +2236,23 @@ export class AppointmentsService {
           id: appointment.moodboard.id,
           name: appointment.moodboard.name,
           description: appointment.moodboard.description
-        } : null
+        } : null,
+        // Suivi de cicatrisation envoyé, avec la réponse du salon.
+        followUp: appointment.FollowUpSubmission ? {
+          ...appointment.FollowUpSubmission,
+          photoUrls: appointment.FollowUpSubmission.photoUrls?.length
+            ? appointment.FollowUpSubmission.photoUrls
+            : [appointment.FollowUpSubmission.photoUrl].filter(Boolean),
+        } : null,
+        // Lien du suivi encore à envoyer (valable, pas encore utilisé) : le client peut l'ouvrir depuis son rendez-vous.
+        followUpToken:
+          !appointment.FollowUpSubmission &&
+          appointment.FollowUpRequest &&
+          appointment.FollowUpRequest.status !== 'SUBMITTED' &&
+          appointment.FollowUpRequest.status !== 'EXPIRED' &&
+          (!appointment.FollowUpRequest.expiresAt || appointment.FollowUpRequest.expiresAt > new Date())
+            ? appointment.FollowUpRequest.token
+            : null,
       }));
 
       const totalPages = Math.ceil(totalAppointments / perPage);

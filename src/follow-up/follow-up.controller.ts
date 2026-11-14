@@ -5,7 +5,10 @@ import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { RequestWithUser } from 'src/auth/jwt.strategy';
 import { PrismaService } from 'src/database/prisma.service';
 import { MailService } from 'src/email/mailer.service';
-import { SubmitFollowUpDto } from './dto/submit-follow-up.dto';
+import { ReplyFollowUpDto, SubmitFollowUpDto } from './dto/submit-follow-up.dto';
+import { FOLLOW_UP_MAX_PHOTOS, HEALING_LABELS, isHealingConcern } from './healing';
+import { ReminderDeliveryService } from './reminder-delivery.service';
+import { CacheService } from 'src/redis/cache.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { findUnansweredFollowUps } from './unanswered-follow-ups';
 
@@ -15,7 +18,16 @@ export class FollowupsController {
     private readonly prisma: PrismaService,
     private readonly mailService: MailService,
     @Optional() private readonly notifications?: NotificationsService,
+    @Optional() private readonly reminders?: ReminderDeliveryService,
+    @Optional() private readonly cache?: CacheService,
   ) {}
+
+  /** Les rendez-vous du client (site People) sont en cache 10 min : à vider après un suivi ou une réponse du salon. */
+  private async refreshClientAppointments(appointment: { clientUserId?: string | null; client?: { linkedUserId?: string | null } | null } | null | undefined) {
+    const clientUserId = appointment?.clientUserId || appointment?.client?.linkedUserId;
+    if (!clientUserId || !this.cache) return;
+    try { await this.cache.delPattern(`client:appointments:${clientUserId}:*`); } catch { /* cache indisponible : expiration normale */ }
+  }
 
   /**
    * 🔍 VALIDATION DU TOKEN DE SUIVI
@@ -102,14 +114,20 @@ export class FollowupsController {
 
     // 💾 Créer la soumission avec photo + avis client
     if (!req.appointment) throw new BadRequestException('Le rendez-vous de ce suivi est indisponible.');
-    await attachGuestUploads(tx, [body.photoUrl], 'follow-up', [req.id]);
+    // 1 à 3 photos (photoUrls), ou une seule (photoUrl) pour la page de suivi du site Studio.
+    const photoUrls = [...new Set(body.photoUrls?.length ? body.photoUrls : body.photoUrl ? [body.photoUrl] : [])];
+    if (photoUrls.length < 1 || photoUrls.length > FOLLOW_UP_MAX_PHOTOS)
+      throw new BadRequestException(`Ajoutez de 1 à ${FOLLOW_UP_MAX_PHOTOS} photos à votre suivi.`);
+    await attachGuestUploads(tx, photoUrls, 'follow-up', [req.id]);
     const submission = await tx.followUpSubmission.create({
       data: {
         appointmentId: req.appointmentId,
         clientId: req.appointment?.clientId ?? null, // Associer au client si disponible
-        rating: body.rating,      // Note de 1 à 5
+        rating: body.rating,      // Satisfaction de 1 à 5
+        healingStatus: body.healingStatus ?? null, // État de la cicatrisation
         review: body.review,      // Commentaire optionnel
-        photoUrl: body.photoUrl,  // URL de la photo de cicatrisation
+        photoUrl: photoUrls[0],
+        photoUrls,
         isPhotoPublic: body.isPhotoPublic ?? false, // Indiquer si la photo est publique
         userId: req.appointment.userId, // Le salon vient toujours du rendez-vous, jamais du client.
       },
@@ -125,14 +143,19 @@ export class FollowupsController {
     });
 
     // 🎉 Succès - Le suivi est maintenant complet
-    return { ok: true, notify: { userId: req.appointment.userId, appointmentId: req.appointmentId, rating: body.rating, title: req.appointment.title } };
+    return { ok: true, clientUserId: req.appointment.clientUserId, notify: { userId: req.appointment.userId, appointmentId: req.appointmentId, rating: body.rating, healingStatus: body.healingStatus ?? null, title: req.appointment.title } };
     }).then((result) => {
       // Centre de notifications : après validation de la transaction, sans rien changer à la réponse.
+      // Rougeur, gonflement ou inquiétude : notification prioritaire (non désactivable).
+      void this.refreshClientAppointments({ clientUserId: result.clientUserId });
+      const { healingStatus } = result.notify;
+      const concern = isHealingConcern(healingStatus);
+      const healing = healingStatus ? `Cicatrisation : ${HEALING_LABELS[healingStatus]} · ` : '';
       void this.notifications?.notify({
         userId: result.notify.userId,
-        type: 'followup.reply',
-        title: 'Nouveau suivi de cicatrisation',
-        body: `${result.notify.title ? `${result.notify.title} · ` : ''}Note ${result.notify.rating}/5`,
+        type: concern ? 'followup.concern' : 'followup.reply',
+        title: concern ? 'Suivi à regarder : le client signale un souci' : 'Nouveau suivi de cicatrisation',
+        body: `${result.notify.title ? `${result.notify.title} · ` : ''}${healing}Satisfaction ${result.notify.rating}/5`,
         data: { appointmentId: result.notify.appointmentId },
       });
       return { ok: true };
@@ -243,9 +266,10 @@ export class FollowupsController {
   async replyToFollowUp(
     @Request() req: RequestWithUser,
     @Param('id') id: string,
-    @Body() body: { reply?: string; response?: string }
+    @Body() body: ReplyFollowUpDto
   ) {
-    const responseText: string = body.reply || body.response || '';
+    const responseText: string = (body.reply || body.response || '').trim();
+    const channel = body.channel === 'EMAIL_AND_INKERA' ? 'EMAIL_AND_INKERA' : 'EMAIL';
     
     // Vérifier si le suivi existe
     const followUp = await this.prisma.followUpSubmission.findUnique({
@@ -289,14 +313,32 @@ export class FollowupsController {
       throw new BadRequestException('La réponse ne peut pas être vide');
     }
     
-    // Mettre à jour le suivi avec la réponse du salon
+    // Mettre à jour le suivi avec la réponse du salon (visible aussi par le client dans son rendez-vous sur People)
     const updatedFollowUp = await this.prisma.followUpSubmission.update({
       where: { id },
       data: {
         response: responseText,
         isAnswered: true, // Marquer comme répondu
+        respondedAt: new Date(),
+        responseChannels: channel,
       },
     });
+
+    await this.refreshClientAppointments(followUp.appointment);
+
+    // Aussi dans la messagerie Inkera si demandé (conversation existante du client uniquement)
+    let inkeraSent = false;
+    if (channel === 'EMAIL_AND_INKERA' && this.reminders) {
+      try {
+        inkeraSent = await this.reminders.postToClientConversation(
+          followUp.appointment,
+          req.user.userId,
+          `Réponse à votre suivi de cicatrisation :\n\n${responseText}`,
+        );
+      } catch {
+        inkeraSent = false;
+      }
+    }
 
     // 📧 Envoyer l'email de réponse au client
     const client = followUp.appointment.client;
@@ -321,7 +363,9 @@ export class FollowupsController {
     return { 
       success: true,
       message: 'Réponse envoyée avec succès',
-      updatedFollowUp 
+      updatedFollowUp,
+      // Faux si la messagerie était demandée mais que le client n’a pas de conversation Inkera avec le salon.
+      inkeraSent, 
     };
   }
 

@@ -135,6 +135,26 @@ describe('Appointment reminder delivery', () => {
       prisma.followUpRequest.upsert.mock.calls[0][0].create.expiresAt.getTime(),
     ).toBeGreaterThan(Date.now() + 13 * 86_400_000);
   });
+  it('points the follow-up link to the People site when no override is configured', async () => {
+    const previousPeople = process.env.INKERA_PEOPLE_BASE_URL;
+    delete process.env.FOLLOW_UP_FRONTEND_URL;
+    process.env.INKERA_PEOPLE_BASE_URL = 'https://people.example.com';
+    try {
+      await service.deliver('appointment', 'FOLLOW_UP');
+      expect(mail.sendAppointmentReminder).toHaveBeenCalledWith(
+        'client@example.com',
+        'FOLLOW_UP',
+        expect.stringContaining('https://people.example.com/suivi/token'),
+        'Studio',
+        'https://people.example.com/suivi/token',
+      );
+    } finally {
+      process.env.FOLLOW_UP_FRONTEND_URL = 'https://studio.example.com';
+      if (previousPeople === undefined) delete process.env.INKERA_PEOPLE_BASE_URL;
+      else process.env.INKERA_PEOPLE_BASE_URL = previousPeople;
+    }
+  });
+
   it('does not send before the current configured delay even if an old queue job runs early', async () => {
     appointment.completedAt = new Date(Date.now() - 2 * 86_400_000);
     appointment.user.followUpEmailDelayDays = 12;

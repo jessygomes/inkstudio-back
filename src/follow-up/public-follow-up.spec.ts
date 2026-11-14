@@ -108,6 +108,8 @@ describe('Public follow-up response from email', () => {
         clientId: 'client',
         userId: 'salon',
         photoUrl: input.photoUrl,
+        photoUrls: [input.photoUrl],
+        healingStatus: null,
         rating: 4,
         review: input.review,
         isPhotoPublic: false,
@@ -117,6 +119,34 @@ describe('Public follow-up response from email', () => {
       where: { token: 'email-token' },
       data: { status: 'SUBMITTED', submissionId: 'submission' },
     });
+  });
+  it('saves up to three photos and the healing status, separate from satisfaction', async () => {
+    const photos = ['https://cdn.example.com/1.webp', 'https://cdn.example.com/2.webp', 'https://cdn.example.com/3.webp'];
+    await controller.submit({ token: 'email-token', rating: 5, healingStatus: 'GOOD', photoUrls: photos });
+    expect(prisma.followUpSubmission.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ photoUrl: photos[0], photoUrls: photos, healingStatus: 'GOOD', rating: 5 }),
+      }),
+    );
+  });
+  it('refuses a submission without photo or with more than three photos', async () => {
+    await expect(controller.submit({ token: 'email-token', rating: 4 } as SubmitFollowUpDto)).rejects.toBeInstanceOf(BadRequestException);
+    const errors = await validate(plainToInstance(SubmitFollowUpDto, {
+      token: 't', rating: 4, healingStatus: 'UNKNOWN',
+      photoUrls: ['https://a.test/1', 'https://a.test/2', 'https://a.test/3', 'https://a.test/4'],
+    }));
+    expect(errors.map((error) => error.property)).toEqual(expect.arrayContaining(['photoUrls', 'healingStatus']));
+    expect(prisma.followUpSubmission.create).not.toHaveBeenCalled();
+  });
+  it('sends a priority notification when the client reports a healing concern', async () => {
+    const notifications = { notify: jest.fn() };
+    controller = new FollowupsController(prisma, {} as any, notifications as any);
+    await controller.submit({ ...input, healingStatus: 'REDNESS' });
+    expect(notifications.notify).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 'salon',
+      type: 'followup.concern',
+      body: 'Projet floral · Cicatrisation : Rougeur ou gonflement · Satisfaction 4/5',
+    }));
   });
   it('requires an explicit opt-in to save the photo as public', async () => {
     await controller.submit({ ...input, isPhotoPublic: true });

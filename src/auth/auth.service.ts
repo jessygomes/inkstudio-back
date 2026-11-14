@@ -8,6 +8,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { LoginUserDto } from './dto/login-user.dto';
 import { MailService } from 'src/email/mailer.service';
 import { ClientInvitationsService } from 'src/client-invitations/client-invitations.service';
+import { peopleOrigin } from 'src/config/people-url';
 import { createHash, randomBytes } from 'crypto';
 import { RefreshTokenService } from './refresh-token.service';
 import { SaasService } from 'src/saas/saas.service';
@@ -147,7 +148,7 @@ export class AuthService {
       if (!existingUser.emailVerified) {
         const token = await this.issueEmailToken(email, 'verify');
 
-        const confirmationUrl = this.buildAuthEmailUrl('/verifier-email', token, email);
+        const confirmationUrl = this.buildAuthEmailUrl('/verifier-email', token, email, existingUser.role === 'client' ? 'people' : 'studio');
 
         // Envoyer le bon template selon le rôle de l'utilisateur
         if (existingUser.role === 'client') {
@@ -488,7 +489,7 @@ export class AuthService {
       // Génération du token de vérification de l'adresse mail
       const token = await this.issueEmailToken(email, 'verify');
 
-      const confirmationUrl = this.buildAuthEmailUrl('/verifier-email', token, email);
+      const confirmationUrl = this.buildAuthEmailUrl('/verifier-email', token, email, 'people');
 
       await this.mailService.sendClientEmailVerification(
         email,
@@ -614,8 +615,9 @@ export class AuthService {
     }
   }
 
-  private buildAuthEmailUrl(path: string, token: string, email: string): string {
-    const base = process.env.FRONTEND_URL?.trim();
+  /** `site` : 'people' pour les comptes clients (page sur le site People), sinon le site Studio (FRONTEND_URL). */
+  private buildAuthEmailUrl(path: string, token: string, email: string, site: 'studio' | 'people' = 'studio'): string {
+    const base = site === 'people' ? peopleOrigin() : process.env.FRONTEND_URL?.trim();
     if (!base) throw new Error('FRONTEND_URL est requis pour les emails de sécurité.');
     const url = new URL(path, base);
     if (!['http:', 'https:'].includes(url.protocol) ||

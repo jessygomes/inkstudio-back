@@ -74,7 +74,7 @@ export class MailgunService {
 
       const payload: Record<string, unknown> = { ...options };
       if (options.html.includes(`cid:${INKERA_LOGO_CID}`) && existsSync(INKERA_LOGO_PATH)) {
-        payload.inline = [{ filename: INKERA_LOGO_CID + '.png', data: readFileSync(INKERA_LOGO_PATH) }];
+        payload.inline = [{ filename: INKERA_LOGO_CID, data: readFileSync(INKERA_LOGO_PATH) }];
       }
 
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access

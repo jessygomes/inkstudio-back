@@ -2,7 +2,8 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 
 /** Shared email design. Essential styles are inline; media queries are enhancements. */
-export const INKERA_LOGO_CID = 'inkera-logo';
+// Mailgun donne à une image jointe en ligne l'identifiant de son nom de fichier, extension comprise : le src doit être « cid:inkera-logo.png ».
+export const INKERA_LOGO_CID = 'inkera-logo.png';
 export const INKERA_LOGO_PATH = join(__dirname, 'assets', 'logo_inline_white.png');
 const bodyFont = "'Didact Gothic', Arial, Helvetica, sans-serif";
 const headingFont = "'Exo 2', Arial, Helvetica, sans-serif";
@@ -82,6 +83,31 @@ function inlineContent(content: string): string {
   );
 }
 
+/**
+ * Barre du haut en dégradé Inkera (orange #ff9d00 → #ff5500 → violet #ba01d3), dessinée en cellules de couleur :
+ * `linear-gradient` n'est pas affiché par Outlook ni par tous les webmails.
+ */
+const GRADIENT_STOPS: [number, [number, number, number]][] = [
+  [0, [0xff, 0x9d, 0x00]],
+  [0.45, [0xff, 0x55, 0x00]],
+  [1, [0xba, 0x01, 0xd3]],
+];
+const GRADIENT_STEPS = 30;
+function gradientColor(position: number): string {
+  const end = GRADIENT_STOPS.findIndex(([at]) => at >= position);
+  const [toAt, to] = GRADIENT_STOPS[Math.max(end, 1)];
+  const [fromAt, from] = GRADIENT_STOPS[Math.max(end, 1) - 1];
+  const ratio = toAt === fromAt ? 0 : (position - fromAt) / (toAt - fromAt);
+  return `#${from.map((c, i) => Math.round(c + (to[i] - c) * ratio).toString(16).padStart(2, '0')).join('')}`;
+}
+function gradientBar(): string {
+  const cells = Array.from({ length: GRADIENT_STEPS }, (_, i) => {
+    const color = gradientColor(i / (GRADIENT_STEPS - 1));
+    return `<td height="4" bgcolor="${color}" style="height:4px;font-size:0;line-height:0;background-color:${color};">&nbsp;</td>`;
+  }).join('');
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;table-layout:fixed;"><tr>${cells}</tr></table>`;
+}
+
 export function renderInkeraEmail(
   content: string,
   title = 'Inkera Studio',
@@ -89,15 +115,15 @@ export function renderInkeraEmail(
 ): string {
   const safeTitle = escapeEmailHtml(title);
   const safeContext = escapeEmailHtml(context);
-  const contextLine =
-    context !== 'Inkera Studio'
-      ? `<p style="margin:20px 0 0;font-family:${bodyFont};font-size:14px;line-height:1.6;color:#e4cbbd;">${safeContext}</p>`
-      : '';
+  // E-mail d'un salon : son nom en tête (à la place du logo Inkera). Sinon (compte, mot de passe…) : logo Inkera.
+  const fromSalon = context.trim() !== '' && context !== 'Inkera Studio';
   const textLogo = `<span style="font-family:${brandFont};font-size:30px;font-weight:600;line-height:1.2;letter-spacing:-1px;color:#ffffff;">inkera<span style="color:#ff9d00;">.</span></span>`;
   // Logo sent as inline CID attachment (see MailgunService); alt text keeps the brand name if images are blocked.
-  const brandMark = existsSync(INKERA_LOGO_PATH)
-    ? `<p style="margin:0;line-height:1.2;"><img src="cid:${INKERA_LOGO_CID}" alt="inkera." height="36" style="display:block;height:36px;width:auto;border:0;font-family:${brandFont},Arial,sans-serif;font-size:30px;font-weight:bold;color:#ffffff;"></p>`
-    : `<p style="margin:0;">${textLogo}</p>`;
+  const brandMark = fromSalon
+    ? `<p style="margin:0;font-family:${headingFont};font-size:28px;line-height:1.25;font-weight:600;letter-spacing:-0.5px;color:#ffffff;">${safeContext}</p>`
+    : existsSync(INKERA_LOGO_PATH)
+      ? `<p style="margin:0;line-height:1.2;"><img src="cid:${INKERA_LOGO_CID}" alt="inkera." width="122" height="36" style="display:block;width:122px;height:36px;border:0;font-family:${brandFont},Arial,sans-serif;font-size:30px;font-weight:bold;color:#ffffff;"></p>`
+      : `<p style="margin:0;">${textLogo}</p>`;
   return `<!DOCTYPE html>
 <html lang="fr" xmlns="http://www.w3.org/1999/xhtml" xmlns:o="urn:schemas-microsoft-com:office:office">
 <head>
@@ -131,11 +157,10 @@ export function renderInkeraEmail(
     <tr><td align="center" class="email-outer" style="padding:32px 12px;">
       <!--[if mso]><table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="email-container" style="width:100%;max-width:600px;table-layout:fixed;">
-        <tr><td height="4" bgcolor="#ff5500" style="height:4px;font-size:0;line-height:0;">&nbsp;</td></tr>
+        <tr><td height="4" style="height:4px;font-size:0;line-height:0;padding:0;">${gradientBar()}</td></tr>
         <tr><td class="email-header" bgcolor="#131313" style="padding:34px 40px;background-color:#131313;">
           ${brandMark}
-          <p style="margin:9px 0 0;font-family:${headingFont};font-size:10px;line-height:1.5;letter-spacing:3px;color:#c79f8b;text-transform:uppercase;">STUDIO · L’ESPACE DES ARTISTES</p>
-          ${contextLine}
+          <p style="margin:9px 0 0;font-family:${headingFont};font-size:10px;line-height:1.5;letter-spacing:3px;color:#c79f8b;text-transform:uppercase;">${fromSalon ? 'INKERA STUDIO · L’ESPACE DES ARTISTES' : 'STUDIO · L’ESPACE DES ARTISTES'}</p>
         </td></tr>
         <tr><td class="email-copy" bgcolor="#fffdfb" style="padding:36px 40px;background-color:#fffdfb;font-family:${bodyFont};font-size:16px;line-height:1.7;color:#3e2c27;word-break:break-word;">${inlineContent(content)}</td></tr>
         <tr><td class="email-footer" bgcolor="#f5eee9" style="padding:26px 40px;background-color:#f5eee9;border-top:1px solid #e5d8cf;">

@@ -353,6 +353,11 @@ describe('Upload authorization, budgets and callbacks', () => {
       ).rejects.toThrow();
     },
   );
+  it('allows a valid follow-up link from the People site too', async () => {
+    const f = fixture();
+    await f.prepare({ followUpToken: 'follow-token' }, null, 'public');
+    expect(f.rows[0]).toMatchObject({ ownerUserId: null, contextType: 'follow-up' });
+  });
   it('allows a valid follow-up link and gives its own bounded guest budget', async () => {
     const f = fixture();
     await f.prepare({ followUpToken: 'follow-token' }, null);

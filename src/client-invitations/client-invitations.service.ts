@@ -6,6 +6,7 @@ import { PrismaService } from '../database/prisma.service';
 import { MailService } from '../email/mailer.service';
 import { renderClientInvitationEmail } from '../email/client-invitation-email';
 import { sameClientEmail } from '../clients/client-account-link';
+import { peopleOrigin } from '../config/people-url';
 
 const VALID_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -18,16 +19,6 @@ export type InvitationStatus = 'ACTIVE' | 'EXPIRED' | 'REVOKED' | 'ACCEPTED';
 const digest = (token: string) => createHash('sha256').update(token).digest('hex');
 const fail = (status: HttpStatus, code: string, message: string) => new HttpException({ code, message }, status);
 
-function peopleOrigin(): string {
-  const base = new URL(process.env.INKERA_PEOPLE_BASE_URL || 'https://theinkera.com');
-  if (
-    !['http:', 'https:'].includes(base.protocol) ||
-    base.username || base.password || base.search || base.hash || base.pathname !== '/' ||
-    (process.env.NODE_ENV === 'production' && base.protocol !== 'https:')
-  )
-    throw new Error('INKERA_PEOPLE_BASE_URL must be the public People origin');
-  return base.origin;
-}
 
 function salonDisplayName(user: { salonName?: string | null; firstName?: string | null; lastName?: string | null } | null) {
   return user?.salonName?.trim() || [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim() || 'Votre salon';
