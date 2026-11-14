@@ -46,6 +46,10 @@ export const NOTIFICATION_TYPES = {
   // ---- Studio : clients et suivis
   'followup.reply': { category: 'followups', audience: 'studio' },
   'drawing.client_feedback': { category: 'followups', audience: 'studio' },
+  // Le client a accepté l'invitation du salon ou créé son compte depuis elle (fiche reliée à son compte People).
+  'client.account_linked': { category: 'followups', audience: 'studio' },
+  // Réservation d'un compte rattachée à une fiche de même e-mail mais d'un autre nom (fiche non reliée).
+  'client.booking_name_mismatch': { category: 'followups', audience: 'studio' },
   // ---- Studio : avis et Explorer
   'review.new': { category: 'reviews', audience: 'studio' },
   'explorer.proposal_reply': { category: 'explorer', audience: 'studio' },

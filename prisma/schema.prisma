@@ -709,10 +709,32 @@ model Client {
   linkedUserId       String?
   linkedUser         User?                @relation("LinkedClientProfile", fields: [linkedUserId], references: [id], onDelete: SetNull)
   inboxThreads       InboxThread[]
+  invitations        ClientInvitation[]
 
   @@unique([userId, email])
   @@index([linkedUserId])
   @@index([userId, lastName, firstName], map: "idx_client_userId_lastName_firstName")
+}
+
+//! Invitation d'un client (fiche du salon) à rejoindre Inkera et à relier son compte à sa fiche.
+// Seule l'empreinte du lien est stockée. La liaison exige un compte client vérifié avec l'e-mail de la fiche.
+model ClientInvitation {
+  id             String    @id @default(cuid())
+  clientId       String
+  client         Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  salonId        String // propriétaire de la fiche (salon ou tatoueur indépendant)
+  email          String // e-mail de la fiche au moment de l'invitation (minuscules)
+  tokenHash      String    @unique
+  expiresAt      DateTime
+  emailSentAt    DateTime?
+  pendingUserId  String? // compte créé depuis l'invitation, relié dès la vérification de son e-mail
+  acceptedAt     DateTime?
+  acceptedUserId String?
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([clientId, createdAt])
+  @@index([pendingUserId])
 }
 
 model MedicalHistory {

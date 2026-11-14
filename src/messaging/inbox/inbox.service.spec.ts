@@ -23,7 +23,7 @@ function createMock() {
     inboxThread: { findMany: jest.fn(), findUnique: jest.fn(), count: jest.fn(), update: jest.fn(), upsert: jest.fn() },
     inboxMemberPermission: { findUnique: jest.fn(), upsert: jest.fn() },
     tatoueur: { findUnique: jest.fn() },
-    client: { findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn() },
+    client: { findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
     appointment: { findUnique: jest.fn(), findMany: jest.fn(), count: jest.fn() },
     inboxThreadAppointment: { upsert: jest.fn() },
     inboxInternalNote: { create: jest.fn(), findMany: jest.fn() },
@@ -244,6 +244,45 @@ describe('InboxService: droits, fonctionnalités et non-régression', () => {
     });
     expect(prisma.client.create).not.toHaveBeenCalled();
     expect(prisma.inboxThread.update).toHaveBeenCalledWith(expect.objectContaining({ data: { linkedClientId: 'crm-a' } }));
+  });
+
+  describe('liaison de la fiche au compte de la conversation Inkera', () => {
+    const inkeraAccount = { id: 'client-inkera', role: 'client', email: 'Lea@Example.fr', emailVerified: new Date('2026-10-01') };
+    const withAccount = (account: object | null) =>
+      prisma.user.findUnique.mockImplementation(async ({ where }: any) =>
+        where.id === 'salon-a' ? salon : where.id === 'client-inkera' ? account : null);
+
+    it('relie la fiche au compte quand elle porte son e-mail vérifié', async () => {
+      withAccount(inkeraAccount);
+      prisma.client.findUnique.mockResolvedValue({ id: 'crm-a', userId: 'salon-a', email: 'lea@example.fr', linkedUserId: null });
+      const result = await service.linkClient('salon-a', 'thread-a', 'crm-a');
+      expect(prisma.client.updateMany).toHaveBeenCalledWith({
+        where: { id: 'crm-a', userId: 'salon-a', linkedUserId: null },
+        data: { linkedUserId: 'client-inkera' },
+      });
+      expect(result.clientAccountLinked).toBe(true);
+    });
+    it("ne relie pas la fiche si l'e-mail diffère", async () => {
+      withAccount(inkeraAccount);
+      prisma.client.findUnique.mockResolvedValue({ id: 'crm-a', userId: 'salon-a', email: 'autre@example.fr', linkedUserId: null });
+      const result = await service.linkClient('salon-a', 'thread-a', 'crm-a');
+      expect(prisma.client.updateMany).not.toHaveBeenCalled();
+      expect(result.clientAccountLinked).toBe(false);
+      expect(prisma.inboxThread.update).toHaveBeenCalledWith(expect.objectContaining({ data: { linkedClientId: 'crm-a' } }));
+    });
+    it("ne relie pas la fiche si le compte n'a pas vérifié son e-mail", async () => {
+      withAccount({ ...inkeraAccount, emailVerified: null });
+      prisma.client.findUnique.mockResolvedValue({ id: 'crm-a', userId: 'salon-a', email: 'lea@example.fr', linkedUserId: null });
+      await service.linkClient('salon-a', 'thread-a', 'crm-a');
+      expect(prisma.client.updateMany).not.toHaveBeenCalled();
+    });
+    it('ne relie jamais une fiche depuis un fil externe (Instagram…)', async () => {
+      withAccount(inkeraAccount);
+      prisma.inboxThread.findUnique.mockResolvedValue({ ...thread, channel: InboxChannel.INSTAGRAM });
+      prisma.client.findUnique.mockResolvedValue({ id: 'crm-a', userId: 'salon-a', email: 'lea@example.fr', linkedUserId: null });
+      await service.linkClient('salon-a', 'thread-a', 'crm-a');
+      expect(prisma.client.updateMany).not.toHaveBeenCalled();
+    });
   });
 
   it('lie plusieurs rendez-vous à la même conversation sans en créer une nouvelle', async () => {

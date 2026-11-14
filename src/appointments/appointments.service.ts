@@ -24,7 +24,7 @@ import { SKIN_REQUIRED_PRESTATIONS, SKIN_TONE_OPTIONS, SkinTone } from './consta
 import { CreateAppointmentByClientResponse } from './dto/create-appointment-by-client.dto';
 import { assertProfessionalCanMessage } from '../messaging/plan-access';
 import { NotificationsService } from '../notifications/notifications.service';
-import { notifyClientCancelled, notifyClientCancelledBySalon, notifyClientConfirmed, notifyClientRescheduled, notifyClientRescheduledByClient, notifyNewBooking, notifyPerformerAssigned } from '../notifications/appointment-notifications';
+import { notifyBookingNameMismatch, notifyClientCancelled, notifyClientCancelledBySalon, notifyClientConfirmed, notifyClientRescheduled, notifyClientRescheduledByClient, notifyNewBooking, notifyPerformerAssigned } from '../notifications/appointment-notifications';
 
 @Injectable()
 export class AppointmentsService {
@@ -729,9 +729,12 @@ export class AppointmentsService {
       }
 
       // A professional may reuse an existing salon-owned link, never claim an account by email.
-      const ownedClient = await this.prisma.client.findFirst({
-        where: { email: clientEmail, userId },
-      });
+      // E-mail comparé sans tenir compte des majuscules (sinon « Benoit@… » et « benoit@… » donnaient deux fiches).
+      const ownedClient = clientEmail?.trim()
+        ? await this.prisma.client.findFirst({
+            where: { userId, email: { equals: clientEmail.trim(), mode: 'insensitive' } },
+          })
+        : null;
       let clientUser = ownedClient?.linkedUserId
         ? await this.prisma.user.findUnique({
             where: { id: ownedClient.linkedUserId, role: 'client' },
@@ -1539,7 +1542,7 @@ export class AppointmentsService {
         : undefined;
 
       const crmOwnerId = userId;
-      const { client, newAppointment, clientUser } =
+      const { client, newAppointment, clientUser, nameMismatch } =
         await this.prisma.$transaction(
           async (tx) => {
             // Serialize bookings by this account before resolving its salon-specific CRM record.
@@ -1587,6 +1590,36 @@ export class AppointmentsService {
             // Fiche créée par le salon avant l'inscription du client : même e-mail (vérifié), prénom et nom.
             if (!client && clientUser)
               client = await claimMatchingClientRecord(tx, crmOwnerId, clientUser);
+            // Fiche du salon avec le même e-mail mais qui n'a pas pu être reliée (nom différent, autre compte, invité…).
+            let nameMismatch: { bookedAs: string } | null = null;
+            if (!client) {
+              const bookingEmail = (clientUser?.email ?? clientEmail ?? '').trim();
+              const known = bookingEmail
+                ? await tx.client.findFirst({
+                    where: { userId: crmOwnerId, email: { equals: bookingEmail, mode: 'insensitive' } },
+                  })
+                : null;
+              if (known) {
+                if (!clientUser)
+                  throw new ConflictException({
+                    code: 'CLIENT_EMAIL_KNOWN',
+                    message: 'Cette adresse e-mail est déjà connue de ce salon. Connectez-vous, ou créez votre compte Inkera avec cette adresse, pour réserver.',
+                  });
+                if (!clientUser.emailVerified)
+                  throw new ConflictException({
+                    code: 'CLIENT_EMAIL_UNVERIFIED',
+                    message: 'Confirmez d’abord votre adresse e-mail avec le lien reçu à l’inscription, puis réservez à nouveau.',
+                  });
+                if (known.linkedUserId && known.linkedUserId !== clientUser.id)
+                  throw new ConflictException({
+                    code: 'CLIENT_EMAIL_LINKED_ELSEWHERE',
+                    message: 'Cette adresse e-mail est rattachée à un autre compte chez ce salon. Contactez directement le salon pour réserver.',
+                  });
+                // Titulaire vérifié de l'adresse : le RDV rejoint la fiche existante, sans la relier ni la modifier (le salon pourra l'inviter).
+                client = known;
+                nameMismatch = { bookedAs: [clientUser.firstName, clientUser.lastName].filter(Boolean).join(' ').trim() };
+              }
+            }
             if (!client) {
               client = await tx.client.create({
                 data: {
@@ -1745,13 +1778,20 @@ export class AppointmentsService {
             }
 
             await attachGuestUploads(tx, [rdvBody.reference, rdvBody.sketch], 'booking', [userId, newAppointment.userId, newAppointment.performerUserId].filter((id): id is string => typeof id === 'string'));
-            return { client, newAppointment, clientUser };
+            return { client, newAppointment, clientUser, nameMismatch };
           },
           { timeout: 20000 },
         );
 
       // Side effects run only after commit and cannot turn a persisted booking into a reported failure.
       void notifyNewBooking(this.notifications, newAppointment, `${client.firstName} ${client.lastName}`.trim(), !!salonConfig.addConfirmationEnabled);
+      if (nameMismatch)
+        void notifyBookingNameMismatch(this.notifications, {
+          salonId: crmOwnerId,
+          appointmentId: newAppointment.id,
+          client: { id: client.id, firstName: client.firstName, lastName: client.lastName, email: client.email },
+          bookedAs: nameMismatch.bookedAs,
+        });
       try {
         // Gestion des emails selon le statut
         if (salonConfig.addConfirmationEnabled) {
@@ -1933,12 +1973,13 @@ export class AppointmentsService {
       };
     } catch (error: unknown) {
       this.logger.warn('Public booking could not be persisted.');
+      const known = error instanceof ForbiddenException || error instanceof ConflictException || error instanceof BadRequestException;
+      const response = known ? (error.getResponse() as { code?: unknown }) : null;
+      const code = typeof response?.code === 'string' ? (response.code as CreateAppointmentByClientResponse['code']) : undefined;
       return {
         error: true,
-        message:
-          (error instanceof ForbiddenException || error instanceof ConflictException || error instanceof BadRequestException)
-            ? error.message
-            : 'La réservation n’a pas pu être enregistrée. Merci de réessayer.',
+        message: known ? error.message : 'La réservation n’a pas pu être enregistrée. Merci de réessayer.',
+        ...(code ? { code } : {}),
       };
     }
   }

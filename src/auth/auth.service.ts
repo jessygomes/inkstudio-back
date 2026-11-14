@@ -7,6 +7,7 @@ import { UserPayload } from './jwt.strategy';
 import { CreateUserDto } from './dto/create-user.dto';
 import { LoginUserDto } from './dto/login-user.dto';
 import { MailService } from 'src/email/mailer.service';
+import { ClientInvitationsService } from 'src/client-invitations/client-invitations.service';
 import { createHash, randomBytes } from 'crypto';
 import { RefreshTokenService } from './refresh-token.service';
 import { SaasService } from 'src/saas/saas.service';
@@ -91,6 +92,7 @@ export class AuthService {
     private readonly appleIdentity: AppleIdentityService,
     @Optional() private readonly cacheService?: CacheService,
     @Optional() private readonly refreshTokens?: RefreshTokenService,
+    @Optional() private readonly clientInvitations?: ClientInvitationsService,
   ) {}
 
   private getTatoueurTrialMonths(): number {
@@ -480,6 +482,9 @@ export class AuthService {
         }
       });
 
+      // Inscription depuis l'invitation d'un salon : la fiche sera reliée dès la vérification de l'e-mail.
+      await this.clientInvitations?.rememberSignup(registerBody.invitationToken, createdUser);
+
       // Génération du token de vérification de l'adresse mail
       const token = await this.issueEmailToken(email, 'verify');
 
@@ -688,6 +693,7 @@ export class AuthService {
   async verifyEmail(email: string, token: string) {
     validateEmailToken(email, token);
     await this.consumeEmailToken(email, token, 'verify');
+    await this.clientInvitations?.acceptPendingForEmail(email);
     return { message: 'Email v\u00e9rifi\u00e9 avec succ\u00e8s.' };
   }
 

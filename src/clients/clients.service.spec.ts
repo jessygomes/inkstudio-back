@@ -120,6 +120,35 @@ describe('ClientsService', () => {
     expect(cache.delPattern).toHaveBeenCalledWith('clients:search:u1:*');
   });
 
+  it('refuses a second record with the same email in another case', async () => {
+    prisma.client.findFirst.mockResolvedValue({ firstName: 'Benoît', lastName: 'Martin' });
+
+    const result = await service.createClient({
+      userId: 'u1',
+      clientBody: { firstName: 'Ben', lastName: 'M', email: ' Benoit@Mail.test ', phone: '1' } as any,
+    });
+
+    expect(prisma.client.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { userId: 'u1', email: { equals: 'Benoit@Mail.test', mode: 'insensitive' } },
+    }));
+    expect(result).toEqual({ error: true, code: 'CLIENT_EMAIL_EXISTS', message: 'Une fiche client utilise déjà cet e-mail (Benoît Martin).' });
+    expect(prisma.client.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses to change a record email to the email of another record', async () => {
+    prisma.client.findFirst
+      .mockResolvedValueOnce({ id: 'c1', userId: 'u1' })
+      .mockResolvedValueOnce({ firstName: 'Benoît', lastName: 'Martin' });
+
+    const result = await service.updateClient('c1', 'u1', { firstName: 'A', lastName: 'B', email: 'BENOIT@mail.test' } as any);
+
+    expect(prisma.client.findFirst).toHaveBeenLastCalledWith(expect.objectContaining({
+      where: { userId: 'u1', email: { equals: 'BENOIT@mail.test', mode: 'insensitive' }, NOT: { id: 'c1' } },
+    }));
+    expect(result).toMatchObject({ error: true, code: 'CLIENT_EMAIL_EXISTS' });
+    expect(prisma.client.update).not.toHaveBeenCalled();
+  });
+
   it('creates client with tattoo detail and medical history when provided', async () => {
     prisma.client.create.mockResolvedValue({ id: 'c1', userId: 'u1' });
     prisma.tattooDetail.create.mockResolvedValue({ id: 'td1', clientId: 'c1' });
@@ -310,7 +339,7 @@ describe('ClientsService', () => {
   });
 
   it('updates client and medical history when existing', async () => {
-    prisma.client.findFirst.mockResolvedValue({ id: 'c1', userId: 'u1' });
+    prisma.client.findFirst.mockResolvedValueOnce({ id: 'c1', userId: 'u1' }).mockResolvedValueOnce(null);
     prisma.client.update.mockResolvedValue({ id: 'c1', userId: 'u1' });
     prisma.medicalHistory.findUnique.mockResolvedValue({ clientId: 'c1' });
     prisma.medicalHistory.update.mockResolvedValue({
@@ -359,7 +388,7 @@ describe('ClientsService', () => {
   });
 
   it('creates medical history when none exists during update', async () => {
-    prisma.client.findFirst.mockResolvedValue({ id: 'c1', userId: 'u1' });
+    prisma.client.findFirst.mockResolvedValueOnce({ id: 'c1', userId: 'u1' }).mockResolvedValueOnce(null);
     prisma.client.update.mockResolvedValue({ id: 'c1', userId: 'u1' });
     prisma.medicalHistory.findUnique.mockResolvedValue(null);
     prisma.medicalHistory.create.mockResolvedValue({
@@ -386,7 +415,7 @@ describe('ClientsService', () => {
   });
 
   it('skips medical history when no medical data provided', async () => {
-    prisma.client.findFirst.mockResolvedValue({ id: 'c1', userId: 'u1' });
+    prisma.client.findFirst.mockResolvedValueOnce({ id: 'c1', userId: 'u1' }).mockResolvedValueOnce(null);
     prisma.client.update.mockResolvedValue({ id: 'c1', userId: 'u1' });
 
     const result = await service.updateClient(
@@ -452,7 +481,7 @@ describe('ClientsService', () => {
     expect(prisma.client.update).not.toHaveBeenCalled();
   });
 
-  it('searches clients combines existing and user clients, caches result', async () => {
+  it('searches only the salon CRM, never platform-wide client accounts, and caches result', async () => {
     cache.get.mockResolvedValue(null);
     prisma.client.findMany.mockResolvedValue([
       {
@@ -493,10 +522,12 @@ describe('ClientsService', () => {
     };
 
     expect(success.error).toBe(false);
-    expect(success.totalResults).toBe(2); // 1 existing + 1 available user client (u2)
+    expect(success.totalResults).toBe(1);
+    expect(prisma.user.findMany).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ userClients: [] });
     expect(cache.set).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({ totalResults: 2 }),
+      'clients:search:salon1:v2:a',
+      expect.objectContaining({ totalResults: 1 }),
       120,
     );
   });

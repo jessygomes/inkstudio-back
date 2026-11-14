@@ -7,6 +7,7 @@ import { MessagesGateway } from '../websocket/messages.gateway';
 import { InstagramService } from '../instagram/instagram.service';
 import { assertProfessionalCanCreateClient, assertProfessionalCanMessage } from '../plan-access';
 import { assertContactCanMessage } from '../contact-access';
+import { linkClientRecordIfSameEmail } from '../../clients/client-account-link';
 import {
   AssignInboxThreadDto, CreateInboxClientDto, InboxMemberPermissionDto, InboxReplyDto,
   ListInboxThreadsDto, SaveInboxReplyDto,
@@ -358,9 +359,15 @@ export class InboxService {
     ) {
       throw new BadRequestException('Cette fiche est déjà liée à un autre compte client Inkera');
     }
-    return this.prisma.inboxThread.update({
+    const updated = await this.prisma.inboxThread.update({
       where: { id: thread.id }, data: { linkedClientId: client.id },
     });
+    // Conversation Inkera : la fiche rejoint le compte du client si elle porte son e-mail (vérifié).
+    const accountUserId = thread.channel === InboxChannel.INKERA ? thread.conversation?.clientUserId : null;
+    const clientAccountLinked = accountUserId
+      ? await linkClientRecordIfSameEmail(this.prisma, client, accountUserId)
+      : false;
+    return { ...updated, clientAccountLinked };
   }
 
   /** Retire seulement le lien CRM du fil ; conserve la fiche et son historique. */
@@ -411,7 +418,7 @@ export class InboxService {
     // L'email n'est utilisé que pour réutiliser une fiche existante au sein
     // du même espace CRM. Aucune conversation externe n'est fusionnée.
     let client = await this.prisma.client.findFirst({
-      where: { userId: thread.ownerUserId, email },
+      where: { userId: thread.ownerUserId, email: { equals: email, mode: 'insensitive' } },
     });
     if (!client) {
       client = await this.prisma.client.create({

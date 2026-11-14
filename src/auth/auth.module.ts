@@ -16,6 +16,7 @@ import { RegistrationThrottleGuard } from './registration-throttle.guard';
 import { GoogleIdentityService } from './google-identity.service';
 import { AppleIdentityService } from './apple-identity.service';
 import { RefreshTokenService } from './refresh-token.service';
+import { ClientInvitationsModule } from '../client-invitations/client-invitations.module';
 // import googleOauthConfig from './google-oauth.config';
 // import { ConfigModule } from '@nestjs/config';
 // import { GoogleStrategy } from './google.strategy';
@@ -31,6 +32,7 @@ import { RefreshTokenService } from './refresh-token.service';
     }),
     SaasModule,
     MailModule,
+    ClientInvitationsModule,
     StripeModule,
     // RedisModule exporte RedisService utilisé par RegistrationRateLimiterService.
     RedisModule,

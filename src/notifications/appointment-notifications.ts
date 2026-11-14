@@ -34,6 +34,25 @@ export function notifyNewBooking(n: NotificationsService | undefined, rdv: Rdv, 
   });
 }
 
+/**
+ * Réservation d'un compte client (e-mail vérifié) rattachée à une fiche existante de même e-mail mais d'un autre nom :
+ * la fiche n'est pas reliée au compte ; le salon peut inviter le client depuis la fiche.
+ */
+export function notifyBookingNameMismatch(
+  n: NotificationsService | undefined,
+  p: { salonId: string; appointmentId: string; client: { id: string; firstName?: string | null; lastName?: string | null; email?: string | null }; bookedAs: string },
+) {
+  const ficheName = [p.client.firstName, p.client.lastName].filter(Boolean).join(' ').trim() || 'votre client';
+  return n?.notify({
+    userId: p.salonId,
+    type: 'client.booking_name_mismatch',
+    title: `Réservation de ${p.bookedAs || 'un client'} rattachée à la fiche de ${ficheName}`,
+    body: 'Même e-mail, nom différent : vérifiez la fiche. Pour que le client retrouve ses rendez-vous dans son espace, invitez-le depuis sa fiche.',
+    data: { clientId: p.client.id, clientEmail: p.client.email ?? null, appointmentId: p.appointmentId },
+    dedupeKey: `client.booking_name_mismatch:${p.appointmentId}`,
+  });
+}
+
 /** Le client a annulé son rendez-vous. */
 export function notifyClientCancelled(n: NotificationsService | undefined, rdv: Rdv, clientName: string, reason?: string) {
   return n?.notifyMany(proIds(rdv), {

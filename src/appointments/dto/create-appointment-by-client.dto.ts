@@ -25,7 +25,12 @@ export class CreateAppointmentByClientRequestDto {
   clientUserId?: string;
 }
 
-export type CreateAppointmentByClientErrorCode = 'LINKED_BOOKING_REDIRECT';
+export type CreateAppointmentByClientErrorCode =
+  | 'LINKED_BOOKING_REDIRECT'
+  // Fiche du salon déjà associée à cet e-mail : se connecter / créer un compte avec cette adresse, confirmer l'e-mail, ou contacter le salon.
+  | 'CLIENT_EMAIL_KNOWN'
+  | 'CLIENT_EMAIL_UNVERIFIED'
+  | 'CLIENT_EMAIL_LINKED_ELSEWHERE';
 
 export interface CreateAppointmentByClientResponse {
   error: boolean;

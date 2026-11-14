@@ -1,4 +1,33 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
+
+export function sameClientEmail(a: string | null | undefined, b: string | null | undefined): boolean {
+  const left = (a ?? '').trim().toLowerCase();
+  return left.length > 0 && left === (b ?? '').trim().toLowerCase();
+}
+
+/**
+ * Relie une fiche du salon au compte client avec qui le salon est déjà en relation (conversation Inkera…),
+ * uniquement si l'e-mail de la fiche est celui du compte et que le compte a vérifié son e-mail.
+ * Ne remplace jamais une liaison existante. Renvoie `true` si la fiche est (désormais) liée à ce compte.
+ */
+export async function linkClientRecordIfSameEmail(
+  db: Prisma.TransactionClient | PrismaClient,
+  client: { id: string; userId: string; email: string | null; linkedUserId?: string | null },
+  accountUserId: string,
+): Promise<boolean> {
+  if (client.linkedUserId) return client.linkedUserId === accountUserId;
+  const account = await db.user.findUnique({
+    where: { id: accountUserId },
+    select: { role: true, email: true, emailVerified: true },
+  });
+  if (!account || account.role !== 'client' || !account.emailVerified) return false;
+  if (!sameClientEmail(client.email, account.email)) return false;
+  const { count } = await db.client.updateMany({
+    where: { id: client.id, userId: client.userId, linkedUserId: null },
+    data: { linkedUserId: accountUserId },
+  });
+  return count > 0;
+}
 
 /** Compare deux prénoms ou noms sans tenir compte de la casse, des accents, des espaces, tirets et apostrophes. */
 export function normalizeClientName(value: string | null | undefined): string {

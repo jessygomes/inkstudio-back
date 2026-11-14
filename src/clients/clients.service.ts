@@ -13,6 +13,26 @@ export class ClientsService {
   ) {}
 
   //! CREER UN CLIENT
+  /**
+   * Une seule fiche par e-mail et par salon, sans tenir compte des majuscules (« Benoit@… » = « benoit@… »).
+   * Renvoie l'erreur à retourner si une autre fiche du salon utilise déjà cet e-mail, sinon `null`.
+   */
+  private async emailTakenBy(userId: string, email: string | null | undefined, exceptClientId?: string) {
+    const value = typeof email === 'string' ? email.trim() : '';
+    if (!value) return null;
+    const other = await this.prisma.client.findFirst({
+      where: { userId, email: { equals: value, mode: 'insensitive' }, ...(exceptClientId ? { NOT: { id: exceptClientId } } : {}) },
+      select: { firstName: true, lastName: true },
+    });
+    if (!other) return null;
+    const name = [other.firstName, other.lastName].filter(Boolean).join(' ').trim();
+    return {
+      error: true,
+      code: 'CLIENT_EMAIL_EXISTS',
+      message: `Une fiche client utilise déjà cet e-mail${name ? ` (${name})` : ''}.`,
+    };
+  }
+
   async createClient({ clientBody, userId }: { clientBody: CreateClientDto, userId: string }) {
     try {
       const {
@@ -45,12 +65,15 @@ export class ClientsService {
         tattooHistory,
       } = clientBody;
 
+      const taken = await this.emailTakenBy(userId, email);
+      if (taken) return taken;
+
       // Créer le client
       const newClient = await this.prisma.client.create({
         data: {
           firstName,
           lastName,
-          email,
+          email: email.trim(),
           phone,
           birthDate: birthDate ? new Date(birthDate) : undefined,
           address,
@@ -386,7 +409,7 @@ export class ClientsService {
 //! SEARCH CLIENTS BY NAME OR EMAIL (for reservation form)
 async searchClients(query: string, userId: string) {
   try {
-    const cacheKey = `clients:search:${userId}:${query?.trim()}`;
+    const cacheKey = `clients:search:${userId}:v2:${query?.trim()}`;
 
     // 1. Vérifier dans Redis
     const cachedResult = await this.cacheService.get<{
@@ -437,70 +460,16 @@ async searchClients(query: string, userId: string) {
       take: 10,
     });
 
-    // Recherche dans les utilisateurs connectés (role="client")
-    const userClients = await this.prisma.user.findMany({
-      where: {
-        role: 'client',
-        OR: [
-          { firstName: { contains: query, mode: 'insensitive' } },
-          { lastName: { contains: query, mode: 'insensitive' } },
-          { email: { contains: query, mode: 'insensitive' } },
-        ],
-      },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        email: true,
-        phone: true,
-        image: true,
-        clientProfile: {
-          select: {
-            birthDate: true,
-          }
-        }
-      },
-      take: 10,
-    });
-
-    // Filtrer les userClients qui ne sont pas déjà liés à ce salon
-    const existingLinkedUserIds = existingClients
-      .filter(client => client.linkedUserId)
-      .map(client => client.linkedUserId);
-
-    const availableUserClients = userClients.filter(
-      userClient => !existingLinkedUserIds.includes(userClient.id)
-    );
-
-    // Formatter les userClients pour correspondre au format des clients
-    const formattedUserClients = availableUserClients.map(userClient => ({
-      id: userClient.id,
-      firstName: userClient.firstName,
-      lastName: userClient.lastName,
-      email: userClient.email,
-      phone: userClient.phone,
-      image: userClient.image,
-      birthDate: userClient.clientProfile?.birthDate || null,
-      consentSigned: false,
-      consentSignedAt: null,
-      consentFileUrl: null,
-      isMinor: false,
-      guardianName: null,
-      guardianPhone: null,
-      tags: [],
-      marketingConsent: false,
-      isUserClient: true, // Flag pour identifier les clients connectés
-      linkedUserId: userClient.id,
-      createdAt: new Date() // Pour le tri
-    }));
-
-    const totalResults = existingClients.length + formattedUserClients.length;
+    // Les comptes clients Inkera de toute la plateforme ne sont plus proposés (vie privée, audit SEC-06) :
+    // un compte se relie à une fiche par le client lui-même (invitation, réservation, conversation Inkera).
+    // `userClients` reste dans la réponse, toujours vide, pour les fronts existants.
+    const totalResults = existingClients.length;
 
     const result = {
       error: false,
       message: totalResults > 0 ? 'Clients trouvés avec succès.' : 'Aucun client trouvé.',
       clients: existingClients || [],
-      userClients: formattedUserClients || [],
+      userClients: [],
       totalResults
     };
 
@@ -633,11 +602,14 @@ async searchClients(query: string, userId: string) {
         previousReactions,
         tattooHistory, } = clientBody;
 
+      const taken = await this.emailTakenBy(userId, email, clientId);
+      if (taken) return taken;
+
       // Préparer les données à mettre à jour
       const updateData: Record<string, unknown> = {
         firstName,
         lastName,
-        email,
+        email: typeof email === 'string' ? email.trim() : email,
         phone,
         address,
         consentSigned,

@@ -12,6 +12,7 @@ import { TatoueursModule } from './tatoueurs/tatoueurs.module';
 import { ClientsService } from './clients/clients.service';
 import { ClientsController } from './clients/clients.controller';
 import { ClientsModule } from './clients/clients.module';
+import { ClientInvitationsModule } from './client-invitations/client-invitations.module';
 import { TattooHistoryService } from './tattoo-history/tattoo-history.service';
 import { TattooHistoryController } from './tattoo-history/tattoo-history.controller';
 import { TattooHistoryModule } from './tattoo-history/tattoo-history.module';
@@ -61,6 +62,7 @@ import { AppointmentPhotosModule } from './appointment-photos/appointment-photos
     AppointmentsModule,
     TatoueursModule,
     ClientsModule,
+    ClientInvitationsModule,
     TattooHistoryModule,
     AftercareModule,
     TimeSlotModule,

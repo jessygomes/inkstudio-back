@@ -1,4 +1,4 @@
-import { IsEmail, IsNotEmpty, IsString, MinLength, IsOptional } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsString, MinLength, MaxLength, IsOptional } from 'class-validator';
 
 //! Schema de validation des données pour la création d'un utilisateur client
 
@@ -36,4 +36,10 @@ export class CreateUserClientDto {
   @IsOptional()
   @IsString()
   website?: string;
+
+  // Lien d'invitation d'un salon : la fiche du salon est reliée au compte après vérification de l'e-mail.
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  invitationToken?: string;
 }

@@ -145,6 +145,12 @@ describe('SEC-06 booking HTTP identity', () => {
   });
 });
 
+// Filtre e-mail Prisma : valeur exacte ou { equals, mode: 'insensitive' }.
+const sameEmail = (stored: string | undefined, filter: string | { equals: string; mode?: string }) =>
+  typeof filter === 'string'
+    ? stored === filter
+    : (stored ?? '').toLowerCase() === filter.equals.toLowerCase();
+
 describe('SEC-06 identity and transaction persistence', () => {
   // Booking fixtures are in November 2026; keep the future-date rule deterministic.
   let clock: jest.SpyInstance;
@@ -221,7 +227,7 @@ describe('SEC-06 identity and transaction persistence', () => {
         findFirst: jest.fn(({ where }) =>
           Promise.resolve(
             state.clients.find(
-              (c) => c.userId === where.userId && c.email === where.email,
+              (c) => c.userId === where.userId && sameEmail(c.email, where.email),
             ) ?? null,
           ),
         ),
@@ -263,7 +269,9 @@ describe('SEC-06 identity and transaction persistence', () => {
                     c.userId === where.userId &&
                     (where.linkedUserId
                       ? c.linkedUserId === where.linkedUserId
-                      : c.id === where.id),
+                      : where.email
+                        ? sameEmail(c.email, where.email)
+                        : c.id === where.id),
                 ) ?? null,
               ),
             ),
@@ -392,10 +400,10 @@ describe('SEC-06 identity and transaction persistence', () => {
       email: body.clientEmail,
       firstName: 'Private name',
     });
-    expect((await book()).error).toBe(false);
-    expect(state.clients).toHaveLength(2);
-    expect(state.appointments[0]).toMatchObject({ clientId: 'client-1' });
-    expect(state.appointments[0].clientUserId).toBeUndefined();
+    // Ni reprise de la fiche ni doublon (interdit par la base) : l'invité est invité à se connecter avec cette adresse.
+    expect(await book()).toMatchObject({ error: true, code: 'CLIENT_EMAIL_KNOWN' });
+    expect(state.clients).toHaveLength(1);
+    expect(state.appointments).toHaveLength(0);
     expect(
       db.user.findUnique.mock.calls.some(([args]) => args.where.email),
     ).toBe(false);
@@ -463,29 +471,31 @@ describe('SEC-06 identity and transaction persistence', () => {
       expect(state.clients[0]).toMatchObject({ id: 'legacy', linkedUserId: 'owner', firstName: 'ówner' });
       expect(state.appointments[0]).toMatchObject({ clientId: 'legacy', clientUserId: 'owner' });
     });
-    it('does not take it over when the name differs', async () => {
+    it('attaches the booking to the record without linking it when the name differs', async () => {
       legacy({ firstName: 'Someone' });
       expect((await book('owner')).error).toBe(false);
-      expect(state.clients[0].linkedUserId).toBeNull();
-      expect(state.clients[1].linkedUserId).toBe('owner');
+      expect(state.clients).toHaveLength(1);
+      expect(state.clients[0]).toMatchObject({ id: 'legacy', linkedUserId: null, firstName: 'Someone' });
+      expect(state.appointments[0]).toMatchObject({ clientId: 'legacy', clientUserId: 'owner' });
     });
-    it('does not take it over when the account email is not verified', async () => {
+    it('asks to confirm the email first when the account email is not verified', async () => {
       account.emailVerified = null;
       legacy();
-      expect((await book('owner')).error).toBe(false);
-      expect(state.clients[0].linkedUserId).toBeNull();
-      expect(state.clients[1].linkedUserId).toBe('owner');
+      expect(await book('owner')).toMatchObject({ error: true, code: 'CLIENT_EMAIL_UNVERIFIED' });
+      expect(state.clients).toHaveLength(1);
+      expect(state.appointments).toHaveLength(0);
     });
-    it('never re-links a record already linked to another account', async () => {
+    it('never re-links or reuses a record already linked to another account', async () => {
       legacy({ linkedUserId: 'someone-else' });
-      expect((await book('owner')).error).toBe(false);
+      expect(await book('owner')).toMatchObject({ error: true, code: 'CLIENT_EMAIL_LINKED_ELSEWHERE' });
       expect(state.clients[0].linkedUserId).toBe('someone-else');
-      expect(state.clients[1].linkedUserId).toBe('owner');
+      expect(state.appointments).toHaveLength(0);
     });
-    it('never links a record from a guest booking', async () => {
+    it('never links or reuses a record from a guest booking, and says how to book', async () => {
       legacy();
-      expect((await book(undefined, { clientEmail: account.email })).error).toBe(false);
+      expect(await book(undefined, { clientEmail: account.email.toUpperCase() })).toMatchObject({ error: true, code: 'CLIENT_EMAIL_KNOWN' });
       expect(state.clients[0].linkedUserId).toBeNull();
+      expect(state.appointments).toHaveLength(0);
     });
   });
   it('does not claim a deleted or no-longer-client account from a stale principal', async () => {
