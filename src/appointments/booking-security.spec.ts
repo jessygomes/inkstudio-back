@@ -169,6 +169,7 @@ describe('SEC-06 identity and transaction persistence', () => {
     firstName: 'Owner',
     lastName: 'Client',
     phone: '0200000000',
+    emailVerified: new Date('2026-10-01') as Date | null,
     clientProfile: { birthDate: new Date('1990-01-01') },
   };
   beforeEach(() => {
@@ -266,6 +267,26 @@ describe('SEC-06 identity and transaction persistence', () => {
                 ) ?? null,
               ),
             ),
+            findMany: jest.fn(({ where }) =>
+              Promise.resolve(
+                draft.clients.filter(
+                  (c) =>
+                    c.userId === where.userId &&
+                    (c.linkedUserId ?? null) === where.linkedUserId &&
+                    c.email?.toLowerCase() === where.email.equals.toLowerCase(),
+                ),
+              ),
+            ),
+            updateMany: jest.fn(({ where, data }) => {
+              const record = draft.clients.find(
+                (c) =>
+                  c.id === where.id &&
+                  c.userId === where.userId &&
+                  (c.linkedUserId ?? null) === where.linkedUserId,
+              );
+              if (record) Object.assign(record, data);
+              return Promise.resolve({ count: record ? 1 : 0 });
+            }),
             create: jest.fn(({ data }) => {
               const record = { id: `client-${draft.clients.length}`, ...data };
               draft.clients.push(record);
@@ -420,16 +441,52 @@ describe('SEC-06 identity and transaction persistence', () => {
       'owner@example.test',
     );
   });
-  it('does not take over an unlinked legacy CRM record by matching its email', async () => {
-    state.clients.push({
-      id: 'legacy',
-      userId: 'salon',
-      linkedUserId: null,
-      email: account.email,
+  describe('unlinked CRM record created by the salon before signup', () => {
+    afterEach(() => {
+      account.emailVerified = new Date('2026-10-01');
     });
-    expect((await book('owner')).error).toBe(false);
-    expect(state.clients[0].linkedUserId).toBeNull();
-    expect(state.clients[1].linkedUserId).toBe('owner');
+    const legacy = (overrides: object = {}) =>
+      state.clients.push({
+        id: 'legacy',
+        userId: 'salon',
+        linkedUserId: null,
+        email: account.email,
+        firstName: account.firstName,
+        lastName: account.lastName,
+        ...overrides,
+      });
+
+    it('links it when the verified email, first name and last name match', async () => {
+      legacy({ email: 'OWNER@example.test', firstName: 'ówner', lastName: ' CLIENT ' });
+      expect((await book('owner')).error).toBe(false);
+      expect(state.clients).toHaveLength(1);
+      expect(state.clients[0]).toMatchObject({ id: 'legacy', linkedUserId: 'owner', firstName: 'ówner' });
+      expect(state.appointments[0]).toMatchObject({ clientId: 'legacy', clientUserId: 'owner' });
+    });
+    it('does not take it over when the name differs', async () => {
+      legacy({ firstName: 'Someone' });
+      expect((await book('owner')).error).toBe(false);
+      expect(state.clients[0].linkedUserId).toBeNull();
+      expect(state.clients[1].linkedUserId).toBe('owner');
+    });
+    it('does not take it over when the account email is not verified', async () => {
+      account.emailVerified = null;
+      legacy();
+      expect((await book('owner')).error).toBe(false);
+      expect(state.clients[0].linkedUserId).toBeNull();
+      expect(state.clients[1].linkedUserId).toBe('owner');
+    });
+    it('never re-links a record already linked to another account', async () => {
+      legacy({ linkedUserId: 'someone-else' });
+      expect((await book('owner')).error).toBe(false);
+      expect(state.clients[0].linkedUserId).toBe('someone-else');
+      expect(state.clients[1].linkedUserId).toBe('owner');
+    });
+    it('never links a record from a guest booking', async () => {
+      legacy();
+      expect((await book(undefined, { clientEmail: account.email })).error).toBe(false);
+      expect(state.clients[0].linkedUserId).toBeNull();
+    });
   });
   it('does not claim a deleted or no-longer-client account from a stale principal', async () => {
     accountAvailable = false;

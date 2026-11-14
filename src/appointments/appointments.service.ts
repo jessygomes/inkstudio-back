@@ -3,6 +3,7 @@ import { emptyProjectClientInfo, projectClientInfoData, projectClientInfoSelect 
 import { desiredPeriodData, desiredPeriodSelect } from './desired-tattoo-period';
 import { DesiredTattooPeriodDto } from './dto/desired-tattoo-period.dto';
 import { attachGuestUploads } from '../uploads/guest-upload-attachment';
+import { claimMatchingClientRecord } from '../clients/client-account-link';
 import { validateInternalBooking, updateInternalBooking } from './internal-booking-policy';
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
@@ -1550,6 +1551,7 @@ export class AppointmentsService {
                   select: {
                     id: true,
                     email: true,
+                    emailVerified: true,
                     firstName: true,
                     lastName: true,
                     phone: true,
@@ -1582,6 +1584,9 @@ export class AppointmentsService {
                   where: { userId, linkedUserId: clientUser.id },
                 })
               : null;
+            // Fiche créée par le salon avant l'inscription du client : même e-mail (vérifié), prénom et nom.
+            if (!client && clientUser)
+              client = await claimMatchingClientRecord(tx, crmOwnerId, clientUser);
             if (!client) {
               client = await tx.client.create({
                 data: {
