@@ -83,8 +83,10 @@ export class AppointmentPhotoUploadService {
       return { buffer: file.buffer, size: file.size, ...MIME[kind] };
     });
 
-    // 1. Réservation de quota (mêmes règles que sur le site : comptes pro uniquement, plafonds par jour et au total).
-    const prepare = this.quota.sign('prepare', { route: 'imageUploader', files: checked.map(({ size, type }) => ({ size, type })) });
+    // 1. Réservation de quota (mêmes règles que sur les sites : plafonds par jour et au total). Un client passe par le
+    //    contrat du site People (« public »), un professionnel par celui du site Studio (« pro »).
+    const application = await this.quota.applicationFor(userId);
+    const prepare = this.quota.sign('prepare', { route: 'imageUploader', files: checked.map(({ size, type }) => ({ size, type })) }, application);
     const reserved = (await this.quota.prepare(prepare.body, prepare.signature, authorization)) as { reservations: string[]; ownerUserId: string | null };
     if (reserved.ownerUserId !== userId) throw new UnauthorizedException('Invalid upload credentials');
     if (reserved.reservations.length !== checked.length) throw new ServiceUnavailableException('Réservation d’envoi incohérente.');
@@ -98,12 +100,12 @@ export class AppointmentPhotoUploadService {
       if (stored.some((s) => !s)) throw new ServiceUnavailableException("L'envoi des photos a échoué.");
       const done = stored as StoredFile[];
       for (let i = 0; i < done.length; i++) {
-        const complete = this.quota.sign('complete', { id: reserved.reservations[i], key: done[i].key, size: done[i].size });
+        const complete = this.quota.sign('complete', { id: reserved.reservations[i], key: done[i].key, size: done[i].size }, application);
         await this.quota.complete(complete.body, complete.signature);
       }
       return done.map((s, i) => ({ ...s, type: checked[i].type, name: `photo-${i + 1}.${checked[i].ext}` }));
     } catch (error) {
-      await this.cleanup(stored.filter((s): s is StoredFile => !!s));
+      await this.cleanup(stored.filter((s): s is StoredFile => !!s), [application]);
       throw error;
     }
   }
@@ -120,13 +122,20 @@ export class AppointmentPhotoUploadService {
   }
 
   // Ne libère le quota qu'après suppression physique confirmée (comme finishUpload côté web).
-  private async cleanup(files: StoredFile[]) {
+  // Sans contrat connu (discard, deleteByUrls), le quota est libéré dans les deux : la mise à jour ne touche que les clés envoyées.
+  private async cleanup(files: StoredFile[], applications: ('pro' | 'public')[] = ['pro', 'public']) {
     if (!files.length) return;
     try {
       const keys = files.map((f) => f.key);
       if (await this.storage.delete(keys)) {
-        const deleted = this.quota.sign('deleted', { keys });
-        await this.quota.deleted(deleted.body, deleted.signature);
+        for (const application of applications) {
+          try {
+            const deleted = this.quota.sign('deleted', { keys }, application);
+            await this.quota.deleted(deleted.body, deleted.signature);
+          } catch (error) {
+            this.logger.warn(`Libération du quota (${application}) impossible : ${error instanceof Error ? error.message : error}`);
+          }
+        }
       }
     } catch (error) {
       this.logger.warn(`Nettoyage des photos envoyées impossible : ${error instanceof Error ? error.message : error}`);

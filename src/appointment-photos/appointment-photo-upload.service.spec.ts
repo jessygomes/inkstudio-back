@@ -27,7 +27,7 @@ describe('detectImageKind', () => {
 
 describe('AppointmentPhotoUploadService', () => {
   const photos = { authorize: jest.fn(), add: jest.fn() };
-  const quota = { sign: jest.fn(), prepare: jest.fn(), complete: jest.fn(), deleted: jest.fn() };
+  const quota = { sign: jest.fn(), prepare: jest.fn(), complete: jest.fn(), deleted: jest.fn(), applicationFor: jest.fn() };
   const storage = { upload: jest.fn(), delete: jest.fn() };
   const service = new AppointmentPhotoUploadService(
     photos as unknown as AppointmentPhotosService,
@@ -44,6 +44,7 @@ describe('AppointmentPhotoUploadService', () => {
     quota.prepare.mockResolvedValue({ reservations: ['r1', 'r2'], ownerUserId: 'artist' });
     quota.complete.mockResolvedValue({ success: true });
     quota.deleted.mockResolvedValue({ success: true });
+    quota.applicationFor.mockResolvedValue('pro');
     storage.upload.mockImplementation((files: { customId: string }[]) => Promise.resolve(files.map((f, i) => ({ key: `key-${i}`, url: `https://utfs.io/f/key-${i}`, size: 10, customId: f.customId }))));
     storage.delete.mockResolvedValue(true);
   });
@@ -77,8 +78,8 @@ describe('AppointmentPhotoUploadService', () => {
       ['r1', 'image/jpeg', 'photo-1.jpg'],
       ['r2', 'image/png', 'photo-2.png'],
     ]);
-    expect(quota.sign).toHaveBeenCalledWith('complete', { id: 'r1', key: 'key-0', size: 10 });
-    expect(quota.sign).toHaveBeenCalledWith('complete', { id: 'r2', key: 'key-1', size: 10 });
+    expect(quota.sign).toHaveBeenCalledWith('complete', { id: 'r1', key: 'key-0', size: 10 }, 'pro');
+    expect(quota.sign).toHaveBeenCalledWith('complete', { id: 'r2', key: 'key-1', size: 10 }, 'pro');
     expect(quota.complete).toHaveBeenCalledTimes(2);
     expect(photos.add).toHaveBeenCalledWith('rdv', 'artist', { photos: [{ url: 'https://utfs.io/f/key-0' }, { url: 'https://utfs.io/f/key-1' }] });
     expect(result).toHaveLength(2);
@@ -101,8 +102,8 @@ describe('AppointmentPhotoUploadService', () => {
     await expect(service.upload('rdv', 'artist', [file(), file(png)], 'Bearer token')).rejects.toThrow();
     expect(photos.add).not.toHaveBeenCalled();
     expect(storage.delete).toHaveBeenCalledWith(['key-0']);
-    expect(quota.sign).toHaveBeenCalledWith('deleted', { keys: ['key-0'] });
-    expect(quota.deleted).toHaveBeenCalled();
+    expect(quota.sign).toHaveBeenCalledWith('deleted', { keys: ['key-0'] }, 'pro');
+    expect(quota.deleted).toHaveBeenCalledTimes(1);
   });
 
   it('cleans up the stored files when saving the photos fails', async () => {
@@ -137,8 +138,18 @@ describe('AppointmentPhotoUploadService', () => {
     it('discard removes the stored files and releases the quota once deletion is confirmed', async () => {
       await service.discard([{ key: 'key-0', url: 'https://utfs.io/f/key-0', size: 10 }]);
       expect(storage.delete).toHaveBeenCalledWith(['key-0']);
-      expect(quota.sign).toHaveBeenCalledWith('deleted', { keys: ['key-0'] });
-      expect(quota.deleted).toHaveBeenCalled();
+      expect(quota.sign).toHaveBeenCalledWith('deleted', { keys: ['key-0'] }, 'pro');
+      expect(quota.sign).toHaveBeenCalledWith('deleted', { keys: ['key-0'] }, 'public');
+      expect(quota.deleted).toHaveBeenCalledTimes(2);
+    });
+
+    it('signs a client account upload with the People (public) contract', async () => {
+      quota.applicationFor.mockResolvedValue('public');
+      quota.prepare.mockResolvedValue({ reservations: ['r1'], ownerUserId: 'client' });
+      await service.storeImages('client', [file()], 'Bearer token');
+      expect(quota.applicationFor).toHaveBeenCalledWith('client');
+      expect(quota.sign).toHaveBeenCalledWith('prepare', expect.anything(), 'public');
+      expect(quota.sign).toHaveBeenCalledWith('complete', expect.anything(), 'public');
     });
   });
 });

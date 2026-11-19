@@ -65,12 +65,14 @@ export class UploadQuotaService {
   sign(
     action: 'prepare' | 'complete' | 'deleted',
     payload: Record<string, unknown>,
+    application: 'pro' | 'public' = 'pro',
   ): { body: SignedUploadDto; signature: string } {
-    const secret = process.env.UPLOAD_OWNERSHIP_PRO_SECRET;
+    // « public » = contrat du site People (comptes clients) ; « pro » = contrat du site Studio.
+    const secret = process.env[application === 'pro' ? 'UPLOAD_OWNERSHIP_PRO_SECRET' : 'UPLOAD_OWNERSHIP_PUBLIC_SECRET'];
     if (!secret || Buffer.byteLength(secret) < 32)
       throw new ServiceUnavailableException('Upload authorization unavailable');
     const body: SignedUploadDto = {
-      application: 'pro',
+      application,
       payload: JSON.stringify(payload),
       timestamp: Date.now(),
     };
@@ -86,6 +88,16 @@ export class UploadQuotaService {
       )
       .digest('hex');
     return { body, signature };
+  }
+
+  /**
+   * Contrat d'envoi à utiliser pour un envoi interne au nom de `userId` : un compte client (app People) passe par le
+   * contrat « public » du site People (quota client), un professionnel par le contrat « pro ». Sans cela, les envois
+   * d'un client depuis l'app (photo de profil, moodboard, pièces jointes de la messagerie) étaient refusés.
+   */
+  async applicationFor(userId: string): Promise<'pro' | 'public'> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    return user?.role === 'client' ? 'public' : 'pro';
   }
 
   private unpack(
