@@ -519,13 +519,16 @@ export class UserService {
    * Cette seconde étape remplace l'ancien comportement qui chargeait ce gros payload
    * pour tous les utilisateurs avant même de savoir lequel correspondait.
    */
-  private async getSlugUserProfileById(userId: string): Promise<SlugUser | null> {
+  private async getSlugUserProfileById(userId: string, includeHidden = false): Promise<SlugUser | null> {
     const userResult = await this.prisma.user.findUnique({
-      where: { id: userId, role: { in: [...publicProfessionalRoles] }, publicVisibility: { not: 'HIDDEN' } },
+      where: { id: userId, role: { in: [...publicProfessionalRoles] }, ...(includeHidden ? {} : { publicVisibility: { not: 'HIDDEN' as const } }) },
       select: publicUserProfileSelect,
     });
-
-    return publicUserProfile(userResult) as SlugUser | null;
+    if (!userResult) return null;
+    if (!includeHidden) return publicUserProfile(userResult) as SlugUser | null;
+    // Même projection que le profil public, en gardant la visibilité réelle (masqué).
+    const projected = publicUserProfile({ ...userResult, publicVisibility: 'VISIBLE' });
+    return projected ? ({ ...projected, publicVisibility: userResult.publicVisibility } as unknown as SlugUser) : null;
   }
 
   /**
@@ -810,8 +813,9 @@ export class UserService {
   //! -------------------------------------------------
   //! GET USER BY ID
   //! -------------------------------------------------
-  async getPublicUserById({ userId }: { userId: string }): Promise<Record<string, unknown> | null> {
-    const profile = await this.getSlugUserProfileById(userId);
+  /** `includeHidden` : profil masqué renvoyé quand même (son propriétaire ou un admin le consulte). */
+  async getPublicUserById({ userId, includeHidden = false }: { userId: string; includeHidden?: boolean }): Promise<Record<string, unknown> | null> {
+    const profile = await this.getSlugUserProfileById(userId, includeHidden);
     return profile ? this.enrichSlugUser(profile) : null;
   }
 

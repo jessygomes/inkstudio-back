@@ -355,8 +355,10 @@ export class UserController {
   //! 4️⃣ ROUTES AVEC PARAMÈTRES SIMPLES EN DERNIER
   @PublicProfile()
   @Get(":userId") // :userId est un paramètre dynamique qui sera récupéré dans la méthode getUser
-  async getUser(@Param('userId') userId: string) { // On récupère le paramètre dynamique userId
-    const profile = await this.userService.getPublicUserById({ userId });
+  async getUser(@Param('userId') userId: string, @Request() req: Partial<RequestWithUser>) { // On récupère le paramètre dynamique userId
+    // Le propriétaire (ou un admin) voit aussi son profil masqué : sinon « Mon compte » d'un profil masqué ne se chargeait pas.
+    const owner = req?.user?.userId === userId || req?.user?.role === 'admin';
+    const profile = await this.userService.getPublicUserById({ userId, includeHidden: owner });
     if (!profile) throw new NotFoundException('Profil introuvable.');
     return profile;
   } 
