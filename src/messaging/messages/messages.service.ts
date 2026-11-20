@@ -1,3 +1,5 @@
+import { Optional } from '@nestjs/common';
+import { UploadedFileCleanupService } from '../../uploads/uploaded-file-cleanup.service';
 import {
   Injectable,
   NotFoundException,
@@ -21,6 +23,7 @@ export class MessagesService {
   constructor(
     private prisma: PrismaService,
     private notificationService: MessageNotificationService,
+    @Optional() private readonly files?: UploadedFileCleanupService,
   ) {}
 
   /**
@@ -232,7 +235,7 @@ export class MessagesService {
   async deleteMessage(messageId: string, userId: string): Promise<void> {
     const message = await this.prisma.message.findUnique({
       where: { id: messageId },
-      include: { conversation: true },
+      include: { conversation: true, attachments: { select: { fileUrl: true } } },
     });
 
     if (!message) {
@@ -250,6 +253,7 @@ export class MessagesService {
     await this.prisma.message.delete({
       where: { id: messageId },
     });
+    this.files?.deleteIfUnusedLater(message.attachments.map((a) => a.fileUrl));
   }
 
   /**

@@ -1,3 +1,5 @@
+import { Optional } from '@nestjs/common';
+import { UploadedFileCleanupService } from '../uploads/uploaded-file-cleanup.service';
 import { Injectable } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma.service';
@@ -10,6 +12,7 @@ export class FlashService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cacheService: CacheService,
+    @Optional() private readonly files?: UploadedFileCleanupService,
   ) {}
 
   private normalizeStyles(styleInput: unknown): string[] {
@@ -371,6 +374,9 @@ export class FlashService {
         },
       });
 
+      // Visuel remplacé : l'ancien fichier est effacé s'il ne sert plus (ni à un autre flash, ni à un rendez-vous).
+      if (updatedFlash.imageUrl !== existingFlash.imageUrl) this.files?.deleteIfUnusedLater([existingFlash.imageUrl]);
+
       await this.invalidateFlashCacheForUser(existingFlash.userId);
 
       return {
@@ -410,6 +416,8 @@ export class FlashService {
       await this.prisma.flash.delete({
         where: { id },
       });
+      // Le visuel peut être recopié dans les photos d'un rendez-vous (flash réservé) : effacé seulement s'il ne sert plus.
+      this.files?.deleteIfUnusedLater([existingFlash.imageUrl]);
 
       await this.invalidateFlashCacheForUser(existingFlash.userId);
 

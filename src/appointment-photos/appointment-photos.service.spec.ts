@@ -6,7 +6,7 @@ describe('AppointmentPhotosService', () => {
   const prisma = {
     appointment: { findUnique: jest.fn() },
     client: { findFirst: jest.fn() },
-    appointmentPhoto: { findMany: jest.fn(), create: jest.fn(), deleteMany: jest.fn() },
+    appointmentPhoto: { findMany: jest.fn(), findFirst: jest.fn(), create: jest.fn(), deleteMany: jest.fn() },
     $transaction: jest.fn((operations) => Promise.all(operations)),
   };
   const service = new AppointmentPhotosService(prisma as unknown as PrismaService);

@@ -1,3 +1,4 @@
+import { UploadedFileCleanupService } from '../uploads/uploaded-file-cleanup.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { linkedArtistBookingHref, publicDisplayName } from '../user/public-profile.utils';
 import { Injectable, Optional } from '@nestjs/common';
@@ -16,6 +17,7 @@ export class TatoueursService {
     private cacheService: CacheService,
     @Optional() private readonly residencies?: ResidenciesService,
     @Optional() private readonly notifications?: NotificationsService,
+    @Optional() private readonly files?: UploadedFileCleanupService,
   ) {}
 
   private normalizeStyles(styleInput: unknown): string[] {
@@ -1551,7 +1553,7 @@ export class TatoueursService {
 
       const existingTatoueur = await this.prisma.tatoueur.findUnique({
         where: { id },
-        select: { userId: true },
+        select: { userId: true, img: true },
       });
 
       if (!existingTatoueur) {
@@ -1587,6 +1589,9 @@ export class TatoueursService {
         },
       });
 
+      // Ancienne photo remplacée : effacée si elle ne sert plus.
+      if (updatedTatoueur.img !== existingTatoueur.img) this.files?.deleteIfUnusedLater([existingTatoueur.img]);
+
       // Invalider le cache après mise à jour
       await this.cacheService.del(`tatoueur:${id}`);
       await this.cacheService.delPattern('user:slug:*');
@@ -1614,7 +1619,7 @@ export class TatoueursService {
     try {
       const existingTatoueur = await this.prisma.tatoueur.findUnique({
         where: { id },
-        select: { userId: true },
+        select: { userId: true, img: true },
       });
 
       if (!existingTatoueur) {
@@ -1636,6 +1641,7 @@ export class TatoueursService {
           id,
         },
       });
+      this.files?.deleteIfUnusedLater([existingTatoueur.img]);
 
       // Invalider le cache après suppression
       await this.cacheService.del(`tatoueur:${id}`);

@@ -1,3 +1,5 @@
+import { Optional } from '@nestjs/common';
+import { UploadedFileCleanupService } from '../uploads/uploaded-file-cleanup.service';
 import { publicDisplayName, withPublicName } from '../user/public-profile.utils';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
@@ -18,7 +20,8 @@ export interface PortfolioFilters {
 export class PortfolioService {
   constructor(
     private readonly prisma: PrismaService,
-    private cacheService: CacheService
+    private cacheService: CacheService,
+    @Optional() private readonly files?: UploadedFileCleanupService,
   ) {}
 
   private normalizeStyles(styleInput: unknown): string[] {
@@ -778,6 +781,8 @@ export class PortfolioService {
         include: { categories: true },
       });
 
+      if (updatedPhoto.imageUrl !== existingPhoto.imageUrl) this.files?.deleteIfUnusedLater([existingPhoto.imageUrl]);
+
       // Invalider le cache après mise à jour
       await this.cacheService.delPattern(`portfolio:photos:${existingPhoto.userId}:*`);
 
@@ -818,6 +823,8 @@ export class PortfolioService {
       await this.prisma.portfolio.delete({
         where: { id },
       });
+      // Une photo issue d'un rendez-vous garde son fichier (encore utilisé par le RDV).
+      this.files?.deleteIfUnusedLater([existingPhoto.imageUrl]);
 
       // Invalider le cache après suppression
       await this.cacheService.delPattern(`portfolio:photos:${existingPhoto.userId}:*`);

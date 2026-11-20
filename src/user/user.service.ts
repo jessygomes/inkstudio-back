@@ -1,3 +1,4 @@
+import { UploadedFileCleanupService } from '../uploads/uploaded-file-cleanup.service';
 import { TattooPracticesDto } from './dto/tattoo-practices.dto';
 import { publicProfessionalRoles, publicUserProfile, publicUserProfileSelect } from './public-user-profile';
 import { AgendaMode, SaasPlan } from '@prisma/client';
@@ -22,7 +23,8 @@ export class UserService {
   constructor(private prisma: PrismaService, 
     private cacheService: CacheService,
     private readonly mailService: MailService,
-    @Optional() private readonly residencies?: ResidenciesService) {}
+    @Optional() private readonly residencies?: ResidenciesService,
+    @Optional() private readonly files?: UploadedFileCleanupService) {}
 
   private escapeHtml(value: string): string {
     return value
@@ -1100,6 +1102,7 @@ export class UserService {
     )];
 
     const normalizedStyles = this.normalizeStyles(safeStyles);
+    const previousImages = await this.prisma.user.findUnique({ where: { id: userId }, select: { image: true, profileImage: true } });
 
     const user = await this.prisma.user.update({
       where: {
@@ -1138,6 +1141,8 @@ export class UserService {
     await this.cacheService.delPattern('admin:*');
     // Invalider les caches de RDV client qui exposent l'image du salon
     await this.cacheService.delPattern('client:appointments:*');
+    // Anciennes images effacées d'UploadThing si elles ne servent plus (vérification dans toute la base).
+    this.files?.deleteIfUnusedLater([previousImages?.image, previousImages?.profileImage]);
 
     return user;
   }
@@ -1163,6 +1168,8 @@ export class UserService {
       postalCode: userBody.postalCode,
       birthDate: userBody.birthDate ? new Date(userBody.birthDate) : null,
     };
+
+    const previousImage = (await this.prisma.user.findUnique({ where: { id: userId }, select: { image: true } }))?.image;
 
     // Mettre à jour User et ClientProfile en une seule transaction
     const user = await this.prisma.user.update({
@@ -1205,6 +1212,7 @@ export class UserService {
     await this.cacheService.delPattern('users:list:*');
     await this.cacheService.delPattern('user:slug:*');
     await this.cacheService.delPattern('client:appointments:*');
+    this.files?.deleteIfUnusedLater([previousImage]);
 
     return user;
   }

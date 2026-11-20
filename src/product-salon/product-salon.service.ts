@@ -1,3 +1,5 @@
+import { Optional } from '@nestjs/common';
+import { UploadedFileCleanupService } from '../uploads/uploaded-file-cleanup.service';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -7,7 +9,8 @@ import { CacheService } from 'src/redis/cache.service';
 export class ProductSalonService {
   constructor(
     private readonly prisma: PrismaService,
-    private cacheService: CacheService
+    private cacheService: CacheService,
+    @Optional() private readonly files?: UploadedFileCleanupService,
   ) {}
 
   //! CRÉER UN NOUVEAU PRODUIT
@@ -154,6 +157,7 @@ export class ProductSalonService {
         where: { id },
         data: updateData,
       });
+      if (updatedProduct.imageUrl !== existingProduct.imageUrl) this.files?.deleteIfUnusedLater([existingProduct.imageUrl]);
 
       // Invalider le cache après mise à jour
       await this.cacheService.del(`products:salon:${existingProduct.userId}`);
@@ -195,6 +199,7 @@ export class ProductSalonService {
       await this.prisma.productSalon.delete({
         where: { id },
       });
+      this.files?.deleteIfUnusedLater([existingProduct.imageUrl]);
 
       // Invalider le cache après suppression
       await this.cacheService.del(`products:salon:${existingProduct.userId}`);

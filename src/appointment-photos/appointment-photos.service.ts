@@ -1,10 +1,12 @@
+import { Optional } from '@nestjs/common';
+import { UploadedFileCleanupService } from '../uploads/uploaded-file-cleanup.service';
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { AddAppointmentPhotosDto } from './dto/add-appointment-photos.dto';
 
 @Injectable()
 export class AppointmentPhotosService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, @Optional() private readonly files?: UploadedFileCleanupService) {}
 
   async authorize(appointmentId: string, userId: string) {
     const appointment = await this.prisma.appointment.findUnique({ where: { id: appointmentId } });
@@ -33,8 +35,11 @@ export class AppointmentPhotosService {
 
   async remove(appointmentId: string, photoId: string, userId: string) {
     await this.authorize(appointmentId, userId);
+    const photo = await this.prisma.appointmentPhoto.findFirst({ where: { id: photoId, appointmentId }, select: { url: true } });
     const result = await this.prisma.appointmentPhoto.deleteMany({ where: { id: photoId, appointmentId } });
     if (!result.count) throw new NotFoundException('Photo introuvable.');
+    // Le fichier peut encore servir au portfolio (photo publiée) : il n'est effacé que s'il n'est plus utilisé.
+    this.files?.deleteIfUnusedLater([photo?.url]);
     return { error: false };
   }
 

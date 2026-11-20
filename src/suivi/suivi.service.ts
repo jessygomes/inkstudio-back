@@ -1,3 +1,5 @@
+import { Optional } from '@nestjs/common';
+import { UploadedFileCleanupService } from '../uploads/uploaded-file-cleanup.service';
 import {
   BadRequestException,
   ConflictException,
@@ -17,7 +19,7 @@ import { UpdateDrawingAssociationsDto } from './dto/update-drawing-associations.
 
 @Injectable()
 export class SuiviService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, @Optional() private readonly files?: UploadedFileCleanupService) {}
 
   // Les relations sont regroupées ici afin que toutes les réponses de l'API
   // contiennent les informations nécessaires à l'affichage d'une card.
@@ -340,7 +342,9 @@ export class SuiviService {
   // Supprime une card : les relations enfants sont supprimées par cascade Prisma.
   async deleteCard(cardId: string, userId: string) {
     await this.getCardForUser(cardId, userId);
+    const images = await this.prisma.drawingCardImage.findMany({ where: { cardId }, select: { url: true } });
     await this.prisma.drawingCard.delete({ where: { id: cardId } });
+    this.files?.deleteIfUnusedLater(images.map((i) => i.url));
     return { message: 'Card Dessin supprimée avec succès.' };
   }
 
@@ -397,6 +401,7 @@ export class SuiviService {
     const image = await this.prisma.drawingCardImage.findFirst({ where: { id: imageId, cardId } });
     if (!image) throw new NotFoundException('Image introuvable dans cette card.');
     await this.prisma.drawingCardImage.delete({ where: { id: imageId } });
+    this.files?.deleteIfUnusedLater([image.url]);
     return { message: 'Image supprimée avec succès.' };
   }
 

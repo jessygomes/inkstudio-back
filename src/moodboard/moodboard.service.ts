@@ -1,3 +1,5 @@
+import { Optional } from '@nestjs/common';
+import { UploadedFileCleanupService } from '../uploads/uploaded-file-cleanup.service';
 import {
   ForbiddenException,
   Injectable,
@@ -11,7 +13,7 @@ import { assertProfessionalCanMessage } from 'src/messaging/plan-access';
 
 @Injectable()
 export class MoodboardService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, @Optional() private readonly files?: UploadedFileCleanupService) {}
 
   async getAppointmentOptions(userId: string, email: string) {
     const professional = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
@@ -179,7 +181,10 @@ export class MoodboardService {
   async deleteMoodboard(id: string, userId: string) {
     await this.assertOwnership(id, userId);
 
+    const images = await this.prisma.moodboardImage.findMany({ where: { moodboardId: id }, select: { url: true } });
     await this.prisma.moodboard.delete({ where: { id } });
+    // Fichiers des images effacés d'UploadThing s'ils ne servent plus ailleurs.
+    this.files?.deleteIfUnusedLater(images.map((i) => i.url));
 
     return { message: 'Moodboard supprimé avec succès.' };
   }
@@ -213,6 +218,7 @@ export class MoodboardService {
     }
 
     await this.prisma.moodboardImage.delete({ where: { id: imageId } });
+    this.files?.deleteIfUnusedLater([image.url]);
 
     return { message: 'Image supprimée avec succès.' };
   }

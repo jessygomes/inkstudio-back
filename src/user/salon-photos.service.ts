@@ -1,4 +1,5 @@
-import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Optional } from '@nestjs/common';
+import { UploadedFileCleanupService } from '../uploads/uploaded-file-cleanup.service';
 import { PrismaService } from '../database/prisma.service';
 import { AppointmentPhotoUploadService, UploadedPart, keyFromUrl } from '../appointment-photos/appointment-photo-upload.service';
 import { UserService } from './user.service';
@@ -16,7 +17,14 @@ export class SalonPhotosService {
     private readonly users: UserService,
     private readonly uploads: AppointmentPhotoUploadService,
     private readonly prisma: PrismaService,
+    @Optional() private readonly files?: UploadedFileCleanupService,
   ) {}
+
+  // Efface le fichier seulement s'il ne sert plus nulle part (portfolio, flash, rendez-vous, moodboard…).
+  private async release(url: string) {
+    if (this.files) await this.files.deleteIfUnused([url]);
+    else await this.uploads.deleteByUrls([url]);
+  }
 
   private async current(userId: string): Promise<string[]> {
     const res = await this.users.getPhotosSalon({ userId });
@@ -66,7 +74,7 @@ export class SalonPhotosService {
     ]);
     const used = [user?.image, user?.profileImage, ...((user?.salonPhotos as string[] | undefined) ?? []), ...tatoueurs.map((t) => t.img)];
     if (used.some((u) => u && keyFromUrl(u) === key)) throw new BadRequestException('Cette image est encore utilisée.');
-    await this.uploads.deleteByUrls([url]);
+    await this.release(url);
     return { ok: true };
   }
 
@@ -75,7 +83,7 @@ export class SalonPhotosService {
     if (!existing.includes(url)) throw new BadRequestException('Photo introuvable dans la galerie.');
     await this.users.addOrUpdatePhotoSalon({ userId, requesterUserId: userId, salonPhotos: existing.filter((u) => u !== url) });
     // Libère le fichier et le quota (comme la suppression du site) ; sans effet bloquant si UploadThing échoue.
-    await this.uploads.deleteByUrls([url]);
+    await this.release(url);
     return { salonPhotos: await this.current(userId) };
   }
 }
