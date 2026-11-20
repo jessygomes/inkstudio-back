@@ -152,4 +152,47 @@ describe('AppointmentPhotoUploadService', () => {
       expect(quota.sign).toHaveBeenCalledWith('complete', expect.anything(), 'public');
     });
   });
+
+  describe('storeBookingGuestImages (réservation sans compte, app People)', () => {
+    it('reserves for the booked salon and the visitor on the public contract, without credentials', async () => {
+      quota.prepare.mockResolvedValue({ reservations: ['r1', 'r2'], ownerUserId: null });
+      const images = await service.storeBookingGuestImages('salon-1', 'guest-uuid', [file(), file(png)], 2);
+      expect(images).toHaveLength(2);
+      expect(quota.sign).toHaveBeenCalledWith('prepare', expect.objectContaining({ bookingSalonId: 'salon-1', guestId: 'guest-uuid' }), 'public');
+      expect(quota.prepare).toHaveBeenCalledWith(expect.anything(), 'prepare', undefined);
+    });
+
+    it('rejects more than two images before reserving anything', async () => {
+      await expect(service.storeBookingGuestImages('salon-1', 'guest-uuid', [file(), file(), file()], 2)).rejects.toThrow(BadRequestException);
+      expect(quota.prepare).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('storeFollowUpImages (app People, sans compte)', () => {
+    it('reserves with the follow-up token on the public contract, without credentials', async () => {
+      quota.prepare.mockResolvedValue({ reservations: ['r1'], ownerUserId: null });
+      const images = await service.storeFollowUpImages('follow-token', [file()], 3);
+      expect(images).toHaveLength(1);
+      expect(quota.sign).toHaveBeenCalledWith('prepare', expect.objectContaining({ followUpToken: 'follow-token', route: 'imageUploader' }), 'public');
+      expect(quota.prepare).toHaveBeenCalledWith(expect.anything(), 'prepare', undefined);
+      expect(quota.applicationFor).not.toHaveBeenCalled();
+    });
+
+    it('rejects more photos than the follow-up allows before reserving anything', async () => {
+      await expect(service.storeFollowUpImages('follow-token', [file(), file(), file(), file()], 3)).rejects.toThrow(BadRequestException);
+      expect(quota.prepare).not.toHaveBeenCalled();
+    });
+
+    it('refuses GIF images for a follow-up', async () => {
+      const gif = Buffer.concat([Buffer.from('GIF89a'), Buffer.alloc(64)]);
+      await expect(service.storeFollowUpImages('follow-token', [{ buffer: gif, size: gif.length }], 3)).rejects.toThrow(BadRequestException);
+      expect(quota.prepare).not.toHaveBeenCalled();
+    });
+
+    it('rejects a reservation unexpectedly tied to an account', async () => {
+      quota.prepare.mockResolvedValue({ reservations: ['r1'], ownerUserId: 'someone' });
+      await expect(service.storeFollowUpImages('follow-token', [file()], 3)).rejects.toThrow(UnauthorizedException);
+      expect(storage.upload).not.toHaveBeenCalled();
+    });
+  });
 });

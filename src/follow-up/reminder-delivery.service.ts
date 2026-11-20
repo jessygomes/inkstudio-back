@@ -1,3 +1,6 @@
+import { appointmentClientUserId } from '../notifications/client-notifications';
+import { NotificationsService } from '../notifications/notifications.service';
+import { Optional } from '@nestjs/common';
 import { Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { addDays } from 'date-fns';
@@ -23,6 +26,7 @@ export class ReminderDeliveryService {
     private readonly mail: MailService,
     private readonly gateway: MessagesGateway,
     private readonly notifications: MessageNotificationService,
+    @Optional() private readonly appNotifications?: NotificationsService,
   ) {}
 
   async deliver(appointmentId: string, kind: ReminderKind): Promise<boolean> {
@@ -65,6 +69,7 @@ export class ReminderDeliveryService {
     const recipient = appt.clientUser || appt.client;
     if (!recipient) return false;
     let followUrl = '';
+    let followToken = '';
     if (kind === 'FOLLOW_UP') {
       const existing = await this.prisma.followUpRequest.findUnique({
         where: { appointmentId },
@@ -90,6 +95,7 @@ export class ReminderDeliveryService {
       // Page de suivi sur le site People (espace des clients). FOLLOW_UP_FRONTEND_URL reste possible pour forcer une autre adresse.
       const base = (process.env.FOLLOW_UP_FRONTEND_URL || peopleOrigin()).replace(/\/+$/, '');
       followUrl = `${base}/suivi/${encodeURIComponent(request.token)}`;
+      followToken = request.token;
       // Already sent by the legacy worker before this release: do not send that email again.
       if (existing?.sentAt && channels.includes('EMAIL')) {
         await this.prisma.appointmentReminderDelivery.upsert({
@@ -197,11 +203,19 @@ export class ReminderDeliveryService {
         complete = false;
       }
     }
-    if (complete)
+    if (complete) {
       await this.prisma.appointment.update({
         where: { id: appointmentId },
         data: { [sentField]: new Date() },
       });
+      // App People : notification au client qui a un compte (dans l'app et sur le téléphone, selon ses réglages).
+      const clientUserId = appointmentClientUserId(appt);
+      const salonName = owner.salonName || [owner.firstName, owner.lastName].filter(Boolean).join(' ') || 'Votre salon';
+      if (clientUserId)
+        void this.appNotifications?.notify(kind === 'FOLLOW_UP'
+          ? { userId: clientUserId, type: 'client.aftercare_checkin', title: 'Comment se passe la cicatrisation ?', body: `${salonName} aimerait avoir de vos nouvelles : envoyez une photo de votre tatouage.`, data: { appointmentId, followUpToken: followToken, salonId: owner.id }, dedupeKey: `aftercare:${appointmentId}` }
+          : { userId: clientUserId, type: 'client.touchup_due', title: 'Une retouche ?', body: `${salonName} prend de vos nouvelles. Si une retouche est nécessaire, contactez le salon.`, data: { appointmentId, salonId: owner.id }, dedupeKey: `touchup:${appointmentId}` });
+    }
     if (failures.length) throw failures[0];
     return complete;
   }

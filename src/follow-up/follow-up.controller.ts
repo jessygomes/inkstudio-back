@@ -1,6 +1,10 @@
 import { attachGuestUploads } from '../uploads/guest-upload-attachment';
 
-import { BadRequestException, Body, Controller, ForbiddenException, Get, Optional, Param, Post, Query, Request, ServiceUnavailableException, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, ForbiddenException, Get, Optional, Param, Post, Query, Request, ServiceUnavailableException, UploadedFiles, UseGuards, UseInterceptors } from '@nestjs/common';
+import { FilesInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
+import { SecurityThrottle } from '../auth/security-throttle';
+import { AppointmentPhotoUploadService, MAX_PHOTO_BYTES } from '../appointment-photos/appointment-photo-upload.service';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { RequestWithUser } from 'src/auth/jwt.strategy';
 import { PrismaService } from 'src/database/prisma.service';
@@ -20,6 +24,7 @@ export class FollowupsController {
     @Optional() private readonly notifications?: NotificationsService,
     @Optional() private readonly reminders?: ReminderDeliveryService,
     @Optional() private readonly cache?: CacheService,
+    @Optional() private readonly imageUploads?: AppointmentPhotoUploadService,
   ) {}
 
   /** Les rendez-vous du client (site People) sont en cache 10 min : à vider après un suivi ou une réponse du salon. */
@@ -79,6 +84,22 @@ export class FollowupsController {
       }
       throw new ServiceUnavailableException('Le suivi est momentanément indisponible. Réessayez dans un instant.');
     }
+  }
+
+  /**
+   * Envoi des photos d'un suivi depuis l'app People (multipart, champ « photos », 1 à 3), sans compte : le lien de suivi
+   * tient lieu d'autorisation (même règle que l'UploadThing du site People). Renvoie les URL à passer ensuite à
+   * POST /follow-up/submissions. Le quota vérifie que le suivi est encore en attente.
+   * Route: POST /follow-up/requests/:token/photos/upload
+   */
+  @Post('requests/:token/photos/upload')
+  @SecurityThrottle('upload')
+  @UseInterceptors(FilesInterceptor('photos', FOLLOW_UP_MAX_PHOTOS, { storage: memoryStorage(), limits: { fileSize: MAX_PHOTO_BYTES, files: FOLLOW_UP_MAX_PHOTOS } }))
+  async uploadFollowUpPhotos(@Param('token') token: string, @UploadedFiles() files: Express.Multer.File[]) {
+    if (!this.imageUploads) throw new ServiceUnavailableException('Envoi de photos indisponible.');
+    if (!/^[a-zA-Z0-9_-]{1,128}$/.test(token)) throw new BadRequestException('Lien invalide');
+    const images = await this.imageUploads.storeFollowUpImages(token, files ?? [], FOLLOW_UP_MAX_PHOTOS);
+    return { photoUrls: images.map((image) => image.url) };
   }
 
   /**

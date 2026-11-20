@@ -74,6 +74,35 @@ export class AppointmentPhotoUploadService {
    * `discard` si cette étape échoue. `kinds` restreint les formats acceptés.
    */
   async storeImages(userId: string, files: UploadedPart[], authorization?: string, kinds?: Kind[]): Promise<StoredImage[]> {
+    // Un client passe par le contrat du site People (« public »), un professionnel par celui du site Studio (« pro »).
+    const application = await this.quota.applicationFor(userId);
+    return this.store(files, kinds, { application, authorization, expectedOwner: userId });
+  }
+
+  /**
+   * Photos d'un suivi de cicatrisation, sans compte (app People) : le lien de suivi tient lieu d'autorisation, comme sur
+   * le site People (contrat « public », réservation rattachée au suivi, reprise à l'envoi par attachGuestUploads).
+   */
+  async storeFollowUpImages(followUpToken: string, files: UploadedPart[], max: number): Promise<StoredImage[]> {
+    if (files?.length > max) throw new BadRequestException(`${max} photos maximum.`);
+    return this.store(files, ['jpeg', 'png', 'webp'], { application: 'public', extra: { followUpToken }, expectedOwner: null });
+  }
+
+  /**
+   * Images d'inspiration d'une réservation, sans compte (app People) : même contexte que l'invité du site People
+   * (contrat « public », réservation rattachée au salon et au visiteur), reprise à la création du RDV par attachGuestUploads.
+   */
+  async storeBookingGuestImages(salonId: string, guestId: string, files: UploadedPart[], max: number): Promise<StoredImage[]> {
+    if (files?.length > max) throw new BadRequestException(`${max} images maximum.`);
+    return this.store(files, ['jpeg', 'png', 'webp'], { application: 'public', extra: { bookingSalonId: salonId, guestId }, expectedOwner: null });
+  }
+
+  private async store(
+    files: UploadedPart[],
+    kinds: Kind[] | undefined,
+    ctx: { application: 'pro' | 'public'; authorization?: string; extra?: Record<string, string>; expectedOwner: string | null },
+  ): Promise<StoredImage[]> {
+    const { application } = ctx;
     if (!files?.length) throw new BadRequestException('Aucune photo reçue.');
     if (files.length > MAX_PHOTOS_PER_UPLOAD) throw new BadRequestException(`${MAX_PHOTOS_PER_UPLOAD} photos maximum par envoi.`);
     const checked = files.map((file) => {
@@ -83,12 +112,10 @@ export class AppointmentPhotoUploadService {
       return { buffer: file.buffer, size: file.size, ...MIME[kind] };
     });
 
-    // 1. Réservation de quota (mêmes règles que sur les sites : plafonds par jour et au total). Un client passe par le
-    //    contrat du site People (« public »), un professionnel par celui du site Studio (« pro »).
-    const application = await this.quota.applicationFor(userId);
-    const prepare = this.quota.sign('prepare', { route: 'imageUploader', files: checked.map(({ size, type }) => ({ size, type })) }, application);
-    const reserved = (await this.quota.prepare(prepare.body, prepare.signature, authorization)) as { reservations: string[]; ownerUserId: string | null };
-    if (reserved.ownerUserId !== userId) throw new UnauthorizedException('Invalid upload credentials');
+    // 1. Réservation de quota (mêmes règles que sur les sites : plafonds par jour et au total).
+    const prepare = this.quota.sign('prepare', { route: 'imageUploader', files: checked.map(({ size, type }) => ({ size, type })), ...ctx.extra }, application);
+    const reserved = (await this.quota.prepare(prepare.body, prepare.signature, ctx.authorization)) as { reservations: string[]; ownerUserId: string | null };
+    if (reserved.ownerUserId !== ctx.expectedOwner) throw new UnauthorizedException('Invalid upload credentials');
     if (reserved.reservations.length !== checked.length) throw new ServiceUnavailableException('Réservation d’envoi incohérente.');
 
     // 2. Envoi puis confirmation du quota. En cas d'échec, on retire ce qui a été envoyé.

@@ -1,3 +1,5 @@
+import { notifyFavoritesOfNewWork } from '../notifications/client-notifications';
+import { NotificationsService } from '../notifications/notifications.service';
 import { Optional } from '@nestjs/common';
 import { UploadedFileCleanupService } from '../uploads/uploaded-file-cleanup.service';
 import { Injectable } from '@nestjs/common';
@@ -13,6 +15,7 @@ export class FlashService {
     private readonly prisma: PrismaService,
     private readonly cacheService: CacheService,
     @Optional() private readonly files?: UploadedFileCleanupService,
+    @Optional() private readonly appNotifications?: NotificationsService,
   ) {}
 
   private normalizeStyles(styleInput: unknown): string[] {
@@ -110,6 +113,8 @@ export class FlashService {
       });
 
       await this.invalidateFlashCacheForUser(userId);
+      // Clients qui ont ce salon en favori (un flash indisponible n'est pas annoncé).
+      if (flash.isAvailable) void notifyFavoritesOfNewWork(this.prisma, this.appNotifications, userId, 'flash');
 
       return {
         error: false,

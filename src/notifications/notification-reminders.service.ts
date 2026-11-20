@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { NotificationsService } from './notifications.service';
 import { formatRdvWhen } from './appointment-notifications';
+import { appointmentClientUserId } from './client-notifications';
 
 const TZ = 'Europe/Paris';
 const MIN = 60_000;
@@ -22,7 +23,7 @@ const clock = (d: Date) => {
 const plural = (n: number, one: string, many: string) => `${n} ${n > 1 ? many : one}`;
 
 /**
- * Rappels planifiés du centre de notifications (Studio). Exécuté toutes les 15 minutes : chaque rappel porte une clé de
+ * Rappels planifiés du centre de notifications (Studio, et clients People : rappels de rendez-vous, avis, Explorer). Exécuté toutes les 15 minutes : chaque rappel porte une clé de
  * déduplication, donc rejouer le passage ne crée jamais de doublon et un retard d'exécution se rattrape tout seul.
  */
 @Injectable()
@@ -45,6 +46,9 @@ export class NotificationRemindersService {
       ['péremptions', () => this.expiringStock(now)],
       ['profil incomplet', () => this.incompleteProfiles(now)],
       ['bilan hebdomadaire', () => this.weeklyReport(now)],
+      ['rappels de rendez-vous des clients', () => this.clientAppointmentReminders(now)],
+      ['invitation à donner son avis', () => this.clientReviewRequests(now)],
+      ['rappel Explorer', () => this.clientExplorerReminders(now)],
       ['purge', async () => { await this.notifications.purgeOlderThan(90); }],
     ];
     for (const [name, step] of steps) {
@@ -240,4 +244,85 @@ export class NotificationRemindersService {
       });
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // Clients (app People)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Rappels de rendez-vous confirmés au client qui a un compte : la veille (à partir de 17 h, heure de Paris) et 2 h avant.
+   * Pas de rappel « veille » pour un rendez-vous pris moins de 24 h avant.
+   */
+  private async clientAppointmentReminders(now: Date) {
+    const rows = await this.prisma.appointment.findMany({
+      where: {
+        status: 'CONFIRMED', start: { gt: now, lte: new Date(now.getTime() + 32 * HOUR) },
+        OR: [{ clientUserId: { not: null } }, { client: { linkedUserId: { not: null } } }],
+      },
+      select: {
+        id: true, start: true, createdAt: true, title: true, clientUserId: true,
+        client: { select: { linkedUserId: true } },
+        user: { select: { salonName: true, firstName: true, lastName: true } },
+      },
+    });
+    const today = paris(now);
+    const tomorrow = paris(new Date(now.getTime() + DAY)).date;
+    for (const a of rows) {
+      const userId = appointmentClientUserId(a);
+      if (!userId) continue;
+      const salon = a.user?.salonName || [a.user?.firstName, a.user?.lastName].filter(Boolean).join(' ') || 'votre salon';
+      const msLeft = a.start.getTime() - now.getTime();
+      if (msLeft <= 2 * HOUR) {
+        await this.notifications.notify({
+          userId, type: 'client.appointment_reminder', title: `Rendez-vous à ${clock(a.start)}`,
+          body: `C’est bientôt : votre rendez-vous chez ${salon} commence à ${clock(a.start)}.`, data: { appointmentId: a.id }, dedupeKey: `client-2h:${a.id}`,
+        });
+      } else if (paris(a.start).date === tomorrow && today.hour >= 17 && a.start.getTime() - a.createdAt.getTime() > DAY) {
+        await this.notifications.notify({
+          userId, type: 'client.appointment_reminder', title: `Demain à ${clock(a.start)}`,
+          body: `Rappel : rendez-vous chez ${salon} demain à ${clock(a.start)}.`, data: { appointmentId: a.id }, dedupeKey: `client-eve:${a.id}`,
+        });
+      }
+    }
+  }
+
+  /** Séances terminées depuis plus de 2 h (moins de 7 jours), sans avis : une invitation par rendez-vous, entre 9 h et 21 h. */
+  private async clientReviewRequests(now: Date) {
+    const hour = paris(now).hour;
+    if (hour < 9 || hour >= 21) return;
+    const rows = await this.prisma.appointment.findMany({
+      where: {
+        status: 'COMPLETED', prestation: { in: ['TATTOO', 'PIERCING', 'RETOUCHE'] },
+        end: { lt: new Date(now.getTime() - 2 * HOUR), gt: new Date(now.getTime() - 7 * DAY) },
+        salonReview: null,
+        OR: [{ clientUserId: { not: null } }, { client: { linkedUserId: { not: null } } }],
+      },
+      select: { id: true, clientUserId: true, client: { select: { linkedUserId: true } }, user: { select: { salonName: true, firstName: true, lastName: true } } },
+    });
+    for (const a of rows) {
+      const userId = appointmentClientUserId(a);
+      if (!userId) continue;
+      const salon = a.user?.salonName || [a.user?.firstName, a.user?.lastName].filter(Boolean).join(' ') || 'votre salon';
+      await this.notifications.notify({
+        userId, type: 'client.review_request', title: 'Comment s’est passée votre séance ?',
+        body: `Laissez un avis à ${salon} : il aide les autres clients et l’artiste.`, data: { appointmentId: a.id }, dedupeKey: `review-request:${a.id}`,
+      });
+    }
+  }
+
+  /** Propositions d'artistes sans réponse depuis plus de 48 h (moins de 14 jours) : un rappel par proposition. */
+  private async clientExplorerReminders(now: Date) {
+    const rows = await this.prisma.projectProposal.findMany({
+      where: { status: 'PENDING', createdAt: { lt: new Date(now.getTime() - 2 * DAY), gt: new Date(now.getTime() - 14 * DAY) } },
+      select: { id: true, clientUserId: true, moodboardId: true, moodboard: { select: { name: true } } },
+    });
+    for (const p of rows) {
+      await this.notifications.notify({
+        userId: p.clientUserId, type: 'client.explorer_reminder', title: 'Une proposition attend votre réponse',
+        body: `Un artiste s’est proposé pour « ${p.moodboard.name} ». Acceptez ou refusez sa proposition.`,
+        data: { moodboardId: p.moodboardId, proposalId: p.id }, dedupeKey: `explorer-reminder:${p.id}`,
+      });
+    }
+  }
+
 }

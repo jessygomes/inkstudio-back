@@ -1,3 +1,4 @@
+import { NotificationsService } from 'src/notifications/notifications.service';
 import {
   BadRequestException,
   ConflictException,
@@ -5,6 +6,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { MessageType } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma.service';
@@ -24,6 +26,7 @@ export class DrawingDeliveryService {
     private readonly mail: MailService,
     private readonly gateway: MessagesGateway,
     private readonly notifications: MessageNotificationService,
+    @Optional() private readonly appNotifications?: NotificationsService,
   ) {}
 
   async send(cardId: string, imageId: string, userId: string) {
@@ -255,6 +258,16 @@ export class DrawingDeliveryService {
           messageError =
             'Le message Inkera n’a pas pu être envoyé (vérifiez les droits de messagerie). Réessayez.';
         }
+      }
+      // App People : le client est prévenu qu'une nouvelle version l'attend.
+      if ((emailSent || messageSent) && clientUserId) {
+        const salonName = card.salon?.salonName || [card.salon?.firstName, card.salon?.lastName].filter(Boolean).join(' ') || 'Votre salon';
+        void this.appNotifications?.notify({
+          userId: clientUserId, type: 'client.drawing_to_validate', title: 'Un dessin vous attend',
+          body: `${salonName} vous a envoyé une nouvelle version de votre dessin.`,
+          data: { cardId, ...(conversation ? { conversationId: conversation.id } : {}), ...(card.sourceAppointmentId ? { appointmentId: card.sourceAppointmentId } : {}) },
+          dedupeKey: `drawing:${imageId}`,
+        });
       }
       return {
         emailSent,

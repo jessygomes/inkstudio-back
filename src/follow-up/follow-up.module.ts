@@ -1,4 +1,5 @@
 import { MessagingModule } from 'src/messaging/messaging.module';
+import { AppointmentPhotosModule } from 'src/appointment-photos/appointment-photos.module';
 import { RedisModule } from 'src/redis/redis.module';
 import { ReminderSettingsController } from './reminder-settings.controller';
 import { ReminderSettingsService } from './reminder-settings.service';
@@ -16,6 +17,7 @@ import { FollowupProcessor } from './followup.processor';
   imports: [
     PrismaModule,
     MessagingModule,
+    AppointmentPhotosModule,
     RedisModule,
     MailModule,
     BullModule.registerQueue({ name: 'followup' }),

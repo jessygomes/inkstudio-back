@@ -1,3 +1,5 @@
+import { notifyFavoritesOfNewWork } from '../notifications/client-notifications';
+import { NotificationsService } from '../notifications/notifications.service';
 import { Optional } from '@nestjs/common';
 import { UploadedFileCleanupService } from '../uploads/uploaded-file-cleanup.service';
 import { publicDisplayName, withPublicName } from '../user/public-profile.utils';
@@ -22,6 +24,7 @@ export class PortfolioService {
     private readonly prisma: PrismaService,
     private cacheService: CacheService,
     @Optional() private readonly files?: UploadedFileCleanupService,
+    @Optional() private readonly appNotifications?: NotificationsService,
   ) {}
 
   private normalizeStyles(styleInput: unknown): string[] {
@@ -300,6 +303,7 @@ export class PortfolioService {
 
       // Invalider le cache après ajout
       await this.cacheService.delPattern(`portfolio:photos:${userId}:*`);
+      void notifyFavoritesOfNewWork(this.prisma, this.appNotifications, userId, 'portfolio');
 
       return {
         error: false,
@@ -360,6 +364,7 @@ export class PortfolioService {
       );
 
       await this.cacheService.delPattern(`portfolio:photos:${userId}:*`);
+      void notifyFavoritesOfNewWork(this.prisma, this.appNotifications, userId, 'portfolio');
 
       return {
         error: false,

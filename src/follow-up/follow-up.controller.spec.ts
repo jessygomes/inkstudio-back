@@ -3,6 +3,7 @@ import { FollowupsController } from './follow-up.controller';
 import { PrismaService } from 'src/database/prisma.service';
 import { MailService } from 'src/email/mailer.service';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
+import { SecurityRateLimiter } from 'src/auth/security-throttle';
 
 describe('FollowupsController', () => {
   let controller: FollowupsController;
@@ -11,6 +12,7 @@ describe('FollowupsController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [FollowupsController],
       providers: [
+        { provide: SecurityRateLimiter, useValue: {} },
         {
           provide: PrismaService,
           useValue: {

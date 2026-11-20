@@ -5,6 +5,7 @@ import { FollowupsController } from './follow-up.controller';
 import { PrismaService } from 'src/database/prisma.service';
 import { MailService } from 'src/email/mailer.service';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
+import { SecurityRateLimiter } from 'src/auth/security-throttle';
 
 describe('Public follow-up HTTP journey (no user session)', () => {
   let app: INestApplication;
@@ -52,6 +53,8 @@ describe('Public follow-up HTTP journey (no user session)', () => {
       providers: [
         { provide: PrismaService, useValue: prisma },
         { provide: MailService, useValue: {} },
+        // La route d'envoi des photos est limitée : limiteur factice (non sollicité par ces scénarios).
+        { provide: SecurityRateLimiter, useValue: {} },
       ],
     })
       .overrideGuard(JwtAuthGuard)
