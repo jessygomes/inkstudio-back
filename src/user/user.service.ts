@@ -523,14 +523,15 @@ export class UserService {
    */
   private async getSlugUserProfileById(userId: string, includeHidden = false): Promise<SlugUser | null> {
     const userResult = await this.prisma.user.findUnique({
-      where: { id: userId, role: { in: [...publicProfessionalRoles] }, ...(includeHidden ? {} : { publicVisibility: { not: 'HIDDEN' as const } }) },
+      // Propriétaire / admin (includeHidden) : son profil, quels que soient sa visibilité et son rôle.
+      where: includeHidden ? { id: userId } : { id: userId, role: { in: [...publicProfessionalRoles] }, publicVisibility: { not: 'HIDDEN' as const } },
       select: publicUserProfileSelect,
     });
     if (!userResult) return null;
     if (!includeHidden) return publicUserProfile(userResult) as SlugUser | null;
     // Même projection que le profil public, en gardant la visibilité réelle (masqué).
-    const projected = publicUserProfile({ ...userResult, publicVisibility: 'VISIBLE' });
-    return projected ? ({ ...projected, publicVisibility: userResult.publicVisibility } as unknown as SlugUser) : null;
+    const projected = publicUserProfile({ ...userResult, publicVisibility: 'VISIBLE', role: publicProfessionalRoles[0] });
+    return projected ? ({ ...projected, publicVisibility: userResult.publicVisibility, role: userResult.role } as unknown as SlugUser) : null;
   }
 
   /**

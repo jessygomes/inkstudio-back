@@ -79,6 +79,13 @@ export class PublicProfileAccessGuard
             )?.userId ?? normalizedId)
           : id;
       if (!userId) throw new NotFoundException('Profil introuvable.');
+      // Le propriétaire (ou un admin) accède toujours à ses propres données, quels que soient la visibilité et le rôle du
+      // compte : sinon « Mon compte » d'un profil masqué, ou d'un rôle non public, ne se chargeait pas (404).
+      if (req.user && (req.user.userId === userId || req.user.role === 'admin')) {
+        const exists = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+        if (!exists) throw new NotFoundException('Profil introuvable.');
+        continue;
+      }
       const user = await this.prisma.user.findUnique({
         where: { id: userId },
         select: { publicVisibility: true, role: true },
