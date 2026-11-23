@@ -187,6 +187,11 @@ model User {
   sentTeamRequests          SalonTatoueurTeamRequest[] @relation("TeamRequestsSentBySalon")
   receivedTeamRequests      SalonTatoueurTeamRequest[] @relation("TeamRequestsReceivedByTatoueur")
 
+  // Concours promotionnels (module giveaways)
+  giveawayEntries           GiveawayEntry[]
+  giveawayAwards            GiveawayAward[]
+  subscriptionGrants        SubscriptionGrant[]
+
   // Index historiques créés en SQL, désormais suivis par Prisma.
   @@index([saasPlan, saasPlanUntil], map: "idx_user_saasPlan_saasPlanUntil")
 }
@@ -1935,4 +1940,332 @@ model BookingLink {
   @@index([performerUserId, createdAt])
   @@index([venueSalonId, createdAt])
   @@index([status, expiresAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Concours promotionnels (src/giveaways, doc docs/giveaways.md)
+// Les identifiants d'acteurs (admins) sont stockés sans clé étrangère pour que
+// l'audit survive à la suppression d'un compte.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum GiveawayStatus {
+  DRAFT
+  SCHEDULED
+  ACTIVE
+  CLOSED
+  DRAWN
+  COMPLETED
+  CANCELLED
+}
+
+enum GiveawayEntryStatus {
+  VALID
+  PENDING_REVIEW
+  INVALID
+  WITHDRAWN
+}
+
+enum GiveawayPrizeType {
+  SUBSCRIPTION_GRANT
+}
+
+enum GiveawayDrawStatus {
+  OFFICIAL
+  VOIDED
+}
+
+enum GiveawayDrawRole {
+  WINNER
+  ALTERNATE
+}
+
+enum GiveawayAwardStatus {
+  PENDING_CONFIRMATION
+  CONFIRMED
+  ACCEPTED
+  DECLINED
+  FORFEITED
+  ACTIVATED
+  CANCELLED
+}
+
+enum SubscriptionGrantMode {
+  APP_ENTITLEMENT
+  STRIPE_TRIAL_EXTENSION
+}
+
+enum SubscriptionGrantStatus {
+  ACTIVE
+  CANCELLED
+}
+
+model Giveaway {
+  id                   String         @id @default(cuid())
+  slug                 String         @unique
+  title                String
+  description          String?        @db.Text
+  status               GiveawayStatus @default(DRAFT)
+  opensAt              DateTime
+  closesAt             DateTime
+  drawAt               DateTime
+  timezone             String         @default("Europe/Paris")
+  publishedAt          DateTime?
+  archivedAt           DateTime?
+  frozenAt             DateTime?
+  frozenById           String?
+  resultsPublishedAt   DateTime?
+  completedAt          DateTime?
+  cancelledAt          DateTime?
+  rulesVersion         Int            @default(1)
+  rulesUrl             String?
+  rulesContent         String?        @db.Text
+  rulesHash            String?
+  rulesApprovedAt      DateTime?
+  rulesApprovedById    String?
+  config               Json           @default("{}")
+  createdById          String
+  updatedById          String?
+  personalDataPurgedAt DateTime?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  categories GiveawayCategory[]
+  prizes     GiveawayPrize[]
+  entries    GiveawayEntry[]
+  draws      GiveawayDraw[]
+  awards     GiveawayAward[]
+  auditLogs  GiveawayAuditLog[]
+
+  @@index([status, opensAt])
+}
+
+model GiveawayCategory {
+  id              String   @id @default(cuid())
+  giveawayId      String
+  key             String
+  label           String
+  description     String?  @db.Text
+  /// Règles d'éligibilité validées par src/giveaways/giveaway-criteria.ts (liste blanche, aucun code exécutable).
+  criteria        Json
+  winnersCount    Int
+  alternatesCount Int      @default(0)
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  giveaway Giveaway        @relation(fields: [giveawayId], references: [id], onDelete: Cascade)
+  prizes   GiveawayPrize[]
+  entries  GiveawayEntry[]
+  draws    GiveawayDraw[]
+  awards   GiveawayAward[]
+
+  @@unique([giveawayId, key])
+  @@index([giveawayId, sortOrder])
+}
+
+model GiveawayPrize {
+  id                   String            @id @default(cuid())
+  giveawayId           String
+  categoryId           String
+  type                 GiveawayPrizeType
+  label                String
+  plan                 SaasPlan?
+  durationMonths       Int?
+  quantity             Int
+  commercialValueCents Int?
+  currency             String            @default("EUR")
+  config               Json              @default("{}")
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  giveaway Giveaway         @relation(fields: [giveawayId], references: [id], onDelete: Cascade)
+  category GiveawayCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  awards   GiveawayAward[]
+
+  @@index([categoryId])
+}
+
+model GiveawayEntry {
+  id                  String              @id @default(cuid())
+  giveawayId          String
+  categoryId          String
+  /// Compte professionnel participant. Mis à null si le compte est supprimé ou les données purgées.
+  userId              String?
+  /// Empreinte stable du participant (SHA-256 de l'id du compte), conservée pour l'audit.
+  participantHash     String
+  status              GiveawayEntryStatus @default(VALID)
+  invalidReason       String?
+  acceptedRulesAt     DateTime
+  rulesVersion        Int
+  rulesHash           String?
+  eligibilityAtEntry  Json?
+  eligibilityAtClose  Json?
+  closeCheckedAt      DateTime?
+  /// Empreintes (SHA-256) des signaux d'identité (téléphone, Instagram…) pour la détection des doublons.
+  identitySignals     String[]            @default([])
+  duplicateOfEntryIds String[]            @default([])
+  reviewedById        String?
+  reviewedAt          DateTime?
+  reviewNote          String?
+  withdrawnAt         DateTime?
+  anonymizedAt        DateTime?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  giveaway    Giveaway             @relation(fields: [giveawayId], references: [id], onDelete: Cascade)
+  category    GiveawayCategory     @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  user        User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  drawResults GiveawayDrawResult[]
+  awards      GiveawayAward[]
+
+  @@unique([giveawayId, userId])
+  @@unique([giveawayId, participantHash])
+  @@index([giveawayId, categoryId, status])
+  @@index([giveawayId, createdAt])
+  @@index([identitySignals], type: Gin)
+}
+
+model GiveawayDraw {
+  id              String             @id @default(cuid())
+  giveawayId      String
+  categoryId      String
+  status          GiveawayDrawStatus @default(OFFICIAL)
+  /// = categoryId tant que le tirage est officiel, null une fois annulé : un seul tirage officiel par catégorie.
+  officialKey     String?            @unique
+  algorithm       String
+  seedHex         String
+  snapshot        Json
+  snapshotHash    String
+  eligibleCount   Int
+  winnersCount    Int
+  alternatesCount Int
+  executedById    String
+  executedAt      DateTime           @default(now())
+  voidedAt        DateTime?
+  voidedById      String?
+  voidReason      String?
+  supersedesId    String?
+
+  giveaway Giveaway             @relation(fields: [giveawayId], references: [id], onDelete: Cascade)
+  category GiveawayCategory     @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  results  GiveawayDrawResult[]
+
+  @@index([giveawayId, categoryId])
+}
+
+model GiveawayDrawResult {
+  id        String           @id @default(cuid())
+  drawId    String
+  entryId   String
+  rank      Int
+  role      GiveawayDrawRole
+  createdAt DateTime         @default(now())
+
+  draw  GiveawayDraw   @relation(fields: [drawId], references: [id], onDelete: Cascade)
+  entry GiveawayEntry  @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  award GiveawayAward?
+
+  @@unique([drawId, rank])
+  @@unique([drawId, entryId])
+}
+
+model GiveawayAward {
+  id                   String              @id @default(cuid())
+  giveawayId           String
+  categoryId           String
+  prizeId              String
+  entryId              String
+  drawResultId         String              @unique
+  userId               String?
+  status               GiveawayAwardStatus @default(PENDING_CONFIRMATION)
+  confirmedAt          DateTime?
+  confirmedById        String?
+  acceptDeadline       DateTime?
+  acceptedAt           DateTime?
+  declinedAt           DateTime?
+  forfeitedAt          DateTime?
+  /// Consentement à la publication du nom, distinct de l'acceptation du lot.
+  publicationConsent   Boolean?
+  publicationConsentAt DateTime?
+  activatedAt          DateTime?
+  activatedById        String?
+  cancelledAt          DateTime?
+  cancelReason         String?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  giveaway   Giveaway           @relation(fields: [giveawayId], references: [id], onDelete: Cascade)
+  category   GiveawayCategory   @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  prize      GiveawayPrize      @relation(fields: [prizeId], references: [id], onDelete: Restrict)
+  entry      GiveawayEntry      @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  drawResult GiveawayDrawResult @relation(fields: [drawResultId], references: [id], onDelete: Cascade)
+  user       User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  grant      SubscriptionGrant?
+
+  @@index([giveawayId, status])
+  @@index([userId])
+}
+
+/// Abonnement offert (concours aujourd'hui, autres origines possibles). Jamais facturé.
+model SubscriptionGrant {
+  id                    String                  @id @default(cuid())
+  userId                String?
+  awardId               String?                 @unique
+  source                String
+  plan                  SaasPlan
+  durationMonths        Int
+  mode                  SubscriptionGrantMode
+  status                SubscriptionGrantStatus @default(ACTIVE)
+  startsAt              DateTime
+  endsAt                DateTime
+  previousPaymentMethod String?
+  previousPlan          SaasPlan?
+  previousEndDate       DateTime?
+  stripeSubscriptionId  String?
+  stripeRequestId       String?
+  idempotencyKey        String                  @unique
+  createdById           String
+  cancelledAt           DateTime?
+  cancelledById         String?
+  cancelReason          String?
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+
+  user  User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  award GiveawayAward? @relation(fields: [awardId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+  @@index([endsAt])
+}
+
+model GiveawayAuditLog {
+  id         String   @id @default(cuid())
+  giveawayId String?
+  actorId    String?
+  action     String
+  targetType String?
+  targetId   String?
+  data       Json     @default("{}")
+  createdAt  DateTime @default(now())
+
+  giveaway Giveaway? @relation(fields: [giveawayId], references: [id], onDelete: SetNull)
+
+  @@index([giveawayId, createdAt])
+  @@index([action])
+}
+
+/// Un envoi d'e-mail de service par clé : rend les envois idempotents.
+model GiveawayEmailDelivery {
+  id        String    @id @default(cuid())
+  key       String    @unique
+  kind      String
+  userId    String?
+  status    String    @default("PENDING")
+  attempts  Int       @default(0)
+  lastError String?
+  sentAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([kind, status])
 }

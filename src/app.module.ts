@@ -39,6 +39,7 @@ import { PiercingPriceService } from './piercing-price/piercing-price.service';
 import { SalonReviewModule } from './salon-review/salon-review.module';
 import { SalonVerificationModule } from './salon-verification/salon-verification.module';
 import { AdminModule } from './admin/admin.module';
+import { GiveawaysModule } from './giveaways/giveaways.module';
 import { MessagingModule } from './messaging/messaging.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { DashboardModule } from './dashboard/dashboard.module';
@@ -94,6 +95,7 @@ import { AppointmentPhotosModule } from './appointment-photos/appointment-photos
     SalonReviewModule,
     SalonVerificationModule,
     AdminModule,
+    GiveawaysModule,
     MessagingModule,
     NotificationsModule,
     DashboardModule,

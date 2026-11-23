@@ -181,7 +181,7 @@ describe('Native trial access expiry', () => {
 });
 
 describe('Invitation expiry', () => {
-  it.each(['INVITATION', 'ADMIN_GIFT'])('returns an expired %s offer to Free while retaining its source', async paymentMethod => {
+  it.each(['INVITATION', 'ADMIN_GIFT', 'GIVEAWAY'])('returns an expired %s offer to Free while retaining its source', async paymentMethod => {
     const details = { userId: 'u1', currentPlan: SaasPlan.PRO, planStatus: SaasPlanStatus.ACTIVE,
       paymentMethod, endDate: new Date('2020-01-01') };
     const expired = { ...details, currentPlan: SaasPlan.FREE, planStatus: SaasPlanStatus.EXPIRED, endDate: null };
@@ -200,7 +200,7 @@ describe('Invitation expiry', () => {
     const prisma = { saasPlanDetails: { findMany: jest.fn().mockResolvedValue([]) } };
     const result = await new SaasService(prisma as never).downgradeExpiredInvitationUsers();
     expect(prisma.saasPlanDetails.findMany).toHaveBeenCalledWith({
-      where: { paymentMethod: { in: ['INVITATION', 'ADMIN_GIFT'] }, currentPlan: { not: SaasPlan.FREE }, endDate: { lte: expect.any(Date) }, user: { stripeSubscriptionId: null } },
+      where: { paymentMethod: { in: ['INVITATION', 'ADMIN_GIFT', 'GIVEAWAY'] }, currentPlan: { not: SaasPlan.FREE }, endDate: { lte: expect.any(Date) }, user: { stripeSubscriptionId: null } },
       select: { userId: true },
     });
     expect(result.downgraded).toBe(0);

@@ -404,7 +404,8 @@ export class SaasService {
   async downgradeExpiredInvitationUsers() {
     const now = new Date();
     const users = await this.prisma.saasPlanDetails.findMany({
-      where: { paymentMethod: { in: ['INVITATION', 'ADMIN_GIFT'] }, currentPlan: { not: SaasPlan.FREE },
+      // GIVEAWAY : abonnements offerts par un concours (src/giveaways/subscription-grants.service.ts).
+      where: { paymentMethod: { in: ['INVITATION', 'ADMIN_GIFT', 'GIVEAWAY'] }, currentPlan: { not: SaasPlan.FREE },
         endDate: { lte: now }, user: { stripeSubscriptionId: null } },
       select: { userId: true },
     });

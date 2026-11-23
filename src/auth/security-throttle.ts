@@ -107,6 +107,8 @@ const policies = {
   clientInvitationRead: { ip: [120, 900] },
   clientInvitationAccept: { ip: [30, 900], user: [10, 900] },
   upload: { ip: [240, 900] },
+  giveawayRead: { ip: [240, 900] },
+  giveawayEntry: { ip: [30, 900], user: [10, 900] },
 } satisfies Record<
   string,
   Partial<Record<'ip' | 'email' | 'user', [number, number]>>

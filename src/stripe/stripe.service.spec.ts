@@ -100,3 +100,37 @@ describe('Native trial checkout continuity', () => {
     if (days === 0) expect(params.subscription_data).toEqual({});
   });
 });
+
+describe('Giveaway grant checkout continuity', () => {
+  const previousEnv = { ...process.env };
+  beforeEach(() => {
+    process.env.STRIPE_SECRET_KEY = 'sk_test_123';
+    process.env.FRONTEND_URL = 'https://app.example.com';
+    process.env.STRIPE_PRICE_PRO = 'price_pro';
+  });
+  afterAll(() => { process.env = previousEnv; });
+
+  const run = async (details: Record<string, unknown>) => {
+    const create = jest.fn().mockResolvedValue({ url: 'https://checkout.stripe.com/test' });
+    const prisma = { user: { findUnique: jest.fn().mockResolvedValue({
+      id: 'u1', role: 'user_tatoueur', email: 'a@example.com', salonName: 'A', stripeCustomerId: 'cus_1', stripeSubscriptionId: null,
+      saasPlanDetails: details,
+    }) } };
+    const service = new StripeService(prisma as never);
+    (service as any).stripe = { checkout: { sessions: { create } } };
+    await service.createCheckoutSession('u1', 'PRO');
+    return create.mock.calls[0][0].subscription_data;
+  };
+
+  it('a running giveaway grant delays the first invoice to its end (no double billing)', async () => {
+    const end = new Date(Date.now() + 200 * 86400000);
+    const data = await run({ currentPlan: 'PRO', planStatus: 'ACTIVE', trialEndDate: null, paymentMethod: 'GIVEAWAY', endDate: end });
+    expect(data.trial_end).toBe(Math.floor(end.getTime() / 1000));
+  });
+
+  it('other offers keep their previous behaviour (no carry-over)', async () => {
+    const end = new Date(Date.now() + 200 * 86400000);
+    expect(await run({ currentPlan: 'PRO', planStatus: 'ACTIVE', trialEndDate: null, paymentMethod: 'ADMIN_GIFT', endDate: end })).toEqual({});
+    expect(await run({ currentPlan: 'BUSINESS', planStatus: 'ACTIVE', trialEndDate: null, paymentMethod: 'GIVEAWAY', endDate: end })).toEqual({});
+  });
+});

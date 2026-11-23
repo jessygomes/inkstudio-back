@@ -48,7 +48,7 @@ export type CancelSubscriptionResult = {
 };
 
 type StripeUserSnapshot = {
-  saasPlanDetails: { currentPlan: string; planStatus: string; trialEndDate: Date | null } | null;
+  saasPlanDetails: { currentPlan: string; planStatus: string; trialEndDate: Date | null; paymentMethod?: string | null; endDate?: Date | null } | null;
   role: string;
   id: string;
   email: string;
@@ -110,7 +110,8 @@ export class StripeService {
     return this.buildAdminGiftPreview(user, subscription, duration, unit);
   }
 
-  async applyAdminGift(userId: string, duration: number, unit: 'MONTHS' | 'DAYS', confirmation: string, requestId: string, adminId: string) {
+  /** `source` (facultatif, ex. `giveaway:<awardId>`) est seulement ajouté aux métadonnées Stripe pour la traçabilité. */
+  async applyAdminGift(userId: string, duration: number, unit: 'MONTHS' | 'DAYS', confirmation: string, requestId: string, adminId: string, source?: string) {
     const { user, subscription } = await this.loadAdminGiftSubscription(userId);
     const existingGift = readStripeAdminGift(subscription);
     if (existingGift && subscription.status === 'trialing' && subscription.metadata.inkera_gift_request === requestId && subscription.metadata.inkera_gift_confirmation === confirmation) {
@@ -122,7 +123,7 @@ export class StripeService {
     const endDate = new Date(preview.endDate);
     const updated = await this.stripe.subscriptions.update(subscription.id, {
       trial_end: Math.floor(endDate.getTime() / 1000), proration_behavior: 'none',
-      metadata: { inkera_admin_gift: '1', inkera_gift_start: String(Math.floor(startDate.getTime() / 1000)), inkera_gift_end: String(Math.floor(endDate.getTime() / 1000)), inkera_gift_request: requestId, inkera_gift_confirmation: confirmation, inkera_gift_admin: adminId },
+      metadata: { inkera_admin_gift: '1', inkera_gift_start: String(Math.floor(startDate.getTime() / 1000)), inkera_gift_end: String(Math.floor(endDate.getTime() / 1000)), inkera_gift_request: requestId, inkera_gift_confirmation: confirmation, inkera_gift_admin: adminId, ...(source ? { inkera_gift_source: source.slice(0, 200) } : {}) },
     }, { idempotencyKey: `admin-gift:${userId}:${requestId}` });
     return { subscription: updated, startDate, endDate, currentPlan: preview.currentPlan, autoResume: true };
   }
@@ -282,7 +283,7 @@ export class StripeService {
         salonName: true,
         stripeCustomerId: true,
         stripeSubscriptionId: true,
-        saasPlanDetails: { select: { currentPlan: true, planStatus: true, trialEndDate: true } },
+        saasPlanDetails: { select: { currentPlan: true, planStatus: true, trialEndDate: true, paymentMethod: true, endDate: true } },
       },
     });
 
@@ -420,8 +421,16 @@ export class StripeService {
       this.assertBusinessEligibility(user, plan);
       const customerId = await this.getOrCreateCustomerId(user);
       const priceId = this.getPriceIdForPlan(plan);
-      const nativeEnd = user.saasPlanDetails?.planStatus === 'TRIAL' && !user.stripeSubscriptionId && user.saasPlanDetails.currentPlan === plan
-        ? user.saasPlanDetails.trialEndDate : null;
+      const details = user.saasPlanDetails;
+      // Un abonnement offert par un concours (GIVEAWAY) en cours sur la même formule est reporté comme un essai :
+      // la première facture n'arrive qu'à sa fin, jamais en double.
+      const nativeEnd = !user.stripeSubscriptionId && details?.currentPlan === plan
+        ? details.planStatus === 'TRIAL'
+          ? details.trialEndDate
+          : details.paymentMethod === 'GIVEAWAY' && details.endDate && details.endDate.getTime() - Date.now() < 700 * 86_400_000
+            ? details.endDate
+            : null
+        : null;
       const remainingMs = nativeEnd ? nativeEnd.getTime() - Date.now() : 0;
       const subscriptionData: Stripe.Checkout.SessionCreateParams.SubscriptionData = remainingMs > 0 && nativeEnd ? {
         // Carry over only the remaining Inkera entitlement, never restart an offer.
