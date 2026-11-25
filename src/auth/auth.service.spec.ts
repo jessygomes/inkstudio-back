@@ -18,6 +18,7 @@ jest.mock('bcryptjs', () => ({
 }));
 
 const createPrismaMock = () => ({
+  clientProfile: { findFirst: jest.fn().mockResolvedValue(null) },
   subscriptionInvitationRedemption: { create: jest.fn() },
   subscriptionInvitation: {
     findUnique: jest.fn(),
@@ -574,6 +575,7 @@ describe('AuthService', () => {
           lastName: 'Client',
           birthDate: '1995-05-15',
           confirmPassword: 'password123',
+          pseudo: 'marie_d',
         },
       });
 
@@ -594,6 +596,7 @@ describe('AuthService', () => {
           lastName: 'Dupont',
           birthDate: '1990-03-20',
           confirmPassword: 'different_password',
+          pseudo: 'marie_d',
         },
       });
 
@@ -628,6 +631,7 @@ describe('AuthService', () => {
           lastName: 'Dupont',
           birthDate: '1990-03-20',
           confirmPassword: 'password123',
+          pseudo: 'marie_d',
         },
       });
 
@@ -672,6 +676,7 @@ describe('AuthService', () => {
           lastName: 'Martin',
           birthDate: '',
           confirmPassword: 'password123',
+          pseudo: 'marie_d',
         } as any,
       });
 

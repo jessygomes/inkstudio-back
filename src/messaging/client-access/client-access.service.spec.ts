@@ -27,7 +27,7 @@ describe('ClientAccessService', () => {
 
   beforeEach(() => {
     prisma = {
-      user: { findUnique: jest.fn() },
+      user: { findUnique: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
       favoritePortfolio: { count: jest.fn().mockResolvedValue(1) },
       favoriteFlash: { count: jest.fn().mockResolvedValue(0) },
       conversation: {
@@ -40,7 +40,7 @@ describe('ClientAccessService', () => {
       inboxThread: { create: jest.fn(), updateMany: jest.fn() },
       professionalBlock: { findUnique: jest.fn().mockResolvedValue(null) },
       message: { create: jest.fn().mockResolvedValue({ id: 'msg', sender: { id: 'x' }, attachments: [] }) },
-      client: { findFirst: jest.fn().mockResolvedValue(null), create: jest.fn().mockResolvedValue({ id: 'fiche' }), updateMany: jest.fn() },
+      client: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]), create: jest.fn().mockResolvedValue({ id: 'fiche' }), updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
       $queryRaw: jest.fn(),
       $transaction: jest.fn(),
     };
@@ -61,7 +61,7 @@ describe('ClientAccessService', () => {
   });
 
   it('opens a hidden conversation only for a client who favorited one of the pro works', async () => {
-    await expect(service.startFromFavorite('pro', 'client')).resolves.toEqual({ conversationId: 'conv', created: true });
+    await expect(service.startFromFavorite('pro', 'client')).resolves.toMatchObject({ conversationId: 'conv', created: true, knownClient: false });
     expect(prisma.conversation.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ salonId: 'pro', clientUserId: 'client', clientAccess: 'HIDDEN', clientAlias: 'inkfan' }),
     }));
@@ -71,9 +71,33 @@ describe('ClientAccessService', () => {
     expect(prisma.conversation.create).not.toHaveBeenCalled();
   });
 
+  it('opens a normal conversation, linked to the record, for a client already in the pro records', async () => {
+    prisma.client.findMany.mockResolvedValueOnce([{ id: 'fiche-connue', firstName: 'Benoît', lastName: 'Martin', email: 'b@x.fr', linkedUserId: 'client' }]);
+    await expect(service.startFromFavorite('pro', 'client')).resolves.toMatchObject({ conversationId: 'conv', created: true, knownClient: true });
+    expect(prisma.conversation.create.mock.calls[0][0].data.clientAccess).toBeNull();
+    expect(prisma.inboxThread.create.mock.calls[0][0].data.linkedClientId).toBe('fiche-connue');
+  });
+
+  it('recognizes an unlinked record with the verified account e-mail', async () => {
+    prisma.client.findMany
+      .mockResolvedValueOnce([]) // fiche reliée
+      .mockResolvedValueOnce([{ id: 'fiche-mail', firstName: 'Benoît', lastName: 'Martin', email: 'B@X.fr ', linkedUserId: null }]);
+    prisma.user.findMany.mockResolvedValue([{ id: 'client', email: 'b@x.fr' }]);
+    await expect(service.startFromFavorite('pro', 'client')).resolves.toMatchObject({ knownClient: true });
+    expect(prisma.user.findMany.mock.calls[0][0].where).toMatchObject({ emailVerified: { not: null } });
+  });
+
+  it('turns an existing hidden conversation back to normal once the client is known', async () => {
+    prisma.conversation.findFirst.mockResolvedValue({ id: 'old', status: 'ACTIVE', clientAccess: 'HIDDEN' });
+    prisma.client.findMany.mockResolvedValueOnce([{ id: 'fiche-connue', firstName: 'B', lastName: 'M', email: 'b@x.fr', linkedUserId: 'client' }]);
+    await expect(service.startFromFavorite('pro', 'client')).resolves.toMatchObject({ conversationId: 'old', knownClient: true });
+    expect(prisma.conversation.updateMany).toHaveBeenCalledWith({ where: { id: 'old', clientAccess: 'HIDDEN' }, data: { clientAccess: null, clientAccessRespondedAt: null } });
+    expect(prisma.inboxThread.updateMany).toHaveBeenCalledWith({ where: { conversationId: 'old', linkedClientId: null }, data: { linkedClientId: 'fiche-connue' } });
+  });
+
   it('reuses an existing conversation without changing its access', async () => {
     prisma.conversation.findFirst.mockResolvedValue({ id: 'old', status: 'ACTIVE' });
-    await expect(service.startFromFavorite('pro', 'client')).resolves.toEqual({ conversationId: 'old', created: false });
+    await expect(service.startFromFavorite('pro', 'client')).resolves.toMatchObject({ conversationId: 'old', created: false, knownClient: false });
     expect(prisma.conversation.create).not.toHaveBeenCalled();
   });
 

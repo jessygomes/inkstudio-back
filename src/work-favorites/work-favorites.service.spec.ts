@@ -10,7 +10,8 @@ describe('WorkFavoritesService', () => {
 
   beforeEach(() => {
     prisma = {
-      user: { findUnique: jest.fn().mockResolvedValue({ role: 'client', nickname: null, clientProfile: { pseudo: 'inkfan' } }) },
+      user: { findUnique: jest.fn().mockResolvedValue({ role: 'client', nickname: null, clientProfile: { pseudo: 'inkfan' } }), findMany: jest.fn().mockResolvedValue([]) },
+      client: { findMany: jest.fn().mockResolvedValue([]) },
       professionalBlock: { findUnique: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]) },
       flash: { findUnique: jest.fn().mockResolvedValue({ id: 'f1', userId: 'pro', title: 'Rose', user: { publicVisibility: 'VISIBLE' } }) },
       favoriteFlash: {
@@ -38,6 +39,13 @@ describe('WorkFavoritesService', () => {
     prisma.favoriteFlash.findUnique.mockResolvedValue({ id: 'fav' });
     await expect(service.toggleFlash('client', 'client', 'f1')).resolves.toMatchObject({ favorite: false });
     expect(prisma.favoriteFlash.delete).toHaveBeenCalledWith({ where: { id: 'fav' } });
+  });
+
+  it('names a client already in the pro records', async () => {
+    prisma.client.findMany.mockResolvedValueOnce([{ id: 'fiche', firstName: 'Benoît', lastName: 'Martin', email: 'b@x.fr', linkedUserId: 'client' }]);
+    service.notifyFavorited('client', 'portfolio', { id: 'p1', userId: 'pro', title: 'Lion' });
+    await flush(); await flush();
+    expect(notifications.notify.mock.calls[0][0].title).toBe("Benoît Martin (votre client) a mis en favori l'une de vos réalisations");
   });
 
   it('refuses pros and hidden profiles', async () => {

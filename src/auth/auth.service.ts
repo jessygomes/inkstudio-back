@@ -19,6 +19,8 @@ import { CreateTatoueurUserDto } from './dto/create-tatoueur-user.dto';
 import { StripeService } from 'src/stripe/stripe.service';
 import { AgendaMode, SaasPlan, SaasPlanStatus } from '@prisma/client';
 import { CacheService } from 'src/redis/cache.service';
+import { assertPseudoAvailable, generateUniquePseudo, isPseudoUniqueViolation } from 'src/clients/client-pseudo';
+import { HttpException } from '@nestjs/common';
 import { GoogleIdentityService } from './google-identity.service';
 import { AppleIdentityService } from './apple-identity.service';
 
@@ -462,6 +464,8 @@ export class AuthService {
       if (existingUser) {
         throw new Error("Un compte existe déjà avec cet email.");
       }
+      // Pseudo obligatoire et unique (majuscules ignorées).
+      const pseudo = await assertPseudoAvailable(this.prisma, registerBody.pseudo);
       // Hashage du mot de passe
       const hashedPassword = await this.hashPassword({password});
       // Création de l'utilisateur dans la DB avec son profil client
@@ -474,6 +478,7 @@ export class AuthService {
           role: 'client',
           clientProfile: {
             create: {
+              pseudo,
               birthDate: birthDate ? new Date(birthDate) : null,
             }
           }
@@ -503,9 +508,15 @@ export class AuthService {
         message: "Votre compte client a été créé avec succès. Veuillez vérifier vos emails pour confirmer votre adresse.",
       };
     } catch (error: unknown) {
+      // Deux inscriptions simultanées avec le même pseudo : l'index d'unicité tranche.
+      if (isPseudoUniqueViolation(error)) {
+        return { error: true, code: 'PSEUDO_TAKEN', message: 'Ce pseudo est déjà utilisé. Choisissez-en un autre.' };
+      }
+      const response = error instanceof HttpException ? (error.getResponse() as { code?: unknown }) : null;
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       return {
         error: true,
+        ...(typeof response?.code === 'string' ? { code: response.code } : {}),
         message: errorMessage,
       };
     }
@@ -1032,9 +1043,8 @@ export class AuthService {
         role: 'client', // Par défaut client pour Google OAuth
         emailVerified: new Date(), // Email vérifié par Google
         clientProfile: {
-          create: {
-            // Profil client vide, sera complété plus tard par le client
-          }
+          // Pas de formulaire d'inscription avec Google : un pseudo libre est proposé, modifiable dans le profil.
+          create: { pseudo: await generateUniquePseudo(this.prisma, firstName) },
         }
       },
       include: {
@@ -1128,7 +1138,8 @@ export class AuthService {
         password: '', // Pas de mot de passe pour Apple
         role: 'client',
         emailVerified: new Date(), // Email vérifié par Apple
-        clientProfile: { create: {} },
+        // Pas de formulaire d'inscription avec Apple : un pseudo libre est proposé, modifiable dans le profil.
+        clientProfile: { create: { pseudo: await generateUniquePseudo(this.prisma, firstName) } },
       },
       include,
     });

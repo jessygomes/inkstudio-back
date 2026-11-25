@@ -263,6 +263,8 @@ model UploadReservation {
 model ClientProfile {
   id          String      @id @default(cuid())
   userId      String      @unique
+  // Unique sans tenir compte des majuscules : index ClientProfile_pseudo_lower_key (lower(pseudo)), créé en SQL
+  // (migration 20261126120000_unique_client_pseudo). Règles : src/clients/client-pseudo.ts.
   pseudo      String?
   birthDate   DateTime?
   city        String?

@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable, NotFoundException, Optional } from '@ne
 import { PrismaService } from 'src/database/prisma.service';
 import { NotificationsService } from 'src/notifications/notifications.service';
 import { pseudoOf } from 'src/messaging/client-identity';
+import { findKnownClientRecords } from 'src/clients/known-client';
 
 const PRO_ROLES = ['user', 'user_salon', 'user_tatoueur'];
 
@@ -35,7 +36,9 @@ export class WorkFavoritesService {
           }),
         ]);
         if (!client || client.role !== 'client' || blocked) return;
-        const pseudo = pseudoOf(client) || 'Un client Inkera';
+        // Client déjà dans les fiches du professionnel : on le nomme ; sinon, seulement son pseudo.
+        const known = (await findKnownClientRecords(this.prisma, item.userId, [clientId])).get(clientId);
+        const pseudo = known ? `${[known.firstName, known.lastName].filter(Boolean).join(' ')} (votre client)` : pseudoOf(client) || 'Un client Inkera';
         const what = kind === 'flash' ? "l'un de vos flashs" : "l'une de vos réalisations";
         const title = item.title?.trim();
         await this.notifications!.notify({
@@ -177,6 +180,8 @@ export class WorkFavoritesService {
           })
         : Promise.resolve([]),
     ]);
+    // Clients déjà en fiche : le professionnel les connaît, leur nom est affiché.
+    const knownClients = await findKnownClientRecords(this.prisma, professionalId, clientIds);
     const conversationByClient = new Map<string, { id: string; clientAccess: string | null }>();
     for (const c of conversations) if (!conversationByClient.has(c.clientUserId)) conversationByClient.set(c.clientUserId, c);
     const blocked = new Set(blocks.map((b) => b.clientUserId));
@@ -186,8 +191,10 @@ export class WorkFavoritesService {
       error: false,
       data: merged.map((m) => {
         const conversation = conversationByClient.get(m.clientUserId);
+        const known = knownClients.get(m.clientUserId);
         return {
           ...m,
+          knownClient: known ? { id: known.id, firstName: known.firstName, lastName: known.lastName } : null,
           canContact: !blocked.has(m.clientUserId),
           conversation: conversation ? { id: conversation.id, clientAccess: conversation.clientAccess } : null,
         };

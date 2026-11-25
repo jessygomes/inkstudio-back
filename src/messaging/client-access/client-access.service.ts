@@ -7,7 +7,8 @@ import { MessageNotificationService } from '../notifications/message-notificatio
 import { MessagesGateway } from '../websocket/messages.gateway';
 import { assertProfessionalCanMessage, isProfessionalPlanRestricted } from '../plan-access';
 import { clientAliasOf, pseudoOf } from '../client-identity';
-import { sameClientEmail } from '../../clients/client-account-link';
+import { linkClientRecordIfSameEmail, sameClientEmail } from '../../clients/client-account-link';
+import { findKnownClientRecords, type KnownClientRecord } from '../../clients/known-client';
 
 const PRO_ROLES = ['user', 'user_salon', 'user_tatoueur'];
 /** Après un refus, le professionnel peut redemander l'accès 7 jours plus tard. */
@@ -61,17 +62,28 @@ export class ClientAccessService {
     });
     if (!client || client.role !== 'client') throw new NotFoundException('Client introuvable.');
 
+    // Client déjà dans les fiches du professionnel (fiche reliée au compte ou au même e-mail) : il le connaît déjà,
+    // la conversation s'ouvre normalement, avec la fiche et les informations du client.
+    const known = (await findKnownClientRecords(this.prisma, professionalId, [clientUserId])).get(clientUserId) ?? null;
+
     const existing = await this.prisma.conversation.findFirst({
       where: { salonId: professionalId, clientUserId },
       orderBy: { createdAt: 'asc' },
-      select: { id: true, status: true },
+      select: { id: true, status: true, clientAccess: true },
     });
     if (existing) {
-      // Conversation déjà ouverte (par le client ou après un précédent favori) : elle garde son niveau d'accès.
+      // Conversation déjà ouverte : elle garde son niveau d'accès, sauf si le client est connu (elle redevient normale).
       if (existing.status === ConversationStatus.ARCHIVED) {
         await this.prisma.conversation.update({ where: { id: existing.id }, data: { status: ConversationStatus.ACTIVE } });
       }
-      return { conversationId: existing.id, created: false };
+      if (known && existing.clientAccess && existing.clientAccess !== 'GRANTED') {
+        await this.prisma.conversation.updateMany({
+          where: { id: existing.id, clientAccess: existing.clientAccess },
+          data: { clientAccess: null, clientAccessRespondedAt: null },
+        });
+      }
+      if (known) await this.attachKnownRecord(professionalId, clientUserId, existing.id, known);
+      return { conversationId: existing.id, created: false, knownClient: !!known };
     }
 
     if (!(await this.hasFavoritedWork(professionalId, clientUserId))) {
@@ -94,17 +106,33 @@ export class ClientAccessService {
           salonId: professionalId,
           clientUserId,
           status: ConversationStatus.ACTIVE,
-          clientAccess: 'HIDDEN',
+          // Client inconnu : seul son pseudo est visible. Client déjà en fiche : conversation normale.
+          clientAccess: known ? null : 'HIDDEN',
           clientAlias: alias,
         },
         select: { id: true, lastMessageAt: true },
       });
       await tx.inboxThread.create({
-        data: { ownerUserId: professionalId, channel: InboxChannel.INKERA, conversationId: created.id, lastMessageAt: created.lastMessageAt },
+        data: {
+          ownerUserId: professionalId, channel: InboxChannel.INKERA, conversationId: created.id, lastMessageAt: created.lastMessageAt,
+          ...(known ? { linkedClientId: known.id } : {}),
+        },
       });
       return { id: created.id, created: true };
     });
-    return { conversationId: conversation.id, created: conversation.created };
+    if (known && !conversation.created) await this.attachKnownRecord(professionalId, clientUserId, conversation.id, known);
+    else if (known) await linkClientRecordIfSameEmail(this.prisma, { ...known, userId: professionalId }, clientUserId).catch(() => false);
+    return { conversationId: conversation.id, created: conversation.created, knownClient: !!known };
+  }
+
+  /** Relie la fiche connue au fil de messagerie (si aucune fiche ne l'est) et au compte du client (même e-mail). */
+  private async attachKnownRecord(professionalId: string, clientUserId: string, conversationId: string, known: KnownClientRecord) {
+    try {
+      await this.prisma.inboxThread.updateMany({ where: { conversationId, linkedClientId: null }, data: { linkedClientId: known.id } });
+      await linkClientRecordIfSameEmail(this.prisma, { ...known, userId: professionalId }, clientUserId);
+    } catch {
+      // la conversation reste utilisable sans la liaison
+    }
   }
 
   private async conversationFor(conversationId: string) {

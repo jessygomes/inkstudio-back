@@ -14,6 +14,8 @@ import { CacheService } from 'src/redis/cache.service';
 import { MailService } from 'src/email/mailer.service';
 import { CachedUser, LinkedSalon, LinkedTatoueurUser, SlugUser } from 'utils/type';
 import { SendPublicContactEmailDto } from './dto/send-public-contact-email.dto';
+import { assertPseudoAvailable, isPseudoUniqueViolation } from 'src/clients/client-pseudo';
+import { ConflictException } from '@nestjs/common';
 // import { User, Prisma } from '@prisma/client';
 
 type SlugUserCandidate = Pick<SlugUser, 'id' | 'role' | 'salonName' | 'city' | 'postalCode'>;
@@ -1164,9 +1166,12 @@ export class UserService {
       image: userBody.image,
     };
 
+    // Pseudo obligatoire et unique (majuscules ignorées) ; son propre pseudo reste valable.
+    const pseudo = await assertPseudoAvailable(this.prisma, userBody.pseudo, userId);
+
     // Préparer les données pour la table ClientProfile
     const clientProfileData: Record<string, any> = {
-      pseudo: userBody.pseudo,
+      pseudo,
       city: userBody.city,
       postalCode: userBody.postalCode,
       birthDate: userBody.birthDate ? new Date(userBody.birthDate) : null,
@@ -1208,6 +1213,10 @@ export class UserService {
           }
         }
       }
+    }).catch((error: unknown) => {
+      // Même pseudo enregistré au même moment par un autre compte : l'index d'unicité tranche.
+      if (isPseudoUniqueViolation(error)) throw new ConflictException({ code: 'PSEUDO_TAKEN', message: 'Ce pseudo est déjà utilisé. Choisissez-en un autre.' });
+      throw error;
     });
 
     // Invalider le cache après update

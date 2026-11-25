@@ -11,6 +11,12 @@ export class CreateUserClientDto {
   @IsString({ message: 'Le prénom doit être une chaîne de caractères' })
   firstName: string;
 
+  // Pseudo obligatoire et unique (vérifié par le service : format et disponibilité).
+  @IsNotEmpty({ message: 'Choisissez un pseudo.' })
+  @IsString({ message: 'Le pseudo doit être une chaîne de caractères' })
+  @MaxLength(60)
+  pseudo: string;
+
   @IsNotEmpty({ message: 'Le nom de famille est requis' })
   @IsString({ message: 'Le nom de famille doit être une chaîne de caractères' })
   lastName: string;

@@ -17,6 +17,8 @@ import { invitationTokenHash } from './invitation-policy';
 import { GoogleLoginDto } from './dto/google-login.dto';
 import { AppleLoginDto } from './dto/apple-login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { OptionalJwtAuthGuard } from './optional-jwt-auth.guard';
+import { checkPseudo } from 'src/clients/client-pseudo';
 // import { GoogleAuthGuard } from './guards/google-auth/google-auth.guard';
 
 
@@ -94,6 +96,15 @@ export class AuthController {
       throw new BadRequestException('Invitation invalide, expirée ou quota atteint.');
     }
     return { email: invitation.email, role: invitation.role, plan: invitation.plan, durationMonths: invitation.durationMonths };
+  }
+
+  // Disponibilité d'un pseudo client, vérifiée en direct pendant la saisie (inscription, profil).
+  // Connecté : son propre pseudo est considéré comme disponible.
+  @SecurityThrottle('pseudoCheck')
+  @UseGuards(OptionalJwtAuthGuard)
+  @Get('pseudo-available') // GET /auth/pseudo-available?pseudo=
+  async pseudoAvailable(@Query('pseudo') pseudo: string, @Request() req: { user?: { userId?: string } }) {
+    return checkPseudo(this.prisma, pseudo, req.user?.userId);
   }
 
   @Post('register_client') // POST /auth/register_client

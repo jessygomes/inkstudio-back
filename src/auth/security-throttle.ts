@@ -104,6 +104,7 @@ const policies = {
   change: { ip: [20, 900], user: [5, 900] },
   booking: { ip: [60, 900], email: [5, 900], user: [10, 900] },
   bookingLinkRead: { ip: [120, 900] },
+  pseudoCheck: { ip: [300, 900] },
   clientInvitationRead: { ip: [120, 900] },
   clientInvitationAccept: { ip: [30, 900], user: [10, 900] },
   upload: { ip: [240, 900] },

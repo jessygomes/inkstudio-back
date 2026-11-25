@@ -10,6 +10,7 @@ import { MailService } from 'src/email/mailer.service';
 // Mock factories
 const createPrismaMock = () => {
   const prisma = {
+    clientProfile: { findFirst: jest.fn().mockResolvedValue(null) },
     user: {
       findMany: jest.fn(),
       findUnique: jest.fn(),
