@@ -18,6 +18,7 @@ import { EmailNotificationService } from '../notifications/email-notification.se
 import { PrismaService } from '../../database/prisma.service';
 import { RedisService } from '../../redis/redis.service';
 import { RedisOnlineStatusService } from '../../redis/redis-online-status.service';
+import { clientAliasOf, isClientIdentityHidden } from '../client-identity';
 import { WebSocketAuthService } from './websocket-auth.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { corsOriginDelegate } from '../../config/cors.config';
@@ -157,21 +158,9 @@ export class MessagesGateway
       // Enregistrer en Redis pour le scaling horizontal (préserve multi-onglets)
       await this.redisOnlineStatusService.markUserOnline(userId, client.id);
 
-      // Récupérer les infos de l'utilisateur pour la notification
-      const user = await this.prisma.user.findUnique({
-        where: { id: userId },
-        select: { id: true, firstName: true, lastName: true, salonName: true },
-      });
-
-      if (user) {
-        const userName = user.salonName || `${user.firstName} ${user.lastName}`;
-
-        // Broadcaster que l'utilisateur est en ligne
-        this.server.emit('user-online', {
-          userId,
-          userName,
-        } as UserOnlineEvent);
-      }
+      // Présence : uniquement aux personnes avec qui l'utilisateur a une conversation, et sans son nom.
+      // (Avant : diffusée à toutes les connexions avec le nom, ce qui révélait le nom d'un client masqué sous son pseudo.)
+      void this.notifyPresence(userId, 'user-online');
 
       // Envoyer le compteur de messages non lus
       const unreadCount =
@@ -209,10 +198,8 @@ export class MessagesGateway
             if (isFullyOffline) {
               this.userConnections.delete(userId);
 
-              // Broadcaster que l'utilisateur est hors ligne
-              this.server.emit('user-offline', {
-                userId,
-              } as UserOfflineEvent);
+              // Hors ligne : mêmes destinataires que « en ligne ».
+              void this.notifyPresence(userId, 'user-offline');
             }
           },
         );
@@ -581,9 +568,16 @@ export class MessagesGateway
         select: { id: true, firstName: true, lastName: true, salonName: true },
       });
 
-      const userName = user
-        ? user.salonName || `${user.firstName} ${user.lastName}`
-        : 'Utilisateur';
+      // Conversation ouverte après un favori : le client n'apparaît que sous son pseudo.
+      const typingConversation = await this.prisma.conversation.findUnique({
+        where: { id: conversationId },
+        select: { clientUserId: true, clientAccess: true, clientAlias: true },
+      });
+      const userName = typingConversation?.clientUserId === userId && isClientIdentityHidden(typingConversation)
+        ? clientAliasOf(typingConversation)
+        : user
+          ? user.salonName || `${user.firstName} ${user.lastName}`
+          : 'Utilisateur';
 
       // Broadcaster aux autres clients de la conversation
       client.broadcast
@@ -635,6 +629,24 @@ export class MessagesGateway
         } as UserStoppedTypingEvent);
     } catch (error: unknown) {
       this.logger.error('Erreur handleUserStoppedTyping:', this.getErrorMessage(error));
+    }
+  }
+
+  /** Interlocuteurs de l'utilisateur (conversations Inkera, les plus récentes) : seuls destinataires de sa présence. */
+  private async notifyPresence(userId: string, event: 'user-online' | 'user-offline') {
+    try {
+      const conversations = await this.prisma.conversation.findMany({
+        where: { OR: [{ salonId: userId }, { clientUserId: userId }] },
+        select: { salonId: true, clientUserId: true },
+        orderBy: { lastMessageAt: 'desc' },
+        take: 500,
+      });
+      const peers = new Set(conversations.map((c) => (c.salonId === userId ? c.clientUserId : c.salonId)));
+      peers.delete(userId);
+      const payload: UserOnlineEvent | UserOfflineEvent = { userId };
+      for (const peer of peers) this.notifyUser(peer, event, payload);
+    } catch (error: unknown) {
+      this.logger.error('Erreur présence:', this.getErrorMessage(error));
     }
   }
 

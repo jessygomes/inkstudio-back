@@ -645,6 +645,9 @@ export class AdminService {
               rdvBookingEnabled: true,
               createdAt: true,
               updatedAt: true,
+              hygieneDocument: {
+                select: { id: true, fileUrl: true, status: true, rejectionReason: true, uploadedAt: true, reviewedAt: true },
+              },
             },
             orderBy: { createdAt: 'desc' },
           },
@@ -856,6 +859,11 @@ export class AdminService {
       });
 
       // Compter les salons avec au moins un document en attente
+      // Justificatifs d'hygiène des tatoueurs internes à examiner
+      const tatoueurHygienePending = await this.prisma.tatoueurHygieneDocument.count({
+        where: { status: VerificationStatusDocument.PENDING },
+      });
+
       const salonsWithPendingDocuments = await this.prisma.user.count({
         where: {
           role: { in: [Role.user, Role.user_salon, Role.user_tatoueur] },
@@ -914,6 +922,7 @@ export class AdminService {
           totalSalons,
           totalClients,
           salonsWithPendingDocuments,
+          tatoueurHygienePending,
           salonsVerified,
           newSalonsThisMonth,
           newClientsThisMonth,

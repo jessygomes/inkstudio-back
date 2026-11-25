@@ -129,8 +129,9 @@ Préfixe `/admin/giveaways`. `JwtAuthGuard` + `RolesGuard('admin')` + `GiveawayA
 
 | Route | Rôle |
 |---|---|
+| `GET /options` | catalogue pour le back-office : types de critères, champs, canaux, rôles, fuseaux, formules offrables (`plans` : formule, tarif mensuel public de `utils/data.ts`, comptes admis), limites, valeurs par défaut |
 | `GET /` · `POST /` | liste · création (toujours en `DRAFT`) |
-| `GET /:id` · `PATCH /:id` | détail · édition (champs substantiels refusés après ouverture : `409 GIVEAWAY_LOCKED`) |
+| `GET /:id` · `PATCH /:id` | détail · édition (champs substantiels refusés après ouverture : `409 GIVEAWAY_LOCKED` ; `slug` modifiable tant que le concours n’est pas publié, sinon `409 SLUG_LOCKED`) |
 | `POST /:id/amendments` | avenant après ouverture (voir § 6) |
 | `POST /:id/rules/approve` | validation juridique du règlement (condition de publication) |
 | `POST /:id/publish` · `/unpublish` · `/archive` · `/cancel` · `/duplicate` | cycle de vie |
@@ -153,11 +154,13 @@ Création (extrait) :
 
 ```json
 { "slug": "printemps-2027", "title": "…", "opensAt": "2027-03-01T00:00:00+01:00", "closesAt": "2027-03-31T23:59:59.999+02:00",
-  "drawAt": "2027-04-02T10:00:00+02:00", "timezone": "Europe/Paris", "rulesContent": "…", "config": { "acceptanceDays": 14, "retentionDays": 365 },
+  "drawAt": "2027-04-02T10:00:00+02:00", "timezone": "Europe/Paris", "rulesContent": "…", "config": { "acceptanceDays": 14, "retentionDays": 365, "coverImageUrl": "https://…", "showPrizeValue": true },
   "categories": [ { "key": "independent", "label": "Tatoueur indépendant", "winnersCount": 2, "alternatesCount": 2,
     "criteria": [ { "type": "ACCOUNT_TYPE", "roles": ["user_tatoueur"] }, { "type": "MIN_PUBLIC_PORTFOLIO_IMAGES", "min": 5 } ],
     "prizes": [ { "type": "SUBSCRIPTION_GRANT", "label": "PRO 6 mois", "plan": "PRO", "durationMonths": 6, "quantity": 2, "commercialValueCents": 21594 } ] } ] }
 ```
+
+`config` (modifiable à tout moment, fusionné avec la valeur existante par `PATCH`) : `acceptanceDays` (1–60), `retentionDays` (30–1825), `coverImageUrl` (visuel de la page publique, https uniquement, `null` pour le retirer), `showPrizeValue` (si `false`, `commercialValueCents` vaut `null` dans les réponses publiques ; la valeur reste due dans le règlement). Les réponses publiques portent `coverImageUrl`.
 
 Règles vérifiées : clôture après ouverture, tirage après clôture, somme des lots = nombre de gagnants, `BUSINESS` uniquement pour une catégorie réservée à `user_salon`, `ACCOUNT_TYPE` obligatoire.
 
@@ -242,7 +245,7 @@ Liens : `FRONTEND_URL/concours/<slug>` (page à créer dans le site Studio).
 
 ## 12. Limites connues
 
-- Pas d'écran front (site / app) ni d'outil admin graphique : API uniquement.
+- Écrans : site Studio fait (page publique `/concours/<slug>`, bandeau du tableau de bord, back-office `<BO>/concours`). App mobile Studio : rien.
 - Lot Stripe : annulation manuelle ; un compte déjà sous offre Stripe programmée, ou dont la formule Stripe diffère du lot, est traité à la main.
 - Rôle historique `user` exclu de la catégorie salon (Business impossible).
 - Détection des doublons limitée aux coordonnées déclarées ; pas de comparaison d'images ni d'adresse IP (choix de minimisation).

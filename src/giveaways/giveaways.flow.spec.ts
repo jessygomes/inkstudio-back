@@ -394,6 +394,19 @@ describe('Admin safeguards', () => {
     jest.useRealTimers();
   });
 
+  it('the address (slug) changes only while the giveaway has never been published', async () => {
+    const { admin } = setup({});
+    const draft = seedGiveaway({ status: 'DRAFT', publishedAt: null, rulesApprovedAt: null });
+    const updated = await admin.update(draft.id, { slug: 'concours-printemps' }, 'admin', OPEN);
+    expect(updated.slug).toBe('concours-printemps');
+    const published = seedGiveaway({ slug: 'deja-publie' });
+    await expect(admin.update(published.id, { slug: 'autre-adresse' }, 'admin', new Date('2026-11-25T00:00:00Z'))).rejects.toMatchObject({
+      response: { code: 'SLUG_LOCKED' },
+    });
+    // Renvoyer la même adresse n'est pas un changement.
+    await expect(admin.update(published.id, { slug: 'deja-publie', title: 'Nouveau titre' }, 'admin', new Date('2026-11-25T00:00:00Z'))).resolves.toBeTruthy();
+  });
+
   it('CSV export neutralizes spreadsheet formulas', () => {
     expect(csvCell('=HYPERLINK("x")')).toBe(`"'=HYPERLINK(""x"")"`);
     expect(csvCell('+33612')).toBe("'+33612");

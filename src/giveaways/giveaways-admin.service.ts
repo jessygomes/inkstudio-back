@@ -154,6 +154,9 @@ export class GiveawaysAdminService {
     const g = await this.get(id);
     if (g.status === GiveawayStatus.COMPLETED || g.status === GiveawayStatus.CANCELLED || g.archivedAt)
       throw new ConflictException('Ce concours n’est plus modifiable.');
+    const slugChanged = dto.slug !== undefined && dto.slug !== g.slug;
+    if (slugChanged && g.publishedAt)
+      throw new ConflictException({ code: 'SLUG_LOCKED', message: 'L’adresse ne change plus après la publication : des liens et des e-mails l’utilisent déjà.' });
     const substantialKeys = ['opensAt', 'closesAt', 'drawAt', 'rulesUrl', 'rulesContent', 'categories'] as const;
     const touched = substantialKeys.filter((k) => dto[k] !== undefined);
     if (touched.length && substantialLocked(g, now))
@@ -176,36 +179,42 @@ export class GiveawaysAdminService {
       (dto.rulesContent !== undefined && dto.rulesContent !== g.rulesContent) || (dto.rulesUrl !== undefined && dto.rulesUrl !== g.rulesUrl);
     const nextContent = dto.rulesContent !== undefined ? dto.rulesContent : g.rulesContent;
     const nextUrl = dto.rulesUrl !== undefined ? dto.rulesUrl : g.rulesUrl;
-    await this.prisma.$transaction(async (tx) => {
-      await tx.giveaway.update({
-        where: { id },
-        data: {
-          ...(dto.title !== undefined ? { title: dto.title } : {}),
-          ...(dto.description !== undefined ? { description: dto.description } : {}),
-          opensAt,
-          closesAt,
-          drawAt,
-          // Fusion : un envoi partiel (ex. visuel seul) ne remet pas les autres réglages à leur valeur par défaut.
-          ...(dto.config ? { config: readConfig({ ...readConfig(g.config), ...dto.config } as Prisma.JsonValue) } : {}),
-          ...(rulesChanged
-            ? {
-                rulesContent: nextContent,
-                rulesUrl: nextUrl,
-                rulesHash: rulesHash(nextContent, nextUrl),
-                // Tout changement de règlement doit être revalidé juridiquement ; une version publiée est incrémentée.
-                rulesApprovedAt: null,
-                rulesApprovedById: null,
-                rulesVersion: g.publishedAt ? g.rulesVersion + 1 : g.rulesVersion,
-              }
-            : {}),
-          updatedById: actorId,
-        },
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.giveaway.update({
+          where: { id },
+          data: {
+            ...(slugChanged ? { slug: dto.slug } : {}),
+            ...(dto.title !== undefined ? { title: dto.title } : {}),
+            ...(dto.description !== undefined ? { description: dto.description } : {}),
+            opensAt,
+            closesAt,
+            drawAt,
+            // Fusion : un envoi partiel (ex. visuel seul) ne remet pas les autres réglages à leur valeur par défaut.
+            ...(dto.config ? { config: readConfig({ ...readConfig(g.config), ...dto.config } as Prisma.JsonValue) } : {}),
+            ...(rulesChanged
+              ? {
+                  rulesContent: nextContent,
+                  rulesUrl: nextUrl,
+                  rulesHash: rulesHash(nextContent, nextUrl),
+                  // Tout changement de règlement doit être revalidé juridiquement ; une version publiée est incrémentée.
+                  rulesApprovedAt: null,
+                  rulesApprovedById: null,
+                  rulesVersion: g.publishedAt ? g.rulesVersion + 1 : g.rulesVersion,
+                }
+              : {}),
+            updatedById: actorId,
+          },
+        });
+        if (dto.categories) {
+          await tx.giveawayCategory.deleteMany({ where: { giveawayId: id } });
+          await this.createCategories(tx, id, dto.categories as CategoryInput[]);
+        }
       });
-      if (dto.categories) {
-        await tx.giveawayCategory.deleteMany({ where: { giveawayId: id } });
-        await this.createCategories(tx, id, dto.categories as CategoryInput[]);
-      }
-    });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException('Cette adresse est déjà utilisée par un autre concours.');
+      throw error;
+    }
     await this.audit.record({ giveawayId: id, actorId, action: 'giveaway.updated', data: { fields: Object.keys(dto), rulesChanged } });
     return this.get(id);
   }

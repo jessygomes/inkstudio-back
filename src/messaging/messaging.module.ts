@@ -25,6 +25,8 @@ import { MailgunService } from '../email/mailgun.service';
 import { JwtModule } from '@nestjs/jwt';
 import { InboxController } from './inbox/inbox.controller';
 import { InboxService } from './inbox/inbox.service';
+import { ClientAccessController } from './client-access/client-access.controller';
+import { ClientAccessService } from './client-access/client-access.service';
 import { InstagramApiService } from './instagram/instagram-api.service';
 import { InstagramService } from './instagram/instagram.service';
 import { InstagramController } from './instagram/instagram.controller';
@@ -49,6 +51,7 @@ import { InstagramController } from './instagram/instagram.controller';
     ConversationsController,
     MessagesController,
     InboxController,
+    ClientAccessController,
     InstagramController,
     NotificationPreferencesController,
     TestEmailNotificationController,
@@ -57,6 +60,7 @@ import { InstagramController } from './instagram/instagram.controller';
     ConversationsService,
     MessagesService,
     InboxService,
+    ClientAccessService,
     InstagramApiService,
     InstagramService,
     MessageNotificationService,
@@ -75,6 +79,7 @@ import { InstagramController } from './instagram/instagram.controller';
   ],
   exports: [
     MessagesGateway,
+    ClientAccessService,
     ConversationsService,
     MessagesService,
     InboxService,

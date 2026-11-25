@@ -1,4 +1,5 @@
 import { UploadedFileCleanupService } from '../uploads/uploaded-file-cleanup.service';
+import { WorkFavoritesService } from '../work-favorites/work-favorites.service';
 import { TattooPracticesDto } from './dto/tattoo-practices.dto';
 import { publicProfessionalRoles, publicUserProfile, publicUserProfileSelect } from './public-user-profile';
 import { AgendaMode, SaasPlan } from '@prisma/client';
@@ -24,7 +25,8 @@ export class UserService {
     private cacheService: CacheService,
     private readonly mailService: MailService,
     @Optional() private readonly residencies?: ResidenciesService,
-    @Optional() private readonly files?: UploadedFileCleanupService) {}
+    @Optional() private readonly files?: UploadedFileCleanupService,
+    @Optional() private readonly workFavorites?: WorkFavoritesService) {}
 
   private escapeHtml(value: string): string {
     return value
@@ -2187,7 +2189,7 @@ export class UserService {
 
       const portfolio = await this.prisma.portfolio.findUnique({
         where: { id: portfolioId },
-        select: { id: true, title: true },
+        select: { id: true, title: true, userId: true },
       });
 
       if (!portfolio) {
@@ -2228,6 +2230,8 @@ export class UserService {
           portfolioId,
         },
       });
+      // Le professionnel est prévenu avec le seul pseudo du client.
+      this.workFavorites?.notifyFavorited(userId, 'portfolio', portfolio);
 
       return {
         error: false,

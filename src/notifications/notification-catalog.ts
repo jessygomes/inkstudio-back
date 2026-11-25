@@ -40,6 +40,8 @@ export const NOTIFICATION_TYPES = {
   'message.unanswered': { category: 'messages', audience: 'studio' },
   'contact.new': { category: 'messages', audience: 'studio' },
   'thread.assigned': { category: 'messages', audience: 'studio' },
+  // Réponse du client à la demande d'accès à ses informations (conversation ouverte après un favori)
+  'contact.access_reply': { category: 'messages', audience: 'studio' },
   // ---- Studio : stock
   'stock.low': { category: 'stock', audience: 'studio' },
   'stock.expiring': { category: 'stock', audience: 'studio' },
@@ -52,6 +54,8 @@ export const NOTIFICATION_TYPES = {
   'client.account_linked': { category: 'followups', audience: 'studio' },
   // Réservation d'un compte rattachée à une fiche de même e-mail mais d'un autre nom (fiche non reliée).
   'client.booking_name_mismatch': { category: 'followups', audience: 'studio' },
+  // Un client a mis en favori une réalisation ou un flash (seul son pseudo est indiqué)
+  'favorite.work_added': { category: 'followups', audience: 'studio' },
   // ---- Studio : avis et Explorer
   'review.new': { category: 'reviews', audience: 'studio' },
   'explorer.proposal_reply': { category: 'explorer', audience: 'studio' },
@@ -59,6 +63,8 @@ export const NOTIFICATION_TYPES = {
   'team.invitation_received': { category: 'team', audience: 'studio' },
   'team.invitation_accepted': { category: 'team', audience: 'studio' },
   'team.permission_request': { category: 'team', audience: 'studio' },
+  // Justificatif d'hygiène d'un tatoueur du salon validé ou refusé par l'administration
+  'team.hygiene_reviewed': { category: 'team', audience: 'studio', critical: true },
   // ---- Studio : compte et abonnement
   'account.trial_ending': { category: 'account', audience: 'studio' },
   'account.payment_failed': { category: 'account', audience: 'studio', critical: true },
@@ -88,6 +94,8 @@ export const NOTIFICATION_TYPES = {
   'client.salon_new_portfolio': { category: 'salons', audience: 'people' },
   'client.explorer_proposal': { category: 'explorer', audience: 'people' },
   'client.explorer_reminder': { category: 'explorer', audience: 'people' },
+  // Un professionnel demande l'accès aux informations du client dans une conversation
+  'client.access_request': { category: 'messages', audience: 'people', critical: true },
 } as const satisfies Record<string, NotificationTypeDef>;
 
 export type NotificationType = keyof typeof NOTIFICATION_TYPES;

@@ -242,6 +242,8 @@ export class CreateGiveawayDto {
 
 /** Modification d'un concours. Les champs substantiels sont refusés une fois le concours ouvert (voir AmendGiveawayDto). */
 export class UpdateGiveawayDto {
+  /** Modifiable tant que le concours n'a jamais été publié (liens partagés et e-mails ensuite). */
+  @IsOptional() @IsString() @Length(3, 80) @Matches(SLUG_PATTERN) slug?: string;
   @IsOptional() @IsString() @Length(3, 160) title?: string;
   @IsOptional() @IsString() @MaxLength(10000) description?: string;
   @IsOptional() @IsDateString({ strict: true }) opensAt?: string;

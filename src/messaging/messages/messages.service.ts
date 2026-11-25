@@ -17,6 +17,9 @@ import { MessageNotificationService } from '../notifications/message-notificatio
 import { MessageType } from '@prisma/client';
 import { assertProfessionalCanMessage } from '../plan-access';
 import { assertContactCanMessage } from '../contact-access';
+import { clientAliasOf, isClientIdentityHidden } from '../client-identity';
+
+type MaskContext = { clientUserId: string; clientAccess?: string | null; clientAlias?: string | null };
 
 @Injectable()
 export class MessagesService {
@@ -99,7 +102,7 @@ export class MessagesService {
       recipientId,
     );
 
-    return this.mapToResponseDto(message);
+    return this.mapToResponseDto(message, conversation);
   }
 
   /**
@@ -169,7 +172,7 @@ export class MessagesService {
       });
     }
 
-    const data = messages.map((msg) => this.mapToResponseDto(msg));
+    const data = messages.map((msg) => this.mapToResponseDto(msg, conversation));
 
     return {
       data,
@@ -223,10 +226,10 @@ export class MessagesService {
         },
       });
 
-      return this.mapToResponseDto(updated);
+      return this.mapToResponseDto(updated, message.conversation);
     }
 
-    return this.mapToResponseDto(message);
+    return this.mapToResponseDto(message, message.conversation);
   }
 
   /**
@@ -282,15 +285,26 @@ export class MessagesService {
       fileType: string;
       fileSize: number;
     }>;
-  }): MessageResponseDto {
-    const sender: MessageSenderDto = {
-      id: message.sender.id,
-      firstName: message.sender.firstName ?? undefined,
-      lastName: message.sender.lastName ?? undefined,
-      salonName: message.sender.salonName ?? undefined,
-      image: message.sender.image ?? undefined,
-      role: message.sender.role,
-    };
+  }, conversation?: MaskContext): MessageResponseDto {
+    // Messages du client d'une conversation ouverte après un favori : seul son pseudo apparaît.
+    const masked = !!conversation && message.sender.id === conversation.clientUserId && isClientIdentityHidden(conversation);
+    const sender: MessageSenderDto = masked
+      ? {
+          id: message.sender.id,
+          firstName: clientAliasOf(conversation),
+          lastName: undefined,
+          salonName: undefined,
+          image: undefined,
+          role: message.sender.role,
+        }
+      : {
+          id: message.sender.id,
+          firstName: message.sender.firstName ?? undefined,
+          lastName: message.sender.lastName ?? undefined,
+          salonName: message.sender.salonName ?? undefined,
+          image: message.sender.image ?? undefined,
+          role: message.sender.role,
+        };
 
     const attachments: MessageAttachmentResponseDto[] | undefined =
       message.attachments?.map((att) => ({

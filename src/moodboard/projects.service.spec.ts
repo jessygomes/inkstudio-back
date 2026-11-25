@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
 import { assertContactCanMessage } from '../messaging/contact-access';
+import { explorerProposalsEnabled } from './project-needs';
 
 describe('Shared moodboard projects', () => {
   let prisma: any;
@@ -22,6 +23,15 @@ describe('Shared moodboard projects', () => {
       endDate: null,
     },
   };
+  // Les propositions sont suspendues par défaut ; ces tests couvrent leur fonctionnement quand elles sont rouvertes.
+  const previousFlag = process.env.EXPLORER_PROPOSALS_ENABLED;
+  beforeAll(() => {
+    process.env.EXPLORER_PROPOSALS_ENABLED = 'true';
+  });
+  afterAll(() => {
+    if (previousFlag === undefined) delete process.env.EXPLORER_PROPOSALS_ENABLED;
+    else process.env.EXPLORER_PROPOSALS_ENABLED = previousFlag;
+  });
   beforeEach(() => {
     prisma = {
       user: {
@@ -66,6 +76,7 @@ describe('Shared moodboard projects', () => {
       },
       message: { create: jest.fn() },
       projectProposalEmail: { upsert: jest.fn() },
+      moodboardFavorite: { upsert: jest.fn(), deleteMany: jest.fn() },
       inboxThread: { upsert: jest.fn() },
       $queryRaw: jest.fn(),
       $transaction: jest.fn(),
@@ -133,23 +144,93 @@ describe('Shared moodboard projects', () => {
     );
   });
 
+  it.each([{ role: 'client' }, { salonId: 'salon' }])(
+    'denies Explorer to non professionals and linked artists: %j',
+    async (override) => {
+      prisma.user.findUnique.mockResolvedValue({ ...professional, ...override });
+      await expect(service.explore('pro', { page: 1 })).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(prisma.moodboard.findMany).not.toHaveBeenCalled();
+    },
+  );
+
   it.each([
-    { role: 'client' },
     { saasPlan: 'FREE' },
     { saasPlanUntil: new Date(0) },
-    {
-      saasPlanDetails: {
-        ...professional.saasPlanDetails,
-        planStatus: 'PAST_DUE',
-      },
-    },
-    { salonId: 'salon' },
-  ])('denies Explorer for ineligible professionals: %j', async (override) => {
+    { saasPlanDetails: { ...professional.saasPlanDetails, planStatus: 'PAST_DUE' } },
+  ])('lets every plan browse Explorer: %j', async (override) => {
     prisma.user.findUnique.mockResolvedValue({ ...professional, ...override });
-    await expect(service.explore('pro', { page: 1 })).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
-    expect(prisma.moodboard.findMany).not.toHaveBeenCalled();
+    await service.explore('pro', { page: 1 });
+    expect(prisma.moodboard.findMany).toHaveBeenCalled();
+  });
+
+  it.each([
+    { saasPlan: 'FREE' },
+    { saasPlanDetails: { ...professional.saasPlanDetails, planStatus: 'PAST_DUE' } },
+  ])('still requires an active plan to propose when proposals are reopened: %j', async (override) => {
+    prisma.user.findUnique.mockResolvedValue({ ...professional, ...override });
+    await expect(service.propose('board', 'pro', 'Bonjour')).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.projectProposal.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses every proposal while proposals are suspended (default)', async () => {
+    delete process.env.EXPLORER_PROPOSALS_ENABLED;
+    try {
+      await expect(service.propose('board', 'pro', 'Bonjour')).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prisma.projectProposal.create).not.toHaveBeenCalled();
+      expect(explorerProposalsEnabled()).toBe(false);
+    } finally {
+      process.env.EXPLORER_PROPOSALS_ENABLED = 'true';
+    }
+  });
+
+  it('returns only the client pseudo and the favorite flag, never names or contact details', async () => {
+    prisma.moodboard.findMany.mockResolvedValue([
+      {
+        id: 'board',
+        name: 'Fleurs',
+        projectNeeds: ['URGENT'],
+        clientProfile: { pseudo: ' inkfan ', user: { nickname: 'other' } },
+        favorites: [{ id: 'fav' }],
+        proposals: [],
+        images: [],
+      },
+    ]);
+    const result = await service.explore('pro', { page: 1 });
+    const query = prisma.moodboard.findMany.mock.calls[0][0];
+    expect(query.select.clientProfile).toEqual({
+      select: { pseudo: true, user: { select: { nickname: true } } },
+    });
+    expect(result.data[0]).toMatchObject({ clientPseudo: 'inkfan', isFavorite: true, projectNeeds: ['URGENT'] });
+    expect(result.data[0]).not.toHaveProperty('clientProfile');
+    expect(result.data[0]).not.toHaveProperty('favorites');
+  });
+
+  it('lists favorite projects that are still shared and filters by need', async () => {
+    await service.explore('pro', { page: 1, scope: 'favorites', need: 'want_drawing' });
+    expect(prisma.moodboard.findMany.mock.calls[0][0].where).toMatchObject({
+      projectStatus: { in: ['OPEN', 'MATCHED'] },
+      favorites: { some: { professionalId: 'pro' } },
+      projectNeeds: { has: 'WANT_DRAWING' },
+    });
+  });
+
+  it('ignores an unknown need filter', async () => {
+    await service.explore('pro', { page: 1, need: 'whatever' });
+    expect(prisma.moodboard.findMany.mock.calls[0][0].where).not.toHaveProperty('projectNeeds');
+  });
+
+  it('adds an open project to favorites and refuses closed or blocked ones', async () => {
+    await expect(service.favorite('board', 'pro', true)).resolves.toEqual({ favorite: true });
+    expect(prisma.moodboardFavorite.upsert).toHaveBeenCalled();
+    prisma.moodboard.findUnique.mockResolvedValue({ projectStatus: 'PRIVATE', clientProfile: { userId: 'client' } });
+    await expect(service.favorite('board', 'pro', true)).rejects.toBeInstanceOf(NotFoundException);
+    prisma.moodboard.findUnique.mockResolvedValue({ projectStatus: 'OPEN', clientProfile: { userId: 'client' } });
+    prisma.professionalBlock.findUnique.mockResolvedValue({ id: 'block' });
+    await expect(service.favorite('board', 'pro', true)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.favorite('board', 'pro', false)).resolves.toEqual({ favorite: false });
+    expect(prisma.moodboardFavorite.deleteMany).toHaveBeenCalledWith({ where: { professionalId: 'pro', moodboardId: 'board' } });
   });
 
   it('combines filters, excludes blocked clients, and returns only open projects without client contact details', async () => {
@@ -176,7 +257,10 @@ describe('Shared moodboard projects', () => {
         clientProfile: { userId: { notIn: ['blocked'] } },
       },
     });
-    expect(query.select.clientProfile).toBeUndefined();
+    // Seul le pseudo du client est lu : ni nom, ni e-mail, ni coordonnées.
+    expect(query.select.clientProfile).toEqual({
+      select: { pseudo: true, user: { select: { nickname: true } } },
+    });
     expect(query.select.appointments).toBeUndefined();
   });
 
@@ -256,6 +340,13 @@ describe('Shared moodboard projects', () => {
       service.propose('board', 'pro', 'Bonjour'),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(prisma.projectProposal.create).not.toHaveBeenCalled();
+  });
+
+  it('keeps only known needs, once, in catalogue order', async () => {
+    prisma.user.findUnique.mockResolvedValue({ role: 'client' });
+    prisma.moodboard.findFirst.mockResolvedValue({ id: 'board', publishedAt: null });
+    await service.publish('board', 'client', { status: 'OPEN', needs: ['want_drawing', 'URGENT', 'nope', 'URGENT'] });
+    expect(prisma.moodboard.update.mock.calls[0][0].data.projectNeeds).toEqual(['URGENT', 'WANT_DRAWING']);
   });
 
   it('only the owning client can publish a moodboard', async () => {

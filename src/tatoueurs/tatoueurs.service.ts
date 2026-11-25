@@ -1619,7 +1619,7 @@ export class TatoueursService {
     try {
       const existingTatoueur = await this.prisma.tatoueur.findUnique({
         where: { id },
-        select: { userId: true, img: true },
+        select: { userId: true, img: true, hygieneDocument: { select: { fileUrl: true } } },
       });
 
       if (!existingTatoueur) {
@@ -1641,7 +1641,8 @@ export class TatoueursService {
           id,
         },
       });
-      this.files?.deleteIfUnusedLater([existingTatoueur.img]);
+      // Photo et justificatif d'hygiène (supprimé en cascade) : fichiers effacés s'ils ne servent plus.
+      this.files?.deleteIfUnusedLater([existingTatoueur.img, existingTatoueur.hygieneDocument?.fileUrl]);
 
       // Invalider le cache après suppression
       await this.cacheService.del(`tatoueur:${id}`);

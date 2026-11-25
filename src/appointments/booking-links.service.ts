@@ -26,6 +26,8 @@ import {
   ListBookingLinksDto,
 } from './dto/booking-link.dto';
 import { BookingLinkNotificationsService } from './booking-link-notifications.service';
+import { claimMatchingClientRecord } from '../clients/client-account-link';
+import { grantClientAccessOnBooking } from '../messaging/client-access/grant-on-booking';
 
 type Tx = Prisma.TransactionClient;
 type Target = Pick<
@@ -722,6 +724,9 @@ export class BookingLinksService {
               'Le projet a changé ; demandez un nouveau lien.',
             );
         }
+        // Compte connecté : comme la réservation People, la fiche non reliée du salon au même e-mail (vérifié),
+        // au même prénom et au même nom, est reliée au compte au lieu de bloquer la réservation.
+        if (!client && account) client = await claimMatchingClientRecord(tx, link.userId, account);
         if (!client) {
           const email = account?.email || dto.rdvBody.clientEmail;
           if (
@@ -835,6 +840,13 @@ export class BookingLinksService {
       { timeout: 20000 },
     );
     await this.notifications.afterConfirmation(result);
+    // En réservant, le client partage ses informations : ses conversations masquées (ouvertes après un favori) s'ouvrent.
+    await grantClientAccessOnBooking(this.prisma, {
+      professionalIds: [result.appointment.userId, result.appointment.performerUserId],
+      clientUserId: result.appointment.clientUserId,
+      clientId: result.client?.id,
+      clientOwnerId: result.client?.userId,
+    });
     // No private CRM fields, source project, or conversation IDs are returned publicly.
     return {
       error: false,

@@ -11,6 +11,8 @@ export class ConversationParticipantDto {
   address?: string;
   email: string;
   role: string;
+  /** Pseudo du client (conversation ouverte après un favori). */
+  pseudo?: string;
 }
 
 export class LastMessageDto {
@@ -23,6 +25,12 @@ export class LastMessageDto {
 
 export class ConversationResponseDto {
   projectContactPending?: boolean;
+  /**
+   * Accès du professionnel aux informations du client : null = normal ; HIDDEN / REQUESTED / DECLINED = pseudo seulement ;
+   * GRANTED = le client a accepté de partager ses informations.
+   */
+  clientAccess?: 'HIDDEN' | 'REQUESTED' | 'GRANTED' | 'DECLINED' | null;
+  clientAlias?: string;
   contactBlocked?: boolean;
   id: string;
   salonId: string;

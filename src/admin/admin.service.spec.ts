@@ -16,6 +16,9 @@ const createPrismaMock = () => ({
   tatoueur: {
     count: jest.fn(),
   },
+  tatoueurHygieneDocument: {
+    count: jest.fn(),
+  },
   appointment: {
     count: jest.fn(),
   },
@@ -123,6 +126,7 @@ describe('AdminService', () => {
       .mockResolvedValueOnce(1) // new salons this month
       .mockResolvedValueOnce(2); // new clients this month
     prisma.tatoueur.count.mockResolvedValue(4);
+    prisma.tatoueurHygieneDocument.count.mockResolvedValue(2);
     prisma.appointment.count.mockResolvedValue(7);
     prisma.user.groupBy.mockResolvedValue([
       { saasPlan: SaasPlan.FREE, _count: { saasPlan: 1 } },
@@ -141,6 +145,7 @@ describe('AdminService', () => {
       newClientsThisMonth: 2,
       totalTatoueurs: 4,
       totalAppointments: 7,
+      tatoueurHygienePending: 2,
       salonsBySaasPlan: {
         FREE: 1,
         PRO: 2,

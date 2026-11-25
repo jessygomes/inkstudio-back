@@ -79,9 +79,9 @@ export interface UserStoppedTypingEvent {
   userId: string;
 }
 
+/** Présence : envoyée seulement aux interlocuteurs de l'utilisateur, sans son nom (données personnelles). */
 export interface UserOnlineEvent {
   userId: string;
-  userName: string;
 }
 
 export interface UserOfflineEvent {

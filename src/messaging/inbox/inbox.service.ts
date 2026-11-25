@@ -7,6 +7,7 @@ import { MessagesGateway } from '../websocket/messages.gateway';
 import { InstagramService } from '../instagram/instagram.service';
 import { assertProfessionalCanCreateClient, assertProfessionalCanMessage } from '../plan-access';
 import { assertContactCanMessage } from '../contact-access';
+import { clientAliasOf, isClientIdentityHidden, maskConversationClient } from '../client-identity';
 import { linkClientRecordIfSameEmail } from '../../clients/client-account-link';
 import {
   AssignInboxThreadDto, CreateInboxClientDto, InboxMemberPermissionDto, InboxReplyDto,
@@ -49,6 +50,7 @@ export class InboxService {
     conversation: {
       select: {
         id: true, salonId: true, clientUserId: true, subject: true, projectContactPending: true,
+        clientAccess: true, clientAlias: true,
         clientUser: { select: { id: true, firstName: true, lastName: true, email: true, image: true } },
       },
     },
@@ -152,7 +154,12 @@ export class InboxService {
         { linkedClient: { is: { lastName: { contains: search, mode: 'insensitive' } } } },
         { linkedClient: { is: { email: { contains: search, mode: 'insensitive' } } } },
         { conversation: { is: { subject: { contains: search, mode: 'insensitive' } } } },
-        { conversation: { is: { clientUser: { is: { firstName: { contains: search, mode: 'insensitive' } } } } } },
+        // Le prénom n'est cherché que si le client a partagé ses informations ; sinon seul son pseudo l'est.
+        { conversation: { is: {
+          OR: [{ clientAccess: null }, { clientAccess: 'GRANTED' }],
+          clientUser: { is: { firstName: { contains: search, mode: 'insensitive' } } },
+        } } },
+        { conversation: { is: { clientAlias: { contains: search, mode: 'insensitive' } } } },
         { externalConversation: { is: { subject: { contains: search, mode: 'insensitive' } } } },
         { externalConversation: { is: { contact: { is: { displayName: { contains: search, mode: 'insensitive' } } } } } },
       ] });
@@ -203,9 +210,10 @@ export class InboxService {
         const { messages: _messages, ...rest } = value;
         return rest;
       };
+      const conversation = withoutMessages(item.conversation);
       return {
         ...item,
-        conversation: withoutMessages(item.conversation),
+        conversation: conversation ? maskConversationClient(conversation) : conversation,
         externalConversation: withoutMessages(item.externalConversation),
         lastMessage,
         unreadCount,
@@ -217,7 +225,7 @@ export class InboxService {
   async getThread(userId: string, threadId: string) {
     const thread = await this.assertAccess(userId, threadId);
     const contactBlocked = thread.conversation ? !!await this.prisma.professionalBlock.findUnique({ where: { clientUserId_professionalId: { clientUserId: thread.conversation.clientUserId, professionalId: thread.ownerUserId } } }) : false;
-    return { ...thread, contactBlocked };
+    return { ...thread, conversation: thread.conversation ? maskConversationClient(thread.conversation) : null, contactBlocked };
   }
 
   /**
@@ -257,7 +265,14 @@ export class InboxService {
         }),
         this.prisma.message.count({ where }),
       ]);
-      return { data, total, page: currentPage, limit: pageSize, hasMore: currentPage * pageSize < total };
+      // Conversation ouverte après un favori : les messages du client n'affichent que son pseudo.
+      const conv = thread.conversation;
+      const masked = conv && isClientIdentityHidden(conv)
+        ? data.map((message) => message.senderId === conv.clientUserId
+          ? { ...message, sender: { ...message.sender, firstName: clientAliasOf(conv), lastName: null, image: null } }
+          : message)
+        : data;
+      return { data: masked, total, page: currentPage, limit: pageSize, hasMore: currentPage * pageSize < total };
     }
     if (!thread.externalConversationId) throw new BadRequestException('Fil de messages incomplet');
     const where = { externalConversationId: thread.externalConversationId };
@@ -348,6 +363,7 @@ export class InboxService {
    */
   async linkClient(userId: string, threadId: string, clientId: string) {
     const thread = await this.assertAccess(userId, threadId, 'reply');
+    this.assertClientShared(thread);
     const client = await this.prisma.client.findUnique({ where: { id: clientId } });
     if (!client) throw new NotFoundException('Fiche client introuvable');
     if (client.userId !== thread.ownerUserId) {
@@ -411,8 +427,18 @@ export class InboxService {
     return { data, total, page: currentPage, limit: pageSize, totalPages: Math.ceil(total / pageSize) };
   }
 
+  /** Conversation ouverte après un favori : aucune fiche ne peut être reliée avant l'accord du client. */
+  private assertClientShared(thread: { conversation?: { clientAccess?: string | null } | null }) {
+    if (isClientIdentityHidden(thread.conversation)) {
+      throw new ForbiddenException(
+        "Le client doit d'abord accepter de partager ses informations : envoyez-lui une demande depuis la conversation.",
+      );
+    }
+  }
+
   async createAndLinkClient(userId: string, threadId: string, dto: CreateInboxClientDto) {
     const thread = await this.assertAccess(userId, threadId, 'reply');
+    this.assertClientShared(thread);
     await assertProfessionalCanCreateClient(this.prisma, thread.ownerUserId);
     const email = dto.email.trim().toLowerCase();
     // L'email n'est utilisé que pour réutiliser une fiche existante au sein

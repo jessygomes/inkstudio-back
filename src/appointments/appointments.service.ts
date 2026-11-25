@@ -4,6 +4,7 @@ import { desiredPeriodData, desiredPeriodSelect } from './desired-tattoo-period'
 import { DesiredTattooPeriodDto } from './dto/desired-tattoo-period.dto';
 import { attachGuestUploads } from '../uploads/guest-upload-attachment';
 import { claimMatchingClientRecord } from '../clients/client-account-link';
+import { grantClientAccessOnBooking } from '../messaging/client-access/grant-on-booking';
 import { validateInternalBooking, updateInternalBooking } from './internal-booking-policy';
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
@@ -1961,6 +1962,13 @@ export class AppointmentsService {
           'Booking committed; notification delivery requires retry.',
         );
       }
+      // En réservant, le client partage ses informations : ses conversations masquées (ouvertes après un favori) s'ouvrent.
+      await grantClientAccessOnBooking(this.prisma, {
+        professionalIds: [newAppointment.userId, newAppointment.performerUserId],
+        clientUserId: newAppointment.clientUserId,
+        clientId: newAppointment.clientId,
+        clientOwnerId: newAppointment.userId,
+      });
       return {
         error: false,
         message: salonConfig.addConfirmationEnabled

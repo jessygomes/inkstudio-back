@@ -19,6 +19,7 @@ import { UnreadConversationResponseDto } from './dto/unread-conversation-respons
 import { ConversationStatus, InboxChannel, MessageType, Prisma, SaasPlan, SaasPlanStatus } from '@prisma/client';
 import { MessageNotificationService } from '../notifications/message-notification.service';
 import { assertContactCanMessage } from '../contact-access';
+import { clientAliasOf, isClientIdentityHidden } from '../client-identity';
 
 @Injectable()
 export class ConversationsService {
@@ -394,6 +395,8 @@ export class ConversationsService {
     // Mapper les résultats
     const data = await Promise.all(
       conversationsWithUnread.map(async (conv) => {
+        // Conversation ouverte après un favori : seul le pseudo du client est visible.
+        const hidden = isClientIdentityHidden(conv);
         const unreadCount = await this.notificationService.getUnreadCount(
           conv.id,
           salonId,
@@ -405,9 +408,9 @@ export class ConversationsService {
           conversationId: conv.id,
           subject: conv.subject,
           clientId: conv.clientUser.id,
-          clientFirstName: conv.clientUser.firstName ?? undefined,
-          clientLastName: conv.clientUser.lastName ?? undefined,
-          clientImage: conv.clientUser.image ?? undefined,
+          clientFirstName: hidden ? clientAliasOf(conv) : conv.clientUser.firstName ?? undefined,
+          clientLastName: hidden ? undefined : conv.clientUser.lastName ?? undefined,
+          clientImage: hidden ? undefined : conv.clientUser.image ?? undefined,
           lastMessage: {
             id: lastMessage.id,
             content: lastMessage.content,
@@ -599,6 +602,8 @@ export class ConversationsService {
   private async mapToResponseDto(
     conversation: {
       projectContactPending?: boolean;
+      clientAccess?: string | null;
+      clientAlias?: string | null;
       id: string;
       salonId: string;
       clientUserId: string;
@@ -653,15 +658,29 @@ export class ConversationsService {
       role: conversation.salon.role,
     };
 
-    const client: ConversationParticipantDto = {
-      id: conversation.clientUser.id,
-      firstName: conversation.clientUser.firstName ?? undefined,
-      lastName: conversation.clientUser.lastName ?? undefined,
-      salonName: undefined,
-      image: conversation.clientUser.image ?? undefined,
-      email: conversation.clientUser.email,
-      role: conversation.clientUser.role,
-    };
+    // Le professionnel ne voit que le pseudo du client tant que celui-ci n'a pas accepté de partager ses informations.
+    const hideClient = isClientIdentityHidden(conversation) && currentUserId !== conversation.clientUserId;
+    const client: ConversationParticipantDto = hideClient
+      ? {
+          id: conversation.clientUser.id,
+          firstName: clientAliasOf(conversation),
+          lastName: undefined,
+          salonName: undefined,
+          image: undefined,
+          email: '',
+          role: conversation.clientUser.role,
+          pseudo: clientAliasOf(conversation),
+        }
+      : {
+          id: conversation.clientUser.id,
+          firstName: conversation.clientUser.firstName ?? undefined,
+          lastName: conversation.clientUser.lastName ?? undefined,
+          salonName: undefined,
+          image: conversation.clientUser.image ?? undefined,
+          email: conversation.clientUser.email,
+          role: conversation.clientUser.role,
+          pseudo: conversation.clientAlias ?? undefined,
+        };
 
     // Mapper le dernier message
     let lastMessage: LastMessageDto | undefined;
@@ -685,6 +704,8 @@ export class ConversationsService {
     return {
       id: conversation.id,
       projectContactPending: conversation.projectContactPending ?? false,
+      clientAccess: (conversation.clientAccess as ConversationResponseDto['clientAccess']) ?? null,
+      clientAlias: conversation.clientAlias ?? undefined,
       contactBlocked: !!await this.prisma.professionalBlock.findUnique({ where: { clientUserId_professionalId: { clientUserId: conversation.clientUserId, professionalId: conversation.salonId } } }),
       salonId: conversation.salonId,
       clientUserId: conversation.clientUserId,

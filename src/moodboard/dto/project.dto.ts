@@ -31,6 +31,12 @@ export class PublishProjectDto {
   @MaxLength(60, { each: true })
   hashtags?: string[];
   @IsOptional() @IsString() @MaxLength(120) bodyPlacement?: string;
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @IsString({ each: true })
+  @MaxLength(40, { each: true })
+  needs?: string[];
   @IsOptional() @IsIn(['NONE', 'RADIUS', 'ANYWHERE', '']) mobility?: string;
   @ValidateIf((o) => o.mobility === 'RADIUS' || o.radiusKm != null)
   @IsInt()
@@ -39,7 +45,8 @@ export class PublishProjectDto {
   radiusKm?: number;
 }
 export class ExploreProjectsDto {
-  @IsOptional() @IsIn(['explore', 'proposals']) scope?: string;
+  @IsOptional() @IsIn(['explore', 'proposals', 'favorites']) scope?: string;
+  @IsOptional() @IsString() @MaxLength(40) need?: string;
   @IsOptional() @IsIn(['PENDING', 'ACCEPTED', 'REFUSED']) proposalStatus?: string;
   @IsOptional() @IsString() @MaxLength(120) city?: string;
   @IsOptional() @IsString() @MaxLength(100) category?: string;

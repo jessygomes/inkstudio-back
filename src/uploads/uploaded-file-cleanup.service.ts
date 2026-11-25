@@ -55,6 +55,7 @@ export class UploadedFileCleanupService {
       UNION ALL SELECT 1 FROM "Aftercare" WHERE "photoUrl" LIKE ${like}
       UNION ALL SELECT 1 FROM "Article" WHERE array_to_string("imageUrls", ' ') LIKE ${like}
       UNION ALL SELECT 1 FROM "SalonVerificationDocument" WHERE "fileUrl" LIKE ${like}
+      UNION ALL SELECT 1 FROM "TatoueurHygieneDocument" WHERE "fileUrl" LIKE ${like}
       LIMIT 1
     `);
     return rows.length > 0;

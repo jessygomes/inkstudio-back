@@ -17,6 +17,12 @@ import { MessageNotificationService } from 'src/messaging/notifications/message-
 import { ProjectProposalEmailService } from './project-proposal-email.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PROJECT_PROPOSAL_EMAIL_THRESHOLDS } from 'src/email/project-proposal-email';
+import { PROJECT_NEED_KEYS, PROJECT_NEEDS, explorerProposalsEnabled, normalizeProjectNeeds } from './project-needs';
+
+/** Pseudo du client affiché aux professionnels : jamais son nom, son e-mail ni ses coordonnées. */
+export function clientPseudo(profile: { pseudo: string | null; user: { nickname: string | null } | null } | null | undefined): string | null {
+  return profile?.pseudo?.trim() || profile?.user?.nickname?.trim() || null;
+}
 
 @Injectable()
 export class ProjectsService {
@@ -65,6 +71,8 @@ export class ProjectsService {
     return {
       styles: styles.map((s) => s.name),
       categories: categories.map((c) => c.name),
+      needs: PROJECT_NEED_KEYS.map((value) => ({ value, label: PROJECT_NEEDS[value] })),
+      proposalsEnabled: explorerProposalsEnabled(),
     };
   }
 
@@ -88,13 +96,48 @@ export class ProjectsService {
       (user.role === 'user_tatoueur' && user.salonId)
     )
       throw new ForbiddenException(
-        'Explorer est réservé aux salons et indépendants abonnés.',
+        'Explorer est réservé aux salons et aux tatoueurs indépendants.',
       );
+    // Consulter et mettre en favori : tous les abonnements (FREE, PRO, BUSINESS).
+    // Proposer ses services (si les propositions sont rouvertes) exige un abonnement actif.
+    return user;
+  }
+
+  private async assertCanPropose(id: string) {
+    if (!explorerProposalsEnabled())
+      throw new ForbiddenException(
+        'Les propositions sur les projets sont suspendues pour le moment : ajoutez le projet à vos favoris pour le retrouver.',
+      );
+    const user = await this.professional(id);
     await assertProfessionalCanMessage(this.prisma, id);
     if (user.saasPlanDetails && user.saasPlanDetails.planStatus !== 'ACTIVE')
       throw new ForbiddenException(
-        'Un abonnement actif est requis pour Explorer.',
+        'Un abonnement actif est requis pour proposer vos services.',
       );
+  }
+
+  /** Met en favori (ou retire) un projet partagé. Seul un projet encore ouvert peut être ajouté. */
+  async favorite(id: string, userId: string, on: boolean) {
+    await this.professional(userId);
+    if (!on) {
+      await this.prisma.moodboardFavorite.deleteMany({ where: { professionalId: userId, moodboardId: id } });
+      return { favorite: false };
+    }
+    const board = await this.prisma.moodboard.findUnique({
+      where: { id },
+      select: { projectStatus: true, clientProfile: { select: { userId: true } } },
+    });
+    if (!board || board.projectStatus !== 'OPEN') throw new NotFoundException('Projet indisponible.');
+    const blocked = await this.prisma.professionalBlock.findUnique({
+      where: { clientUserId_professionalId: { clientUserId: board.clientProfile.userId, professionalId: userId } },
+    });
+    if (blocked) throw new NotFoundException('Projet indisponible.');
+    await this.prisma.moodboardFavorite.upsert({
+      where: { professionalId_moodboardId: { professionalId: userId, moodboardId: id } },
+      create: { professionalId: userId, moodboardId: id },
+      update: {},
+    });
+    return { favorite: true };
   }
 
   async publish(id: string, userId: string, dto: PublishProjectDto) {
@@ -135,6 +178,9 @@ export class ProjectsService {
         ...(dto.bodyPlacement !== undefined && {
           projectBodyPlacement: dto.bodyPlacement?.trim() || null,
         }),
+        ...(dto.needs !== undefined && {
+          projectNeeds: normalizeProjectNeeds(dto.needs),
+        }),
         ...(dto.mobility !== undefined && {
           projectMobility: dto.mobility || null,
           projectRadiusKm: dto.mobility === 'RADIUS' ? dto.radiusKm : null,
@@ -151,8 +197,17 @@ export class ProjectsService {
       where: { professionalId: userId },
       select: { clientUserId: true },
     });
+    const need = filters.need ? normalizeProjectNeeds([filters.need])[0] : undefined;
+    const notBlocked = { clientProfile: { userId: { notIn: blocks.map((b) => b.clientUserId) } } };
     const where = {
-      ...(filters.scope === 'proposals'
+      ...(filters.scope === 'favorites'
+        ? {
+            // Un projet repassé en privé ou fermé disparaît aussi des favoris.
+            projectStatus: { in: ['OPEN', 'MATCHED'] },
+            favorites: { some: { professionalId: userId } },
+            ...notBlocked,
+          }
+        : filters.scope === 'proposals'
         ? {
             proposals: {
               some: {
@@ -165,9 +220,7 @@ export class ProjectsService {
           }
         : {
             projectStatus: 'OPEN',
-            clientProfile: {
-              userId: { notIn: blocks.map((b) => b.clientUserId) },
-            },
+            ...notBlocked,
           }),
       ...(filters.city && {
         projectCity: {
@@ -190,6 +243,7 @@ export class ProjectsService {
           has: filters.hashtag.trim().replace(/^#+/, '').toLowerCase(),
         },
       }),
+      ...(need && { projectNeeds: { has: need } }),
     };
     const [data, total] = await Promise.all([
       this.prisma.moodboard.findMany({
@@ -209,6 +263,10 @@ export class ProjectsService {
           projectBodyPlacement: true,
           projectMobility: true,
           projectRadiusKm: true,
+          projectNeeds: true,
+          publishedAt: true,
+          clientProfile: { select: { pseudo: true, user: { select: { nickname: true } } } },
+          favorites: { where: { professionalId: userId }, select: { id: true } },
           images: {
             orderBy: { position: 'asc' },
             select: { id: true, url: true, caption: true },
@@ -222,8 +280,10 @@ export class ProjectsService {
       this.prisma.moodboard.count({ where }),
     ]);
     return {
-      data: data.map((board) => ({
+      data: data.map(({ clientProfile, favorites, ...board }) => ({
         ...board,
+        clientPseudo: clientPseudo(clientProfile),
+        isFavorite: (favorites?.length ?? 0) > 0,
         proposals: board.proposals.map((proposal) => ({
           ...proposal,
           conversationId:
@@ -237,7 +297,7 @@ export class ProjectsService {
   }
 
   async propose(id: string, userId: string, message: string) {
-    await this.professional(userId);
+    await this.assertCanPropose(userId);
     if (!message.trim())
       throw new BadRequestException('Un premier message est requis.');
     // A proposal is private until the client accepts. Never touch messaging here.

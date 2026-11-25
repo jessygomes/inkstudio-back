@@ -55,6 +55,18 @@ export class ProjectsController {
   ) {
     return this.projects.propose(id, req.user.userId, dto.message);
   }
+  @Post('moodboards/:id/favorite') addFavorite(
+    @Request() req: RequestWithUser,
+    @Param('id') id: string,
+  ) {
+    return this.projects.favorite(id, req.user.userId, true);
+  }
+  @Delete('moodboards/:id/favorite') removeFavorite(
+    @Request() req: RequestWithUser,
+    @Param('id') id: string,
+  ) {
+    return this.projects.favorite(id, req.user.userId, false);
+  }
   @Patch('proposals/:id') respond(
     @Request() req: RequestWithUser,
     @Param('id') id: string,

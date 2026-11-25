@@ -1,5 +1,6 @@
 import { Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { clientAliasOf, isClientIdentityHidden } from '../client-identity';
 import { NotificationsService } from '../../notifications/notifications.service';
 
 /** Nombres de messages non lus (par conversation) qui déclenchent une notification dans le centre. */
@@ -57,11 +58,14 @@ export class MessageNotificationService {
           type: true,
           attachments: { select: { id: true }, take: 1 },
           sender: { select: { firstName: true, lastName: true, salonName: true, role: true } },
+          conversation: { select: { clientAccess: true, clientAlias: true } },
         },
       });
       if (!last) return;
       const s = last.sender;
-      const name = (s?.role === 'client' ? [s.firstName, s.lastName].filter(Boolean).join(' ') : s?.salonName || [s?.firstName, s?.lastName].filter(Boolean).join(' ')) || 'Nouveau message';
+      // Conversation ouverte après un favori : le professionnel ne voit que le pseudo du client.
+      const hidden = s?.role === 'client' && isClientIdentityHidden(last.conversation);
+      const name = (hidden ? clientAliasOf(last.conversation) : s?.role === 'client' ? [s.firstName, s.lastName].filter(Boolean).join(' ') : s?.salonName || [s?.firstName, s?.lastName].filter(Boolean).join(' ')) || 'Nouveau message';
       const preview = last.content?.trim() ? last.content.trim().slice(0, 140) : last.attachments.length ? '📷 Photo' : 'Nouveau message';
       await this.appNotifications.notify({ userId, type: 'message.new', title: name, body: preview, data: { conversationId }, only: 'push' });
       if (UNREAD_THRESHOLDS.includes(unreadCount)) {

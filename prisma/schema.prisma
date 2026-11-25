@@ -149,6 +149,8 @@ model User {
   favoriteUsers         FavoriteUser[]       @relation("ClientFavorites")
   favoritedBy           FavoriteUser[]       @relation("FavoritedSalon")
   favoritePortfolios    FavoritePortfolio[]  @relation("ClientFavoritePortfolios")
+  favoriteFlashes       FavoriteFlash[]      @relation("ClientFavoriteFlashes")
+  moodboardFavorites    MoodboardFavorite[]  @relation("ProfessionalMoodboardFavorites")
   reviewsGiven          SalonReview[]        @relation("ReviewAuthor")
   reviewsReceived       SalonReview[]        @relation("ReviewedSalon")
 
@@ -294,6 +296,9 @@ model Moodboard {
   projectBodyPlacement String?
   projectMobility String?
   projectRadiusKm Int?
+  // Besoins affichés aux professionnels dans Explorer (URGENT, NEED_HELP, WANT_DRAWING... voir project-needs.ts)
+  projectNeeds    String[] @default([])
+  favorites       MoodboardFavorite[]
   publishedAt DateTime?
   proposals ProjectProposal[]
   proposalEmails ProjectProposalEmail[]
@@ -372,6 +377,20 @@ model MoodboardImage {
 
   moodboard   Moodboard @relation(fields: [moodboardId], references: [id], onDelete: Cascade)
 
+  @@index([moodboardId])
+}
+
+//! Moodboards partagés dans Explorer mis en favori par un professionnel
+model MoodboardFavorite {
+  id             String    @id @default(cuid())
+  professionalId String
+  moodboardId    String
+  createdAt      DateTime  @default(now())
+
+  professional   User      @relation("ProfessionalMoodboardFavorites", fields: [professionalId], references: [id], onDelete: Cascade)
+  moodboard      Moodboard @relation(fields: [moodboardId], references: [id], onDelete: Cascade)
+
+  @@unique([professionalId, moodboardId])
   @@index([moodboardId])
 }
 
@@ -461,8 +480,27 @@ model Tatoueur {
   Flash              Flash[]
   user               User                @relation(fields: [userId], references: [id])
   TattooHistory      TattooHistory[]
+  hygieneDocument    TatoueurHygieneDocument?
 
   @@index([userId, rdvBookingEnabled], map: "idx_tatoueur_userId_rdvBookingEnabled")
+}
+
+//! Justificatif d'hygiène d'un tatoueur créé par un salon (profil Tatoueur interne), vérifié par l'admin
+model TatoueurHygieneDocument {
+  id              String                     @id @default(cuid())
+  tatoueurId      String                     @unique
+  salonId         String
+  fileUrl         String
+  status          VerificationStatusDocument @default(PENDING)
+  rejectionReason String?
+  uploadedAt      DateTime                   @default(now())
+  reviewedAt      DateTime?
+  reviewedBy      String?
+
+  tatoueur        Tatoueur                   @relation(fields: [tatoueurId], references: [id], onDelete: Cascade)
+
+  @@index([status, uploadedAt])
+  @@index([salonId])
 }
 
 //! MODEL POUR LES RDV
@@ -924,10 +962,25 @@ model Flash {
   updatedAt   DateTime @updatedAt
   tatoueur    Tatoueur? @relation(fields: [tatoueurId], references: [id])
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  favorites   FavoriteFlash[]
 
   @@index([userId])
   @@index([tatoueurId])
   @@index([isAvailable])
+}
+
+//! MODEL POUR LES FAVORIS DE FLASHS (clients)
+model FavoriteFlash {
+  id        String   @id @default(cuid())
+  clientId  String
+  flashId   String
+  createdAt DateTime @default(now())
+
+  client    User     @relation("ClientFavoriteFlashes", fields: [clientId], references: [id], onDelete: Cascade)
+  flash     Flash    @relation(fields: [flashId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, flashId])
+  @@index([flashId])
 }
 
 //! MODEL POUR LES ARTICLES DU SITE PUBLIC (gérés par l'admin)
@@ -1169,6 +1222,14 @@ model PasswordResetToken {
 model Conversation {
   bookingLinks BookingLink[]
   projectContactPending Boolean @default(false)
+  // Accès du professionnel aux informations du client (null = accès normal).
+  // HIDDEN : conversation ouverte par le pro après un favori, seul le pseudo est visible ;
+  // REQUESTED : demande d'accès envoyée ; GRANTED : acceptée ; DECLINED : refusée.
+  clientAccess String?
+  // Pseudo du client affiché au professionnel tant que l'accès n'est pas accordé
+  clientAlias String?
+  clientAccessRequestedAt DateTime?
+  clientAccessRespondedAt DateTime?
   projectProposals ProjectProposal[]
   id                String              @id @default(cuid())
   
@@ -1433,6 +1494,7 @@ enum MessageType {
   SYSTEM
   IMAGE
   FILE
+  ACCESS_REQUEST
 }
 
 enum SaasPlan {

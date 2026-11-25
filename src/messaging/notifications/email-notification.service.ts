@@ -1,6 +1,7 @@
 import { renderMessageEmail, MessageEmailData } from '../../email/message-email';
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { clientAliasOf, isClientIdentityHidden } from '../client-identity';
 import { NotificationPreferenceService } from './notification-preference.service';
 import { MailgunService } from '../../email/mailgun.service';
 import { RedisRateLimiterService } from '../../redis/redis-rate-limiter.service';
@@ -163,14 +164,18 @@ export class EmailNotificationService {
       return;
     }
 
+    // Conversation ouverte après un favori : le professionnel ne reçoit que le pseudo du client.
+    const senderName = sender.role === 'client' && isClientIdentityHidden(conversation)
+      ? clientAliasOf(conversation)
+      : sender.salonName || sender.firstName || 'Un contact';
     const subject =
       messageCount > 1
-        ? `${messageCount} nouveaux messages de ${sender.salonName || sender.firstName}`
-        : `Nouveau message de ${sender.salonName || sender.firstName}`;
+        ? `${messageCount} nouveaux messages de ${senderName}`
+        : `Nouveau message de ${senderName}`;
 
     const html = this.generateEmailHTML({
       recipientName: recipient.firstName || 'Bonjour',
-      senderName: sender.salonName || sender.firstName || 'Un contact',
+      senderName,
       messageCount,
       conversationLink: this.buildFrontendUrl(`/conversations/${conversation.id}`),
       latestMessages: conversation.messages,
